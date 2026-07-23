@@ -7,4 +7,178 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Domain models intentionally begin in Phase 2.
+enum SourceType {
+  PDF
+  TEXT
+  WEBSITE
+  YOUTUBE
+  VTT
+}
+
+enum SourceStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model Notebook {
+  id            String         @id @default(cuid())
+  name          String
+  description   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sources       Source[]
+  sourceChunks  SourceChunk[]
+  conversations Conversation[]
+  roadmaps      Roadmap[]
+
+  @@index([updatedAt])
+  @@index([createdAt])
+}
+
+model Source {
+  id           String          @id @default(cuid())
+  notebookId   String
+  title        String
+  sourceType   SourceType
+  status       SourceStatus    @default(PENDING)
+  originalUrl  String?
+  fileName     String?
+  mimeType     String?
+  fileSize     Int?
+  rawText      String?
+  errorMessage String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  indexedAt    DateTime?
+  notebook     Notebook        @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  chunks       SourceChunk[]
+  insights     SourceInsight[]
+  citations    Citation[]
+  roadmapItems RoadmapItem[]
+
+  @@index([notebookId])
+  @@index([notebookId, status])
+  @@index([createdAt])
+}
+
+model SourceChunk {
+  id               String     @id @default(cuid())
+  sourceId         String
+  notebookId       String
+  chunkIndex       Int
+  content          String
+  tokenCount       Int?
+  pageNumber       Int?
+  startTimeSeconds Int?
+  endTimeSeconds   Int?
+  heading          String?
+  vectorId         String?
+  createdAt        DateTime   @default(now())
+  source           Source     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  notebook         Notebook   @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  citations        Citation[]
+
+  @@unique([sourceId, chunkIndex])
+  @@index([notebookId])
+  @@index([sourceId])
+}
+
+model Conversation {
+  id         String    @id @default(cuid())
+  notebookId String
+  title      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  notebook   Notebook  @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  messages   Message[]
+
+  @@index([notebookId])
+  @@index([updatedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations      Citation[]
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model Citation {
+  id               String       @id @default(cuid())
+  messageId        String
+  sourceId         String
+  sourceChunkId    String?
+  displayOrder     Int
+  excerpt          String?
+  pageNumber       Int?
+  startTimeSeconds Int?
+  endTimeSeconds   Int?
+  createdAt        DateTime     @default(now())
+  message          Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  source           Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceChunk      SourceChunk? @relation(fields: [sourceChunkId], references: [id], onDelete: SetNull)
+
+  @@unique([messageId, displayOrder])
+  @@index([sourceId])
+  @@index([sourceChunkId])
+}
+
+model SourceInsight {
+  id                      String   @id @default(cuid())
+  sourceId                String
+  summary                 String?
+  keyConcepts             String[]
+  difficulty              String?
+  estimatedReadingMinutes Int?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  source                  Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+}
+
+model Roadmap {
+  id           String        @id @default(cuid())
+  notebookId   String
+  title        String
+  goal         String?
+  currentLevel String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  notebook     Notebook      @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  items        RoadmapItem[]
+
+  @@index([notebookId])
+}
+
+model RoadmapItem {
+  id               String   @id @default(cuid())
+  roadmapId        String
+  sourceId         String?
+  position         Int
+  title            String
+  rationale        String?
+  prerequisites    String?
+  learningOutcomes String?
+  createdAt        DateTime @default(now())
+  roadmap          Roadmap  @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  source           Source?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@unique([roadmapId, position])
+  @@index([sourceId])
+}
