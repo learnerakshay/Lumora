@@ -100,6 +100,18 @@ textarea:disabled {
   color: var(--text-disabled);
 }
 
+@keyframes lumora-core-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

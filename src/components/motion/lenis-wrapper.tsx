@@ -1,11 +1,14 @@
 "use client";
 import Lenis from "lenis";
+import { useReducedMotion } from "framer-motion";
 import { useEffect, type ReactNode } from "react";
 
 // Opt-in only: use on isolated marketing/presentation pages, never the workspace shell.
 export function LenisWrapper({ children }: { children: ReactNode }) {
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
-    const lenis = new Lenis();
+    if (reducedMotion) return;
+    const lenis = new Lenis({ duration: 1.05, smoothWheel: true });
     let frame = 0;
     const raf = (time: number) => {
       lenis.raf(time);
@@ -16,6 +19,6 @@ export function LenisWrapper({ children }: { children: ReactNode }) {
       cancelAnimationFrame(frame);
       lenis.destroy();
     };
-  }, []);
+  }, [reducedMotion]);
   return <>{children}</>;
 }
