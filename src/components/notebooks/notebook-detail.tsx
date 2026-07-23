@@ -10,6 +10,9 @@ import {
   updateNotebook,
 } from "@/lib/api/notebooks";
 import { updateNotebookSchema } from "@/lib/validation/notebook";
+import { Input, Textarea } from "@/components/ui/field";
+import { Panel } from "@/components/ui/panel";
+import { KnowledgeWorkspace } from "@/components/workspace/knowledge-workspace";
 
 type FormValues = { name: string; description: string };
 
@@ -88,21 +91,16 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
           </p>
         )}
       </header>
-      <section className="mt-8 rounded-[var(--radius)] border bg-[var(--card)] p-6">
+      <Panel className="mt-8 p-6">
         <h2 className="font-semibold">Notebook details</h2>
         <form className="mt-4 grid gap-3" onSubmit={form.handleSubmit(submit)}>
           <label className="grid gap-1 text-sm">
             Name
-            <input
-              className="rounded-md border bg-transparent px-3 py-2"
-              disabled={update.isPending}
-              {...form.register("name")}
-            />
+            <Input disabled={update.isPending} {...form.register("name")} />
           </label>
           <label className="grid gap-1 text-sm">
             Description
-            <textarea
-              className="min-h-20 rounded-md border bg-transparent px-3 py-2"
+            <Textarea
               disabled={update.isPending}
               {...form.register("description")}
             />
@@ -120,23 +118,8 @@ export function NotebookDetail({ notebookId }: { notebookId: string }) {
             {update.isPending ? "Saving…" : "Save changes"}
           </button>
         </form>
-      </section>
-      <section className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-[var(--radius)] border p-5">
-          <h2 className="font-semibold">Sources</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            {notebook.data.sources.length
-              ? `${notebook.data.sources.length} metadata record(s) available.`
-              : "Source ingestion will be added in a later phase."}
-          </p>
-        </div>
-        <div className="rounded-[var(--radius)] border p-5">
-          <h2 className="font-semibold">Conversations</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Chat and grounded responses will be added in a later phase.
-          </p>
-        </div>
-      </section>
+      </Panel>
+      <KnowledgeWorkspace sources={notebook.data.sources} />
       <section className="mt-8 border-t pt-6">
         <h2 className="font-semibold text-[var(--destructive)]">
           Delete notebook

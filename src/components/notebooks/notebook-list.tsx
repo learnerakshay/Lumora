@@ -5,6 +5,9 @@ import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createNotebook, listNotebooks } from "@/lib/api/notebooks";
 import { createNotebookSchema } from "@/lib/validation/notebook";
+import { LumoraLogo } from "@/components/brand/lumora-logo";
+import { Input, Textarea } from "@/components/ui/field";
+import { Panel } from "@/components/ui/panel";
 
 type FormValues = { name: string; description: string };
 
@@ -39,23 +42,21 @@ export function NotebookList() {
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-12">
       <header>
-        <p className="text-sm font-medium text-[var(--accent)]">Lumora</p>
-        <h1 className="mt-2 text-3xl font-semibold">Notebooks</h1>
-        <p className="mt-2 text-[var(--muted)]">
+        <LumoraLogo decorative size="sm" wordmark />
+        <h1 className="mt-5 text-3xl font-semibold tracking-[-0.03em]">
+          Notebooks
+        </h1>
+        <p className="mt-2 text-[var(--text-secondary)]">
           Create a workspace to organize future research sources and
           conversations.
         </p>
       </header>
-      <section className="mt-8 rounded-[var(--radius)] border bg-[var(--card)] p-6">
+      <Panel className="mt-8 p-6">
         <h2 className="font-semibold">Create a notebook</h2>
         <form className="mt-4 grid gap-3" onSubmit={form.handleSubmit(submit)}>
           <label className="grid gap-1 text-sm">
             Name
-            <input
-              className="rounded-md border bg-transparent px-3 py-2"
-              disabled={create.isPending}
-              {...form.register("name")}
-            />
+            <Input disabled={create.isPending} {...form.register("name")} />
           </label>
           {form.formState.errors.name && (
             <p className="text-sm text-[var(--destructive)]">
@@ -64,8 +65,7 @@ export function NotebookList() {
           )}
           <label className="grid gap-1 text-sm">
             Description <span className="text-[var(--muted)]">(optional)</span>
-            <textarea
-              className="min-h-20 rounded-md border bg-transparent px-3 py-2"
+            <Textarea
               disabled={create.isPending}
               {...form.register("description")}
             />
@@ -83,7 +83,7 @@ export function NotebookList() {
             {create.isPending ? "Creating…" : "Create notebook"}
           </button>
         </form>
-      </section>
+      </Panel>
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Your notebooks</h2>
         {notebooks.isPending && (
@@ -102,7 +102,7 @@ export function NotebookList() {
         <div className="mt-4 grid gap-3">
           {notebooks.data?.map((notebook) => (
             <Link
-              className="rounded-[var(--radius)] border bg-[var(--card)] p-5 transition-colors hover:border-[var(--accent)]"
+              className="rounded-[var(--radius-lg)] border bg-[var(--surface)] p-5 shadow-[var(--shadow-raised)] hover:border-[var(--border-hover)] hover:bg-[var(--surface-hover)]"
               href={`/notebooks/${notebook.id}`}
               key={notebook.id}
             >

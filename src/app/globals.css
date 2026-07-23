@@ -1,33 +1,103 @@
 @import "tailwindcss";
 
 :root {
-  --background: #101113;
-  --foreground: #f4f4f5;
-  --card: #18181b;
-  --border: #303036;
-  --muted: #a1a1aa;
-  --accent: #b9a7ff;
-  --destructive: #f87171;
-  --radius: 0.75rem;
+  --background: #09090b;
+  --surface: #12131a;
+  --surface-elevated: #181923;
+  --surface-muted: #0e0f15;
+  --surface-hover: #1b1d29;
+  --surface-active: #202233;
+  --foreground: #f5f7ff;
+  --text-secondary: #b8bdcf;
+  --muted: #8990a3;
+  --text-disabled: #5f6575;
+  --border: rgb(255 255 255 / 8%);
+  --border-strong: rgb(255 255 255 / 14%);
+  --border-hover: rgb(184 245 255 / 32%);
+  --accent: #7c5cff;
+  --accent-cyan: #5fd3ff;
+  --glow: #b8f5ff;
+  --success: #52c58b;
+  --warning: #f1b75b;
+  --destructive: #f27682;
+  --overlay: rgb(4 5 9 / 74%);
+  --selection: rgb(124 92 255 / 38%);
+  --skeleton: rgb(255 255 255 / 7%);
+  --backdrop: rgb(9 9 11 / 88%);
+  --focus-ring: #b8f5ff;
+  --radius-sm: 0.375rem;
+  --radius: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-pill: 999px;
+  --shadow-raised: 0 16px 36px rgb(0 0 0 / 22%);
+  --shadow-overlay: 0 24px 60px rgb(0 0 0 / 42%);
+  --page-gutter: clamp(1.25rem, 4vw, 3rem);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 * {
   border-color: var(--border);
 }
-
 html {
   color-scheme: dark;
-}
-
-body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
-
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+  background:
+    radial-gradient(
+      60rem 34rem at 50% -18rem,
+      rgb(124 92 255 / 12%),
+      transparent 70%
+    ),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings:
+    "kern" 1,
+    "liga" 1;
+  text-rendering: optimizeLegibility;
+}
+::selection {
+  background: var(--selection);
+  color: var(--foreground);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 14%);
+  border: 3px solid var(--background);
+  border-radius: var(--radius-pill);
+}
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+button,
+a,
+input,
+textarea {
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease,
+    box-shadow 160ms ease;
+}
+button:disabled,
+input:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  color: var(--text-disabled);
 }
 
 @media (prefers-reduced-motion: reduce) {
