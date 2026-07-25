@@ -1,333 +1,525 @@
+import { load } from 'cheerio';
 import { SourceType } from '../source-store';
 import { cleanExtractedText } from './cleaner';
-import { logger } from '../logger';
+import { safeFetch } from './safe-fetch';
+
+const PDF_MAX_BYTES = 20 * 1024 * 1024;
+const WEBSITE_MAX_BYTES = 5 * 1024 * 1024;
+const TEXT_MAX_BYTES = 2 * 1024 * 1024;
+const VTT_MAX_BYTES = 2 * 1024 * 1024;
+
+export const PARSER_VERSIONS: Record<SourceType, string> = {
+  PDF: 'pdfjs-1',
+  WEBSITE: 'cheerio-1',
+  TEXT: 'plain-text-1',
+  YOUTUBE: 'youtube-transcript-1',
+  VTT: 'webvtt-1',
+};
 
 export interface ParsedSourceOutput {
   title: string;
   rawText: string;
   cleanText: string;
+  originalContent: string | null;
+  artifactData?: Uint8Array | null;
+  artifactFileName?: string | null;
+  artifactMimeType?: string | null;
+  artifactSize?: number | null;
+  sourceUrl?: string | null;
   metadata: Record<string, any>;
+  parserVersion: string;
 }
 
-export async function parseSourceContent(data: {
+export interface ParseSourceInput {
   type: SourceType;
   title: string;
-  url?: string | null;
-  rawContent?: string | null;
-}): Promise<ParsedSourceOutput> {
-  const { type, title, url, rawContent } = data;
+  sourceUrl?: string | null;
+  originalContent?: string | null;
+  artifactData?: Uint8Array | null;
+  artifactFileName?: string | null;
+  artifactMimeType?: string | null;
+  parserMetadata?: Record<string, any> | null;
+  onParsing?: () => Promise<void>;
+}
 
-  switch (type) {
-    case 'PDF':
-      return parsePDFSource(title, rawContent, url);
-    case 'WEBSITE':
-      return parseWebsiteSource(title, url, rawContent);
-    case 'TEXT':
-      return parsePlainTextSource(title, rawContent);
-    case 'YOUTUBE':
-      return parseYouTubeSource(title, url, rawContent);
-    case 'VTT':
-      return parseVTTSource(title, rawContent, url);
-    default:
-      return parsePlainTextSource(title, rawContent);
+function assertTextSize(text: string, maximumBytes: number, label: string): void {
+  const size = Buffer.byteLength(text, 'utf8');
+  if (size > maximumBytes) {
+    throw new Error(`${label} exceeds the ${maximumBytes}-byte size limit`);
   }
 }
 
-// 1. PDF Parser
-async function parsePDFSource(
-  title: string,
-  rawContent?: string | null,
-  url?: string | null
+function decodeUtf8(data: Uint8Array): string {
+  return new TextDecoder('utf-8', { fatal: true }).decode(data);
+}
+
+export async function parseSourceContent(
+  input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
-  let extractedText = rawContent || '';
+  switch (input.type) {
+    case 'PDF':
+      return parsePdfSource(input);
+    case 'WEBSITE':
+      return parseWebsiteSource(input);
+    case 'TEXT':
+      return parsePlainTextSource(input);
+    case 'YOUTUBE':
+      return parseYouTubeSource(input);
+    case 'VTT':
+      return parseVttSource(input);
+    default:
+      throw new Error(`No parser is registered for source type "${input.type}"`);
+  }
+}
 
-  if (!extractedText && url) {
-    try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'Lumora-Bot/1.0' } });
-      if (res.ok) {
-        extractedText = await res.text();
-      }
-    } catch (err) {
-      logger.warn('Failed to fetch PDF URL, using fallback text', err);
+async function parsePdfSource(
+  input: ParseSourceInput,
+): Promise<ParsedSourceOutput> {
+  let data = input.artifactData || null;
+  let sourceUrl = input.sourceUrl || null;
+  let mimeType = input.artifactMimeType || null;
+
+  if (!data && sourceUrl) {
+    const fetched = await safeFetch(sourceUrl, {
+      maximumBytes: PDF_MAX_BYTES,
+      allowedContentTypes: ['application/pdf'],
+    });
+    data = fetched.data;
+    sourceUrl = fetched.finalUrl;
+    mimeType = fetched.contentType;
+  }
+
+  if (!data?.byteLength) {
+    throw new Error('PDF artifact is missing');
+  }
+  if (data.byteLength > PDF_MAX_BYTES) {
+    throw new Error('PDF exceeds the 20 MB size limit');
+  }
+  if (mimeType !== 'application/pdf') {
+    throw new Error('Uploaded file must have MIME type application/pdf');
+  }
+
+  const header = Buffer.from(data.subarray(0, 5)).toString('ascii');
+  if (header !== '%PDF-') {
+    throw new Error('Uploaded artifact does not contain a valid PDF signature');
+  }
+  const searchableBytes = Buffer.from(data).toString('latin1');
+  if (/\/Encrypt\b/.test(searchableBytes)) {
+    throw new Error('Encrypted or password-protected PDF files are not supported');
+  }
+
+  await input.onParsing?.();
+
+  try {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(data),
+      isEvalSupported: false,
+      useSystemFonts: true,
+    });
+    const document = await loadingTask.promise;
+    const pages: Array<{
+      pageNumber: number;
+      text: string;
+      characterStart: number;
+      characterEnd: number;
+    }> = [];
+    const pageBlocks: string[] = [];
+    let characterOffset = 0;
+
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+      const page = await document.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const pageText = cleanExtractedText(
+        textContent.items
+          .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
+          .filter(Boolean)
+          .join(' '),
+      );
+      const block = `[Page ${pageNumber}]\n${pageText}`;
+      pages.push({
+        pageNumber,
+        text: pageText,
+        characterStart: characterOffset,
+        characterEnd: characterOffset + block.length,
+      });
+      pageBlocks.push(block);
+      characterOffset += block.length + 2;
     }
+
+    const cleanText = cleanExtractedText(pageBlocks.join('\n\n'));
+    if (!cleanText || pages.every((page) => !page.text)) {
+      throw new Error('PDF contains no extractable text');
+    }
+
+    const documentMetadata = await document.getMetadata().catch(() => null);
+    await document.destroy();
+
+    return {
+      title: input.title,
+      rawText: pageBlocks.join('\n\n'),
+      cleanText,
+      originalContent: null,
+      artifactData: data,
+      artifactFileName: input.artifactFileName,
+      artifactMimeType: 'application/pdf',
+      artifactSize: data.byteLength,
+      sourceUrl,
+      metadata: {
+        sourceType: 'PDF',
+        pageCount: pages.length,
+        pages,
+        documentInfo: documentMetadata?.info || null,
+        parsedAt: new Date().toISOString(),
+      },
+      parserVersion: PARSER_VERSIONS.PDF,
+    };
+  } catch (error: any) {
+    const message = error?.message || 'unknown PDF parser failure';
+    if (/password/i.test(message)) {
+      throw new Error('Encrypted or password-protected PDF files are not supported');
+    }
+    throw new Error(`PDF parsing failed: ${message}`);
   }
+}
 
-  // Sanitize decorative or binary PDF artifact codes if raw text was stream-dumped
-  let textToClean = extractedText;
-  if (textToClean.includes('%PDF-')) {
-    textToClean = textToClean
-      .replace(/[\x00-\x1F\x7F-\xFF]/g, ' ')
-      .replace(/\b(stream|endstream|obj|endobj|xref|trailer)\b/g, '')
-      .replace(/\/[A-Za-z0-9]+/g, ' ');
-  }
+function extractHtmlContent(html: string): {
+  title: string;
+  text: string;
+  description: string | null;
+} {
+  const $ = load(html);
+  $('script, style, noscript, template, svg, nav, footer, header, form').remove();
+  $('br').replaceWith('\n');
+  $('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, tr').each((_, element) => {
+    $(element).append('\n\n');
+  });
 
-  const clean = cleanExtractedText(textToClean);
-  const pageEstimate = Math.max(1, Math.ceil(clean.length / 2000));
-
+  const root = $('main').first().length
+    ? $('main').first()
+    : $('article').first().length
+      ? $('article').first()
+      : $('body');
   return {
-    title: title || 'PDF Document',
-    rawText: extractedText || clean,
-    cleanText: clean || `[PDF Document: ${title}] Content extracted and validated.`,
-    metadata: {
-      sourceType: 'PDF',
-      pagesEstimate: pageEstimate,
-      characters: clean.length,
-      parsedAt: new Date().toISOString(),
-    },
+    title: cleanExtractedText($('title').first().text()),
+    text: cleanExtractedText(root.text()),
+    description:
+      $('meta[name="description"]').attr('content')?.trim() ||
+      $('meta[property="og:description"]').attr('content')?.trim() ||
+      null,
   };
 }
 
-// 2. Website Parser
 async function parseWebsiteSource(
-  title: string,
-  url?: string | null,
-  rawContent?: string | null
+  input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
-  let pageHtml = rawContent || '';
-  let fetchedTitle = title;
-  let domain = 'web';
+  let html =
+    input.originalContent && /<html|<!doctype|<body/i.test(input.originalContent)
+      ? input.originalContent
+      : '';
+  let sourceUrl = input.sourceUrl || null;
+  let mimeType = input.artifactMimeType || 'text/html';
 
-  if (url) {
-    try {
-      const urlObj = new URL(url);
-      domain = urlObj.hostname;
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 LumoraBot/1.0',
-        },
-      });
+  if (!html) {
+    if (!sourceUrl) throw new Error('Website URL is missing');
+    const fetched = await safeFetch(sourceUrl, {
+      maximumBytes: WEBSITE_MAX_BYTES,
+      allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+    });
+    html = decodeUtf8(fetched.data);
+    sourceUrl = fetched.finalUrl;
+    mimeType = fetched.contentType;
+  }
+  assertTextSize(html, WEBSITE_MAX_BYTES, 'Website HTML');
+  await input.onParsing?.();
 
-      if (res.ok) {
-        pageHtml = await res.text();
-      }
-    } catch (err) {
-      logger.warn('Website fetch failed, processing fallback HTML/URL content', err);
-    }
+  const extracted = extractHtmlContent(html);
+  if (extracted.text.length < 20) {
+    throw new Error('Website extraction produced no meaningful readable content');
   }
 
-  // Extract <title> if present
-  const titleMatch = pageHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (titleMatch && titleMatch[1]) {
-    fetchedTitle = titleMatch[1].trim();
-  }
-
-  // Strip scripts, styles, header, footer, nav
-  let bodyText = pageHtml
-    .replace(/<script\b[^<]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style\b[^<]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<nav\b[^<]*>[\s\S]*?<\/nav>/gi, '')
-    .replace(/<footer\b[^<]*>[\s\S]*?<\/footer>/gi, '')
-    .replace(/<header\b[^<]*>[\s\S]*?<\/header>/gi, '')
-    .replace(/<[^>]+>/g, ' ');
-
-  const clean = cleanExtractedText(bodyText);
-
+  const url = new URL(sourceUrl!);
   return {
-    title: fetchedTitle || title || url || 'Ingested Webpage',
-    rawText: pageHtml || clean,
-    cleanText:
-      clean || `[Web Source: ${url}] Article content extracted and normalized for knowledge indexing.`,
+    title: extracted.title || input.title,
+    rawText: extracted.text,
+    cleanText: extracted.text,
+    originalContent: html,
+    artifactMimeType: mimeType,
+    artifactSize: Buffer.byteLength(html, 'utf8'),
+    sourceUrl,
     metadata: {
       sourceType: 'WEBSITE',
-      url: url || null,
-      domain,
-      characters: clean.length,
+      url: sourceUrl,
+      domain: url.hostname,
+      description: extracted.description,
+      characters: extracted.text.length,
       parsedAt: new Date().toISOString(),
     },
+    parserVersion: PARSER_VERSIONS.WEBSITE,
   };
 }
 
-// 3. Plain Text Parser
 async function parsePlainTextSource(
-  title: string,
-  rawContent?: string | null
+  input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
-  const text = rawContent || '';
-  const clean = cleanExtractedText(text);
+  const original = input.originalContent || '';
+  assertTextSize(original, TEXT_MAX_BYTES, 'Plain text source');
+  await input.onParsing?.();
+  const cleanText = cleanExtractedText(original);
+  if (cleanText.length < 5) {
+    throw new Error('Plain text source contains no meaningful content');
+  }
 
   return {
-    title: title || 'Plain Text Source',
-    rawText: text,
-    cleanText: clean,
+    title: input.title,
+    rawText: original,
+    cleanText,
+    originalContent: original,
+    artifactMimeType: input.artifactMimeType || 'text/plain',
+    artifactSize: Buffer.byteLength(original, 'utf8'),
+    sourceUrl: input.sourceUrl,
     metadata: {
       sourceType: 'TEXT',
-      characters: clean.length,
-      wordCount: clean.split(/\s+/).length,
+      characters: cleanText.length,
+      wordCount: cleanText.split(/\s+/).length,
       parsedAt: new Date().toISOString(),
     },
+    parserVersion: PARSER_VERSIONS.TEXT,
   };
 }
 
 export function extractYouTubeVideoId(url: string): string | null {
-  if (!url) return null;
   try {
-    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
-    if (parsed.hostname.includes('youtu.be')) {
-      const path = parsed.pathname.substring(1);
-      if (path && path.length === 11) return path;
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0];
+      return id?.length === 11 ? id : null;
     }
-    const vParam = parsed.searchParams.get('v');
-    if (vParam && vParam.length === 11) return vParam;
-  } catch (e) {
-    // Ignore URL parse errors
-  }
-
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  if (match && match[2] && match[2].length === 11) {
-    return match[2];
+    if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
+      const pathId = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/)?.[1];
+      const id = parsed.searchParams.get('v') || pathId;
+      return id?.length === 11 ? id : null;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
 
-// 4. YouTube Parser
 async function parseYouTubeSource(
-  title: string,
-  url?: string | null,
-  rawContent?: string | null
+  input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
-  let videoId = url ? extractYouTubeVideoId(url) : null;
-  let videoTitle = title;
-  let transcriptText = rawContent || '';
-  let transcriptFetchError: string | null = null;
+  const sourceUrl = input.sourceUrl || '';
+  const videoId = extractYouTubeVideoId(sourceUrl);
+  if (!videoId) throw new Error('YouTube URL does not contain a valid video ID');
 
-  // Fetch YouTube video title from page HTML if URL/videoId provided
-  if (url && (videoId || url.includes('youtube.com') || url.includes('youtu.be'))) {
+  let storedTranscript: {
+    kind: string;
+    language: string | null;
+    cues: Array<{ text: string; offset: number; duration: number; lang?: string }>;
+  } | null = null;
+  if (input.originalContent?.startsWith('{"kind":"youtube-transcript-v1"')) {
     try {
-      const targetUrl = url.startsWith('http') ? url : `https://www.youtube.com/watch?v=${videoId || ''}`;
-      const res = await fetch(targetUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
+      storedTranscript = JSON.parse(input.originalContent);
+    } catch {
+      throw new Error('Persisted YouTube transcript artifact is invalid');
+    }
+  }
+
+  let cues = storedTranscript?.cues || [];
+  if (cues.length === 0) {
+    const { YoutubeTranscript } = await import('youtube-transcript');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      cues = await YoutubeTranscript.fetchTranscript(videoId, {
+        fetch: (url, init) =>
+          fetch(url, {
+            ...init,
+            signal: controller.signal,
+          }),
       });
-      if (res.ok) {
-        const html = await res.text();
-        const tMatch = html.match(/<title>([^<]+)<\/title>/i);
-        if (tMatch && tMatch[1]) {
-          videoTitle = tMatch[1].replace('- YouTube', '').trim();
-        }
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error('YouTube transcript retrieval timed out');
       }
-    } catch (err) {
-      logger.warn('YouTube page title fetch failed', err);
+      throw new Error(
+        `YouTube transcript retrieval failed: ${error?.message || 'transcript unavailable'}`,
+      );
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  // Retrieve real transcript using YoutubeTranscript if rawContent is empty
-  if (!transcriptText && (videoId || url)) {
-    const target = videoId || url || '';
-    try {
-      const { YoutubeTranscript } = await import('youtube-transcript');
-      const transcriptList = await YoutubeTranscript.fetchTranscript(target);
-      if (Array.isArray(transcriptList) && transcriptList.length > 0) {
-        transcriptText = transcriptList
-          .map((item) => item.text)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-      }
-    } catch (err: any) {
-      transcriptFetchError = err?.message || 'Transcript unavailable';
-      logger.warn(`YoutubeTranscript fetch failed for ${target}: ${transcriptFetchError}`);
-    }
+  await input.onParsing?.();
+  if (!Array.isArray(cues) || cues.length === 0) {
+    throw new Error('YouTube transcript is unavailable or empty');
   }
 
-  // Ensure real transcript was fetched
-  if (!transcriptText || transcriptText.trim().length === 0) {
-    const cleanReason = transcriptFetchError
-      ? transcriptFetchError.replace(/^\[YoutubeTranscript\]\s*🚨?\s*/i, '').trim()
-      : '';
-    const reasonText = cleanReason
-      ? ` Reason: ${cleanReason}.`
-      : '';
-    throw new Error(
-      `No public transcript or captions available for YouTube video "${videoTitle || videoId || url}".${reasonText} Please ensure the video has closed captions enabled.`
-    );
-  }
-
-  const clean = cleanExtractedText(transcriptText);
-
-  if (!clean || clean.trim().length === 0) {
-    throw new Error(
-      `Extracted transcript for YouTube video "${videoTitle || videoId}" contained no readable text.`
-    );
-  }
+  const language = storedTranscript?.language || cues.find((cue) => cue.lang)?.lang || null;
+  const preserved = {
+    kind: 'youtube-transcript-v1',
+    language,
+    cues: cues.map((cue) => ({
+      text: cue.text,
+      offset: cue.offset,
+      duration: cue.duration,
+      lang: cue.lang,
+    })),
+  };
+  const rawText = preserved.cues
+    .map(
+      (cue) =>
+        `[${formatMilliseconds(cue.offset)} - ${formatMilliseconds(
+          cue.offset + cue.duration,
+        )}] ${cue.text}`,
+    )
+    .join('\n');
+  const cleanText = cleanExtractedText(rawText);
+  if (!cleanText) throw new Error('YouTube transcript contains no readable text');
 
   return {
-    title: videoTitle || title || `YouTube Video (${videoId || 'Source'})`,
-    rawText: transcriptText,
-    cleanText: clean,
+    title: input.title,
+    rawText,
+    cleanText,
+    originalContent: JSON.stringify(preserved),
+    artifactMimeType: 'application/vnd.lumora.youtube-transcript+json',
+    artifactSize: Buffer.byteLength(JSON.stringify(preserved), 'utf8'),
+    sourceUrl,
     metadata: {
       sourceType: 'YOUTUBE',
       videoId,
-      url: url || null,
-      characters: clean.length,
+      url: sourceUrl,
+      language,
+      cueCount: preserved.cues.length,
+      cues: preserved.cues,
       parsedAt: new Date().toISOString(),
     },
+    parserVersion: PARSER_VERSIONS.YOUTUBE,
   };
 }
 
-// 5. VTT Subtitle Parser
-async function parseVTTSource(
-  title: string,
-  rawContent?: string | null,
-  url?: string | null
+function parseTimestamp(timestamp: string): number {
+  const parts = timestamp.split(':').map(Number);
+  if (parts.some(Number.isNaN) || parts.length < 2 || parts.length > 3) {
+    throw new Error(`Invalid VTT timestamp "${timestamp}"`);
+  }
+  const seconds =
+    parts.length === 3
+      ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+      : parts[0] * 60 + parts[1];
+  return Math.round(seconds * 1000);
+}
+
+function formatMilliseconds(milliseconds: number): string {
+  const totalSeconds = milliseconds / 1000;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = (totalSeconds % 60).toFixed(3).padStart(6, '0');
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${seconds}`;
+}
+
+export function parseVttDocument(vtt: string): Array<{
+  identifier: string | null;
+  startMs: number;
+  endMs: number;
+  speaker: string | null;
+  text: string;
+}> {
+  if (!vtt.trimStart().startsWith('WEBVTT')) {
+    throw new Error('VTT source must begin with a WEBVTT header');
+  }
+
+  const blocks = vtt.replace(/^\uFEFF/, '').split(/\r?\n\r?\n+/).slice(1);
+  const cues: Array<{
+    identifier: string | null;
+    startMs: number;
+    endMs: number;
+    speaker: string | null;
+    text: string;
+  }> = [];
+
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).map((line) => line.trim());
+    if (!lines.length || /^(NOTE|STYLE|REGION)(\s|$)/i.test(lines[0])) continue;
+    const timingIndex = lines.findIndex((line) => line.includes('-->'));
+    if (timingIndex < 0) continue;
+
+    const timing = lines[timingIndex].match(
+      /^(\d{2}:\d{2}(?::\d{2})?\.\d{3})\s+-->\s+(\d{2}:\d{2}(?::\d{2})?\.\d{3})(?:\s+.*)?$/,
+    );
+    if (!timing) throw new Error(`Invalid VTT cue timing "${lines[timingIndex]}"`);
+
+    const cueMarkup = lines.slice(timingIndex + 1).join('\n').trim();
+    const speaker = cueMarkup.match(/<v(?:\.[^ >]+)*\s+([^>]+)>/i)?.[1]?.trim() || null;
+    const text = cleanExtractedText(cueMarkup.replace(/<[^>]+>/g, ' '));
+    if (!text) continue;
+
+    const startMs = parseTimestamp(timing[1]);
+    const endMs = parseTimestamp(timing[2]);
+    if (endMs <= startMs) throw new Error('VTT cue end time must follow start time');
+
+    cues.push({
+      identifier: timingIndex > 0 ? lines[0] || null : null,
+      startMs,
+      endMs,
+      speaker,
+      text,
+    });
+  }
+  if (cues.length === 0) throw new Error('VTT source contains no valid caption cues');
+  return cues;
+}
+
+async function parseVttSource(
+  input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
-  let vttText = rawContent || '';
+  let original = input.originalContent || '';
+  let sourceUrl = input.sourceUrl || null;
+  let mimeType = input.artifactMimeType || 'text/vtt';
 
-  if (!vttText && url) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) {
-        vttText = await res.text();
-      }
-    } catch (err) {
-      logger.warn('Failed to fetch VTT file', err);
-    }
+  if (!original && sourceUrl) {
+    const fetched = await safeFetch(sourceUrl, {
+      maximumBytes: VTT_MAX_BYTES,
+      allowedContentTypes: ['text/vtt', 'text/plain'],
+    });
+    original = decodeUtf8(fetched.data);
+    sourceUrl = fetched.finalUrl;
+    mimeType = fetched.contentType;
   }
+  assertTextSize(original, VTT_MAX_BYTES, 'VTT source');
+  await input.onParsing?.();
 
-  // Parse WEBVTT format lines
-  const lines = vttText.split('\n');
-  const spokenLines: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Ignore header lines, cue numbers, or timestamp arrows
-    if (
-      !trimmed ||
-      trimmed.toUpperCase().startsWith('WEBVTT') ||
-      trimmed.toUpperCase().startsWith('KIND:') ||
-      trimmed.toUpperCase().startsWith('LANGUAGE:') ||
-      trimmed.includes('-->') ||
-      /^\d+$/.test(trimmed)
-    ) {
-      continue;
-    }
-
-    // Strip HTML subtitle tags like <v Speaker> or <i>
-    const cleanLine = trimmed.replace(/<[^>]+>/g, '');
-    if (cleanLine) {
-      // Deduplicate consecutive identical caption lines
-      if (spokenLines.length === 0 || spokenLines[spokenLines.length - 1] !== cleanLine) {
-        spokenLines.push(cleanLine);
-      }
-    }
-  }
-
-  const continuousTranscript = spokenLines.join(' ');
-  const clean = cleanExtractedText(continuousTranscript || vttText);
+  const cues = parseVttDocument(original);
+  const rawText = cues
+    .map(
+      (cue) =>
+        `[${formatMilliseconds(cue.startMs)} --> ${formatMilliseconds(cue.endMs)}] ${
+          cue.speaker ? `${cue.speaker}: ` : ''
+        }${cue.text}`,
+    )
+    .join('\n');
+  const cleanText = cleanExtractedText(rawText);
 
   return {
-    title: title || 'VTT Subtitle Transcript',
-    rawText: vttText,
-    cleanText: clean || `[VTT Transcript: ${title}] Subtitle track extracted.`,
+    title: input.title,
+    rawText,
+    cleanText,
+    originalContent: original,
+    artifactFileName: input.artifactFileName,
+    artifactMimeType: mimeType,
+    artifactSize: Buffer.byteLength(original, 'utf8'),
+    sourceUrl,
     metadata: {
       sourceType: 'VTT',
-      cueLinesCount: spokenLines.length,
-      characters: clean.length,
+      cueCount: cues.length,
+      cues,
+      speakers: [...new Set(cues.map((cue) => cue.speaker).filter(Boolean))],
       parsedAt: new Date().toISOString(),
     },
+    parserVersion: PARSER_VERSIONS.VTT,
   };
 }

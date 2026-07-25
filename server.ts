@@ -21,7 +21,7 @@ async function startServer() {
       secretKey: env.CLERK_SECRET_KEY,
     }),
   );
-  app.use(express.json());
+  app.use(express.json({ limit: '3mb' }));
 
   // Workspace API routes
   app.use('/api/workspaces', workspaceRouter);

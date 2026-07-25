@@ -80,7 +80,6 @@ export function AddSourceModal({
   const [urlInput, setUrlInput] = useState('');
   const [textContent, setTextContent] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileRawText, setFileRawText] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,15 +93,6 @@ export function AddSourceModal({
       if (!titleInput) {
         setTitleInput(file.name);
       }
-
-      // Read file content text
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setFileRawText(event.target.result as string);
-        }
-      };
-      reader.readAsText(file);
     }
   };
 
@@ -124,8 +114,16 @@ export function AddSourceModal({
         finalTitle = selectedFile ? selectedFile.name : finalUrl.split('/').pop() || 'Document.pdf';
       }
       if (selectedFile) {
+        if (selectedFile.type !== 'application/pdf') {
+          setError('The selected file is not a PDF.');
+          return;
+        }
+        if (selectedFile.size > 20 * 1024 * 1024) {
+          setError('PDF files cannot exceed 20 MB.');
+          return;
+        }
         finalSize = `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`;
-        payloadRawContent = fileRawText || `[PDF Document: ${selectedFile.name}]`;
+        payloadRawContent = undefined;
       }
     } else if (selectedType === 'WEBSITE') {
       if (!finalUrl) {
@@ -154,8 +152,12 @@ export function AddSourceModal({
         finalTitle = selectedFile ? selectedFile.name : 'Subtitle_Captions.vtt';
       }
       if (selectedFile) {
+        if (selectedFile.size > 2 * 1024 * 1024) {
+          setError('VTT files cannot exceed 2 MB.');
+          return;
+        }
         finalSize = `${(selectedFile.size / 1024).toFixed(1)} KB`;
-        payloadRawContent = fileRawText || textContent;
+        payloadRawContent = undefined;
       }
     } else if (selectedType === 'TEXT') {
       if (!textContent.trim()) {
@@ -171,20 +173,24 @@ export function AddSourceModal({
 
     try {
       setSubmitting(true);
+      const formData = new FormData();
+      formData.set('title', finalTitle);
+      formData.set('type', selectedType);
+      if (finalUrl) formData.set('url', finalUrl);
+      if (payloadRawContent) formData.set('rawContent', payloadRawContent);
+      if (selectedFile) formData.set('file', selectedFile);
+      formData.set(
+        'metadata',
+        JSON.stringify({
+          uploadedAt: new Date().toISOString(),
+          originalFileName: selectedFile?.name || null,
+          clientReportedSize: finalSize,
+        }),
+      );
+
       const res = await fetch(`/api/workspaces/${workspaceId}/sources`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: finalTitle,
-          type: selectedType,
-          url: finalUrl || null,
-          fileSize: finalSize,
-          rawContent: payloadRawContent,
-          metadata: {
-            uploadedAt: new Date().toISOString(),
-            originalFileName: selectedFile?.name || null,
-          },
-        }),
+        body: formData,
       });
 
       if (!res.ok) {
@@ -211,7 +217,6 @@ export function AddSourceModal({
     setUrlInput('');
     setTextContent('');
     setSelectedFile(null);
-    setFileRawText(null);
     setError(null);
     onClose();
   };
@@ -313,7 +318,7 @@ export function AddSourceModal({
                   <div className="relative border-2 border-dashed border-slate-800 hover:border-sky-500/50 rounded-xl p-4 text-center bg-slate-900/40 transition-colors">
                     <input
                       type="file"
-                      accept=".pdf,.txt"
+                      accept=".pdf,application/pdf"
                       onChange={handleFileChange}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
@@ -321,7 +326,7 @@ export function AddSourceModal({
                     <p className="text-xs text-slate-300 font-medium">
                       {selectedFile ? selectedFile.name : 'Click or drop PDF document here'}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Supports documents up to 25MB</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Supports PDF documents up to 20MB</p>
                   </div>
                 </div>
 
@@ -372,7 +377,7 @@ export function AddSourceModal({
                   <div className="relative border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-3 text-center bg-slate-900/40 transition-colors">
                     <input
                       type="file"
-                      accept=".vtt,.txt"
+                      accept=".vtt,text/vtt"
                       onChange={handleFileChange}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />

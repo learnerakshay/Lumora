@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
+import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import {
   getWorkspaces,
@@ -10,12 +11,12 @@ import {
 import {
   getWorkspaceSources,
   createSource,
-  updateSource,
+  createReprocessingVersion,
   updateWorkspaceSource,
   deleteWorkspaceSource,
   SourceType,
 } from '../lib/source-store';
-import { validateSourceInput } from '../lib/ingestion/validators';
+import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
 import { processSourcePipeline } from '../lib/ingestion/pipeline';
 import { getWorkspaceChunks } from '../lib/chunk-store';
 import { searchWorkspaceChunks, buildRAGContext } from '../lib/retrieval/rag-service';
@@ -30,6 +31,34 @@ import { successResponse, errorResponse } from '../lib/api-response';
 import { logger } from '../lib/logger';
 
 export const workspaceRouter = Router();
+
+const sourceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: SOURCE_LIMITS.PDF_BYTES,
+    files: 1,
+    fields: 8,
+    parts: 9,
+    fieldSize: SOURCE_LIMITS.TEXT_BYTES,
+    fieldNestingDepth: 0,
+  },
+});
+
+const sourceUploadMiddleware: RequestHandler = (req, res, next) => {
+  sourceUpload.single('file')(req, res, (error: any) => {
+    if (!error) {
+      next();
+      return;
+    }
+
+    const message =
+      error.code === 'LIMIT_FILE_SIZE'
+        ? 'Uploaded file exceeds the 20 MB limit.'
+        : `Invalid source upload: ${error.message || 'multipart parsing failed'}`;
+    const response = errorResponse(AppError.badRequest(message, 'INVALID_SOURCE_UPLOAD'));
+    res.status(response.statusCode).json(response.payload);
+  });
+};
 
 workspaceRouter.use(requireApiAuth);
 
@@ -179,60 +208,119 @@ workspaceRouter.get('/:id/sources', async (req: Request, res: Response) => {
 });
 
 // POST /api/workspaces/:id/sources
-workspaceRouter.post('/:id/sources', async (req: Request, res: Response) => {
+workspaceRouter.post(
+  '/:id/sources',
+  sourceUploadMiddleware,
+  async (req: Request, res: Response) => {
   try {
     const workspaceId = res.locals.workspace.id;
-    const { title, type, url, fileSize, rawContent, metadata } = req.body || {};
+    const { title, type, url, rawContent } = req.body || {};
+    let metadata: Record<string, any> = {};
+    if (typeof req.body?.metadata === 'string' && req.body.metadata) {
+      try {
+        metadata = JSON.parse(req.body.metadata);
+      } catch {
+        const response = errorResponse(
+          AppError.badRequest('Source metadata must be valid JSON', 'INVALID_SOURCE_METADATA'),
+        );
+        return res.status(response.statusCode).json(response.payload);
+      }
+    } else if (req.body?.metadata && typeof req.body.metadata === 'object') {
+      metadata = req.body.metadata;
+    }
 
     const validTypes: SourceType[] = ['PDF', 'WEBSITE', 'TEXT', 'YOUTUBE', 'VTT'];
-    const sourceType: SourceType = validTypes.includes(type) ? type : 'TEXT';
+    if (!validTypes.includes(type)) {
+      const response = errorResponse(
+        AppError.badRequest('Source type is invalid', 'INVALID_SOURCE_TYPE'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+    const sourceType = type as SourceType;
 
-    // 1. Fetch existing workspace sources to validate duplicates
     const existingSources = await getWorkspaceSources(workspaceId);
-
-    // 2. Validate Source Upload Input
     const validation = validateSourceInput({
       workspaceId,
       title: title || '',
       type: sourceType,
       url,
-      fileSize,
       rawContent,
+      file: req.file || null,
       existingSources,
     });
 
     if (!validation.valid) {
-      return res.status(400).json(errorResponse(new Error(validation.error || 'Invalid source input')).payload);
+      const response = errorResponse(
+        AppError.badRequest(
+          validation.error || 'Invalid source input',
+          'INVALID_SOURCE_INPUT',
+        ),
+      );
+      return res.status(response.statusCode).json(response.payload);
     }
 
     const finalUrl = validation.normalizedUrl || url;
+    let originalContent = rawContent || null;
+    let artifactData: Uint8Array | null = null;
+    let artifactMimeType: string | null = null;
+    let artifactFileName: string | null = null;
+    let artifactSize: number | null = null;
 
-    // 3. Create Source record with PROCESSING status
+    if (req.file) {
+      artifactMimeType = req.file.mimetype;
+      artifactFileName = req.file.originalname;
+      artifactSize = req.file.size;
+      if (sourceType === 'PDF') {
+        artifactData = req.file.buffer;
+        originalContent = null;
+      } else if (sourceType === 'VTT') {
+        try {
+          originalContent = new TextDecoder('utf-8', { fatal: true }).decode(
+            req.file.buffer,
+          );
+        } catch {
+          const response = errorResponse(
+            AppError.badRequest(
+              'Uploaded VTT must contain valid UTF-8 text',
+              'INVALID_VTT_ENCODING',
+            ),
+          );
+          return res.status(response.statusCode).json(response.payload);
+        }
+      }
+    }
+
+    const displaySize = artifactSize
+      ? `${(artifactSize / 1024).toFixed(1)} KB`
+      : originalContent
+        ? `${(Buffer.byteLength(originalContent, 'utf8') / 1024).toFixed(1)} KB`
+        : 'Remote source';
     const source = await createSource({
       workspaceId,
       title: (title || '').trim(),
       type: sourceType,
-      status: 'PROCESSING',
       url: finalUrl,
-      fileSize,
-      rawContent,
+      fileSize: displaySize,
       metadata: {
-        ...(metadata || {}),
-        stage: 'QUEUED',
-        stageProgress: 5,
-        url: finalUrl || null,
+        ...metadata,
+        uploadedAt: new Date().toISOString(),
+      },
+      artifact: {
+        originalContent,
+        artifactData,
+        fileName: artifactFileName,
+        mimeType: artifactMimeType,
+        size: artifactSize,
+        sourceUrl: finalUrl || null,
       },
     });
 
-    // 4. Trigger Ingestion Pipeline asynchronously
     processSourcePipeline({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: sourceType,
-      url: finalUrl,
-      fileSize,
-      rawContent,
+      version: source.currentVersion,
     }).catch((err) => {
       logger.error(`Background ingestion pipeline error for source ${source.id}`, err);
     });
@@ -244,7 +332,8 @@ workspaceRouter.post('/:id/sources', async (req: Request, res: Response) => {
       .status(500)
       .json(errorResponse(new Error('Failed to add workspace source')).payload);
   }
-});
+  },
+);
 
 // POST /api/workspaces/:id/sources/:sourceId/reprocess (Retry capability)
 workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, res: Response) => {
@@ -258,26 +347,14 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
       return res.status(404).json(errorResponse(new Error('Source not found')).payload);
     }
 
-    // Update status to PROCESSING with reset stage metadata
-    await updateSource(sourceId, {
-      status: 'PROCESSING',
-      metadata: {
-        ...(source.metadata || {}),
-        stage: 'QUEUED',
-        stageProgress: 10,
-        errorMessage: null,
-      },
-    });
+    const version = await createReprocessingVersion(sourceId);
 
-    // Trigger pipeline in background
     processSourcePipeline({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: source.type,
-      url: source.url,
-      fileSize: source.fileSize,
-      rawContent: source.metadata?.rawContent || source.metadata?.rawContentSnippet || null,
+      version,
     }).catch((err) => {
       logger.error(`Reprocessing pipeline error for source ${source.id}`, err);
     });
@@ -285,13 +362,28 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
     return res.status(200).json(
       successResponse({
         id: source.id,
-        status: 'PROCESSING',
+        status: 'PENDING',
+        stage: 'CREATED',
+        version,
         message: 'Source reprocessing started.',
       })
     );
   } catch (err: any) {
     logger.error('Failed to reprocess source', err);
-    return res.status(500).json(errorResponse(new Error('Failed to reprocess source')).payload);
+    if (
+      err?.message === 'Source is already being processed' ||
+      err?.message === 'Persisted original source artifact not found'
+    ) {
+      const statusCode =
+        err.message === 'Source is already being processed' ? 409 : 422;
+      const response = errorResponse(
+        new AppError(err.message, statusCode, 'SOURCE_REPROCESSING_UNAVAILABLE'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+    return res
+      .status(500)
+      .json(errorResponse(new Error('Failed to reprocess source')).payload);
   }
 });
 
@@ -300,12 +392,21 @@ workspaceRouter.patch('/:id/sources/:sourceId', async (req: Request, res: Respon
   try {
     const sourceId = req.params.sourceId;
     const { title, status } = req.body || {};
+    if (status !== undefined) {
+      const response = errorResponse(
+        AppError.badRequest(
+          'Source processing status is controlled by the ingestion pipeline',
+          'IMMUTABLE_SOURCE_STATUS',
+        ),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
 
     const updated = await updateWorkspaceSource(
       res.locals.workspace.id,
       sourceId,
       res.locals.userId,
-      { title, status },
+      { title },
     );
     if (!updated) {
       return res

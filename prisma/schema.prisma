@@ -27,6 +27,20 @@ enum SourceStatus {
   FAILED
 }
 
+enum ProcessingStage {
+  CREATED
+  QUEUED
+  PROCESSING
+  FETCHING
+  PARSING
+  CHUNKING
+  READY_FOR_INDEXING
+  EMBEDDING
+  INDEXING
+  COMPLETED
+  FAILED
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -77,11 +91,14 @@ model Source {
   title       String
   type        SourceType
   status      SourceStatus  @default(PENDING)
+  stage       ProcessingStage @default(CREATED)
+  currentVersion Int        @default(1)
   metadata    Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   contents    SourceContent[]
+  processingAttempts SourceProcessingAttempt[]
   chunks      Chunk[]
 
   @@index([workspaceId])
@@ -90,14 +107,59 @@ model Source {
 }
 
 model SourceContent {
-  id         String   @id @default(cuid())
-  sourceId   String
-  source     Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  rawContent String   @db.Text
-  cleanText  String   @db.Text
-  createdAt  DateTime @default(now())
+  id                  String   @id @default(cuid())
+  sourceId            String
+  source              Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  version             Int      @default(1)
+  originalContent     String?  @db.Text
+  artifactData        Bytes?
+  artifactFileName    String?
+  artifactMimeType    String?
+  artifactSize        Int?
+  sourceUrl           String?
+  rawContent          String   @db.Text
+  cleanText           String   @db.Text
+  parserMetadata      Json?
+  parserVersion       String
+  checksum            String
+  processingStartedAt DateTime?
+  processedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([sourceId])
+  @@unique([sourceId, version])
+}
+
+model SourceProcessingAttempt {
+  id          String          @id @default(cuid())
+  sourceId    String
+  source      Source          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  version     Int
+  stage       ProcessingStage @default(CREATED)
+  errorMessage String?        @db.Text
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  events SourceProcessingEvent[]
+
+  @@unique([sourceId, version])
+  @@index([sourceId])
+  @@index([stage])
+}
+
+model SourceProcessingEvent {
+  id        String                  @id @default(cuid())
+  attemptId String
+  attempt   SourceProcessingAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  stage     ProcessingStage
+  details   Json?
+  createdAt DateTime                @default(now())
+
+  @@index([attemptId])
+  @@index([createdAt])
 }
 
 model Chunk {

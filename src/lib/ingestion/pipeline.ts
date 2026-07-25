@@ -1,7 +1,11 @@
-import { SourceType, updateSource, getWorkspaceSources } from '../source-store';
-import { validateSourceInput } from './validators';
+import {
+  getSourceArtifact,
+  persistParsedSourceArtifact,
+  ProcessingStage,
+  SourceType,
+  transitionProcessingStage,
+} from '../source-store';
 import { parseSourceContent } from './parsers';
-import { cleanExtractedText } from './cleaner';
 import { generateSemanticChunks } from './chunker';
 import { generateEmbeddingsBatch } from './embedder';
 import { saveSourceChunks } from '../chunk-store';
@@ -12,9 +16,23 @@ export interface IngestionOptions {
   workspaceId: string;
   title: string;
   type: SourceType;
-  url?: string | null;
-  fileSize?: string | null;
-  rawContent?: string | null;
+  version?: number;
+}
+
+function requiresRemoteFetch(
+  type: SourceType,
+  artifact: Awaited<ReturnType<typeof getSourceArtifact>>,
+): boolean {
+  if (!artifact) return false;
+  if (type === 'PDF') return !artifact.artifactData && Boolean(artifact.sourceUrl);
+  if (type === 'WEBSITE') {
+    return !artifact.originalContent || !/<html|<!doctype|<body/i.test(artifact.originalContent);
+  }
+  if (type === 'YOUTUBE') {
+    return !artifact.originalContent?.startsWith('{"kind":"youtube-transcript-v1"');
+  }
+  if (type === 'VTT') return !artifact.originalContent && Boolean(artifact.sourceUrl);
+  return false;
 }
 
 export async function processSourcePipeline(options: IngestionOptions): Promise<{
@@ -23,139 +41,213 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   tokenCount: number;
   error?: string;
 }> {
-  const { sourceId, workspaceId, title, type, url, fileSize, rawContent } = options;
+  const artifact = await getSourceArtifact(options.sourceId, options.version);
+  if (!artifact) {
+    throw new Error(`Persisted artifact not found for source ${options.sourceId}`);
+  }
+  const version = artifact.version;
 
-  logger.info(`Starting Ingestion Pipeline for Source [${sourceId}] (${type}): "${title}"`);
+  logger.info(
+    `Starting ingestion for source [${options.sourceId}] version ${version} (${options.type})`,
+  );
 
   try {
-    // 1. Stage: QUEUED
-    await updateSourceStage(sourceId, 'QUEUED', 5);
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'QUEUED',
+    });
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'PROCESSING',
+    });
 
-    // 2. Stage: FETCHING (for YouTube / web / remote content) or PARSING
-    if (type === 'YOUTUBE' || type === 'WEBSITE' || type === 'VTT') {
-      await updateSourceStage(sourceId, 'FETCHING', 15);
+    const needsFetch = requiresRemoteFetch(options.type, artifact);
+    let parsingTransitionCompleted = false;
+    if (needsFetch) {
+      await transitionProcessingStage({
+        sourceId: options.sourceId,
+        version,
+        nextStage: 'FETCHING',
+      });
     } else {
-      await updateSourceStage(sourceId, 'PARSING', 25);
+      await transitionProcessingStage({
+        sourceId: options.sourceId,
+        version,
+        nextStage: 'PARSING',
+      });
+      parsingTransitionCompleted = true;
     }
 
     const parsed = await parseSourceContent({
-      type,
-      title,
-      url,
-      rawContent,
+      type: options.type,
+      title: options.title,
+      sourceUrl: artifact.sourceUrl,
+      originalContent: artifact.originalContent,
+      artifactData: artifact.artifactData,
+      artifactFileName: artifact.artifactFileName,
+      artifactMimeType: artifact.artifactMimeType,
+      parserMetadata: artifact.parserMetadata,
+      onParsing: async () => {
+        if (!parsingTransitionCompleted) {
+          await transitionProcessingStage({
+            sourceId: options.sourceId,
+            version,
+            nextStage: 'PARSING',
+          });
+          parsingTransitionCompleted = true;
+        }
+      },
     });
 
-    if (type === 'YOUTUBE' || type === 'WEBSITE' || type === 'VTT') {
-      await updateSourceStage(sourceId, 'PARSING', 30);
+    if (!parsingTransitionCompleted) {
+      throw new Error('Parser did not enter the PARSING stage');
+    }
+    if (!parsed.cleanText.trim() || !parsed.rawText.trim()) {
+      throw new Error(`${options.type} parser produced empty content`);
     }
 
-    if (!parsed.cleanText || parsed.cleanText.trim().length === 0) {
-      throw new Error(`Failed to extract readable content from ${type} source.`);
-    }
+    await persistParsedSourceArtifact({
+      sourceId: options.sourceId,
+      version,
+      originalContent: parsed.originalContent,
+      artifactData: parsed.artifactData,
+      artifactFileName: parsed.artifactFileName,
+      artifactMimeType: parsed.artifactMimeType,
+      artifactSize: parsed.artifactSize,
+      sourceUrl: parsed.sourceUrl,
+      rawContent: parsed.rawText,
+      cleanText: parsed.cleanText,
+      parserMetadata: parsed.metadata,
+      parserVersion: parsed.parserVersion,
+    });
 
-    // 3. Stage: CLEANING
-    await updateSourceStage(sourceId, 'CLEANING', 45);
-    const cleanedText = cleanExtractedText(parsed.cleanText);
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'CHUNKING',
+      details: {
+        parserVersion: parsed.parserVersion,
+        parsedTitle: parsed.title,
+        textLength: parsed.cleanText.length,
+        url: parsed.sourceUrl || null,
+        fileSize: parsed.artifactSize
+          ? `${(parsed.artifactSize / 1024).toFixed(1)} KB`
+          : null,
+      },
+    });
 
-    // 4. Stage: CHUNKING
-    await updateSourceStage(sourceId, 'CHUNKING', 60);
-    const chunks = generateSemanticChunks(cleanedText, {
+    const chunks = generateSemanticChunks(parsed.cleanText, {
       targetChunkSize: 1200,
       overlapSize: 200,
     });
-
     if (chunks.length === 0) {
-      throw new Error('Text chunking produced zero valid semantic segments.');
+      throw new Error('Chunking produced zero valid content segments');
     }
 
-    // 5. Stage: EMBEDDING
-    await updateSourceStage(sourceId, 'EMBEDDING', 75, { chunkCount: chunks.length });
-    const chunkTexts = chunks.map((c) => c.content);
-    const embeddings = await generateEmbeddingsBatch(chunkTexts);
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'READY_FOR_INDEXING',
+      details: { chunkCount: chunks.length },
+    });
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'EMBEDDING',
+      details: { chunkCount: chunks.length },
+    });
 
-    // Attach vectors to chunks
-    const chunksWithEmbeddings = chunks.map((chunk, idx) => ({
-      ...chunk,
-      embedding: embeddings[idx] || [],
-    }));
+    const embeddings = await generateEmbeddingsBatch(
+      chunks.map((chunk) => chunk.content),
+    );
+    if (
+      embeddings.length !== chunks.length ||
+      embeddings.some((embedding) => !Array.isArray(embedding) || embedding.length === 0)
+    ) {
+      throw new Error('Embedding generation did not return one vector per chunk');
+    }
 
-    // 6. Stage: INDEXING (Vector Storage)
-    await updateSourceStage(sourceId, 'INDEXING', 90, { chunkCount: chunks.length });
-    const savedChunks = await saveSourceChunks(workspaceId, sourceId, chunksWithEmbeddings);
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'INDEXING',
+      details: { chunkCount: chunks.length },
+    });
+    const savedChunks = await saveSourceChunks(
+      options.workspaceId,
+      options.sourceId,
+      chunks.map((chunk, index) => ({
+        ...chunk,
+        embedding: embeddings[index],
+      })),
+    );
+    if (savedChunks.length !== chunks.length || savedChunks.length === 0) {
+      throw new Error('Chunk persistence did not save the complete processed source');
+    }
 
-    const totalTokens = savedChunks.reduce((acc, curr) => acc + curr.tokenCount, 0);
-
-    // 7. Stage: INDEXED & COMPLETED
-    await updateSource(sourceId, {
-      status: 'COMPLETED',
-      metadata: {
-        stage: 'INDEXED',
-        stageProgress: 100,
+    const tokenCount = savedChunks.reduce(
+      (total, chunk) => total + chunk.tokenCount,
+      0,
+    );
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage: 'COMPLETED',
+      details: {
         chunkCount: savedChunks.length,
-        tokenCount: totalTokens,
-        textLength: cleanedText.length,
-        fileSize: fileSize || `${(cleanedText.length / 1024).toFixed(1)} KB`,
-        url: url || null,
-        parsedTitle: parsed.title,
-        processedAt: new Date().toISOString(),
-        errorMessage: null,
+        tokenCount,
+        textLength: parsed.cleanText.length,
+        parserVersion: parsed.parserVersion,
       },
     });
 
-    logger.info(`Successfully Ingested & Indexed Source [${sourceId}] with ${savedChunks.length} vectors (${totalTokens} tokens, ${cleanedText.length} chars)`);
+    logger.info(
+      `Completed ingestion for source [${options.sourceId}] version ${version}`,
+    );
+    return { success: true, chunkCount: savedChunks.length, tokenCount };
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unexpected ingestion failure';
+    logger.error(
+      `Ingestion failed for source [${options.sourceId}] version ${version}`,
+      error,
+    );
 
-    return {
-      success: true,
-      chunkCount: savedChunks.length,
-      tokenCount: totalTokens,
-    };
-  } catch (err: any) {
-    const errorMsg = err.message || 'An unexpected error occurred during ingestion.';
-    logger.error(`Ingestion Pipeline Failed for Source [${sourceId}]: ${errorMsg}`, err);
-
-    await updateSource(sourceId, {
-      status: 'FAILED',
-      metadata: {
-        stage: 'FAILED',
-        stageProgress: 0,
-        errorMessage: errorMsg,
-        failedAt: new Date().toISOString(),
-      },
-    });
+    try {
+      await transitionProcessingStage({
+        sourceId: options.sourceId,
+        version,
+        nextStage: 'FAILED',
+        errorMessage,
+      });
+    } catch (transitionError) {
+      logger.error(
+        `Failed to persist FAILED state for source [${options.sourceId}]`,
+        transitionError,
+      );
+      throw transitionError;
+    }
 
     return {
       success: false,
       chunkCount: 0,
       tokenCount: 0,
-      error: errorMsg,
+      error: errorMessage,
     };
   }
 }
 
-async function updateSourceStage(
-  sourceId: string,
-  stageName: string,
-  progressPct: number,
-  extra: Record<string, any> = {}
-) {
-  try {
-    await updateSource(sourceId, {
-      status: 'PROCESSING',
-      metadata: {
-        stage: stageName,
-        stageProgress: progressPct,
-        ...extra,
-      },
-    });
-  } catch (err) {
-    logger.warn(`Failed to update stage ${stageName} for source ${sourceId}`, err);
-  }
-}
-
-async function updateSourceMetadata(sourceId: string, metaPatch: Record<string, any>) {
-  try {
-    await updateSource(sourceId, { metadata: metaPatch });
-  } catch (err) {
-    logger.warn(`Failed to update metadata for source ${sourceId}`, err);
-  }
-}
+export const PROCESSING_STAGES: readonly ProcessingStage[] = [
+  'CREATED',
+  'QUEUED',
+  'PROCESSING',
+  'FETCHING',
+  'PARSING',
+  'CHUNKING',
+  'READY_FOR_INDEXING',
+  'EMBEDDING',
+  'INDEXING',
+  'COMPLETED',
+  'FAILED',
+];
