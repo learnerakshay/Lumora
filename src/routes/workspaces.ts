@@ -526,7 +526,25 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       .join('\n\n');
 
     // 3. Search Workspace Chunks (Vector Semantic Search with Workspace Isolation)
-    const retrievedChunks = await searchWorkspaceChunks(workspaceId, queryText, { topK: 5, threshold: 0.15 });
+    let retrievedChunks;
+    try {
+      retrievedChunks = await searchWorkspaceChunks(
+        workspaceId,
+        res.locals.userId,
+        queryText,
+        { topK: 5, threshold: 0.15 },
+      );
+    } catch (retrievalError: any) {
+      logger.error('Validated Workspace retrieval failed', retrievalError);
+      sendEvent({
+        type: 'error',
+        error: `Unable to retrieve validated indexed knowledge for this Workspace. ${
+          retrievalError?.message || 'Retrieval infrastructure is unavailable.'
+        }`,
+      });
+      res.end();
+      return;
+    }
 
     // 4. Build Context & Citations
     const ragContext = buildRAGContext(retrievedChunks, queryText, mode);
@@ -548,7 +566,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
 
     // 6. Gemini Generation Call
     const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
+    if (geminiKey && ragContext.hasContext) {
       try {
         const ai = new GoogleGenAI({
           apiKey: geminiKey,
@@ -577,7 +595,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       if (!ragContext.hasContext) {
         fullAnswerText = "I couldn't find sufficient information inside your current workspace to answer this question. Please upload relevant documents, web pages, or transcripts to expand your workspace knowledge.";
       } else {
-        const topChunk = retrievedChunks[0];
+        const topChunk = ragContext.chunks[0];
         fullAnswerText = `Based on your workspace source **${topChunk.sourceTitle}**:\n\n${topChunk.content}\n\n*This response was directly extracted from your grounded workspace knowledge base.*`;
       }
       sendEvent({ type: 'chunk', text: fullAnswerText });
@@ -591,12 +609,17 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       mode,
       citations: ragContext.citations.map((c) => ({
         chunkId: c.chunkId,
+        sourceId: c.sourceId,
+        indexId: c.indexId,
         title: c.title,
         snippet: c.snippet,
         kind: c.kind,
         score: c.score,
         url: c.url,
         page: c.page,
+        timestampStartMs: c.timestampStartMs,
+        timestampEndMs: c.timestampEndMs,
+        textOrigin: c.textOrigin,
       })),
     });
 

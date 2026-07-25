@@ -1,166 +1,680 @@
 import { prisma } from '../prisma';
-import { generateEmbeddingsBatch } from '../ingestion/embedder';
-import { getWorkspaceSources, SourceRecord } from '../source-store';
+import {
+  EmbeddingContract,
+  generateEmbeddingsBatch,
+  validateEmbeddingVector,
+} from '../ingestion/embedder';
+
+const DEFAULT_TOP_K = 5;
+const DEFAULT_THRESHOLD = 0.15;
+const DEFAULT_CONTEXT_TOKEN_BUDGET = 3_500;
+const MAX_TOP_K = 20;
+const MAX_QUERY_CHARACTERS = 32_000;
+
+type SourceType = 'PDF' | 'WEBSITE' | 'TEXT' | 'YOUTUBE' | 'VTT';
 
 export interface RetrievedChunk {
   id: string;
   sourceId: string;
   workspaceId: string;
+  indexId: string;
+  sourceVersion: number;
   content: string;
   tokenCount: number;
   chunkIndex: number;
   similarity: number;
   sourceTitle: string;
-  sourceType: string;
-  sourceUrl?: string | null;
-  sourceMetadata?: Record<string, any> | null;
+  sourceType: SourceType;
+  sourceUrl: string | null;
+  parserMetadata: Record<string, unknown> | null;
+  sourceCleanText: string;
+}
+
+export interface RAGCitation {
+  id: string;
+  chunkId: string;
+  sourceId: string;
+  indexId: string;
+  title: string;
+  snippet: string;
+  kind: 'DOCUMENT' | 'WEB';
+  score: number;
+  url: string | null;
+  page: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  textOrigin: string;
 }
 
 export interface RAGContextResult {
   hasContext: boolean;
   contextPrompt: string;
   chunks: RetrievedChunk[];
-  citations: Array<{
-    id: string;
-    chunkId: string;
-    title: string;
-    snippet: string;
-    kind: 'DOCUMENT' | 'WEB' | 'CALCULATION';
-    score: number;
-    url?: string | null;
-    page?: number | string | null;
-  }>;
+  citations: RAGCitation[];
 }
 
-// Generates query embedding vector
-export async function generateQueryEmbedding(query: string): Promise<number[]> {
+interface RawRetrievalRow {
+  incompatibleCount: bigint | number | string;
+  corruptCount: bigint | number | string;
+  id: string | null;
+  sourceId: string | null;
+  workspaceId: string | null;
+  indexId: string | null;
+  activeIndexId: string | null;
+  indexStatus: string | null;
+  sourceVersion: number | null;
+  chunkSourceVersion: number | null;
+  content: string | null;
+  tokenCount: number | null;
+  chunkIndex: number | null;
+  similarity: number | string | null;
+  sourceTitle: string | null;
+  sourceType: string | null;
+  sourceUrl: string | null;
+  parserMetadata: unknown;
+  sourceCleanText: string | null;
+  embeddingProvider: string | null;
+  embeddingModel: string | null;
+  embeddingVersion: string | null;
+  vectorDimensions: number | null;
+}
+
+interface RetrievalOptions {
+  topK?: number;
+  threshold?: number;
+}
+
+interface ContextOptions {
+  tokenBudget?: number;
+}
+
+type RetrievalDatabase = Pick<typeof prisma, 'workspace' | '$queryRaw'>;
+
+interface RetrievalDependencies {
+  database?: RetrievalDatabase;
+  embedQuery?: typeof generateEmbeddingsBatch;
+}
+
+function normalizePassage(content: string): string {
+  return content
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function passageShingles(content: string): Set<string> {
+  const words = normalizePassage(content).split(' ').filter(Boolean);
+  const shingles = new Set<string>();
+  if (words.length < 5) {
+    if (words.length) shingles.add(words.join(' '));
+    return shingles;
+  }
+  for (let index = 0; index <= words.length - 5; index += 1) {
+    shingles.add(words.slice(index, index + 5).join(' '));
+  }
+  return shingles;
+}
+
+function passageOverlap(left: string, right: string): number {
+  const leftShingles = passageShingles(left);
+  const rightShingles = passageShingles(right);
+  if (leftShingles.size === 0 || rightShingles.size === 0) return 0;
+  let intersection = 0;
+  for (const shingle of leftShingles) {
+    if (rightShingles.has(shingle)) intersection += 1;
+  }
+  return intersection / Math.min(leftShingles.size, rightShingles.size);
+}
+
+function assertCandidateIntegrity(
+  row: RawRetrievalRow,
+  workspaceId: string,
+  contract: EmbeddingContract,
+): asserts row is RawRetrievalRow & {
+  id: string;
+  sourceId: string;
+  workspaceId: string;
+  indexId: string;
+  activeIndexId: string;
+  indexStatus: 'READY';
+  sourceVersion: number;
+  chunkSourceVersion: number;
+  content: string;
+  chunkIndex: number;
+  sourceTitle: string;
+  sourceType: SourceType;
+  sourceCleanText: string;
+} {
+  if (row.workspaceId !== workspaceId) {
+    throw new Error('Retrieval isolation failure: candidate belongs to another Workspace');
+  }
+  if (!row.id || !row.sourceId || !row.indexId || row.activeIndexId !== row.indexId) {
+    throw new Error('Retrieval integrity failure: orphan or inactive chunk returned');
+  }
+  if (row.indexStatus !== 'READY') {
+    throw new Error('Retrieval integrity failure: index is not READY');
+  }
+  if (
+    !Number.isInteger(row.sourceVersion) ||
+    row.sourceVersion !== row.chunkSourceVersion
+  ) {
+    throw new Error('Retrieval integrity failure: stale chunk source version');
+  }
+  if (
+    row.embeddingProvider !== contract.provider ||
+    row.embeddingModel !== contract.model ||
+    row.embeddingVersion !== contract.version ||
+    row.vectorDimensions !== contract.dimensions
+  ) {
+    throw new Error('Retrieval integrity failure: incompatible embedding metadata');
+  }
+  if (!row.content?.trim() || !row.sourceTitle?.trim()) {
+    throw new Error('Retrieval integrity failure: candidate content or source title is missing');
+  }
+  if (!['PDF', 'WEBSITE', 'TEXT', 'YOUTUBE', 'VTT'].includes(row.sourceType || '')) {
+    throw new Error('Retrieval integrity failure: source type is invalid');
+  }
+  if (!Number.isInteger(row.chunkIndex) || row.chunkIndex! < 0) {
+    throw new Error('Retrieval integrity failure: chunk index is invalid');
+  }
+}
+
+function toRetrievedChunk(
+  row: RawRetrievalRow,
+  workspaceId: string,
+  contract: EmbeddingContract,
+): RetrievedChunk | null {
+  if (!row.id) return null;
+  assertCandidateIntegrity(row, workspaceId, contract);
+  const similarity =
+    typeof row.similarity === 'number'
+      ? row.similarity
+      : Number.parseFloat(String(row.similarity));
+  if (!Number.isFinite(similarity) || similarity < -1.000001 || similarity > 1.000001) {
+    throw new Error('Retrieval integrity failure: similarity score is invalid');
+  }
+
+  return {
+    id: row.id,
+    sourceId: row.sourceId,
+    workspaceId: row.workspaceId,
+    indexId: row.indexId,
+    sourceVersion: row.sourceVersion,
+    content: row.content,
+    tokenCount:
+      Number.isInteger(row.tokenCount) && row.tokenCount! > 0
+        ? row.tokenCount!
+        : Math.ceil(row.content.length / 4),
+    chunkIndex: row.chunkIndex,
+    similarity,
+    sourceTitle: row.sourceTitle,
+    sourceType: row.sourceType,
+    sourceUrl: row.sourceUrl,
+    parserMetadata:
+      row.parserMetadata && typeof row.parserMetadata === 'object'
+        ? (row.parserMetadata as Record<string, unknown>)
+        : null,
+    sourceCleanText: row.sourceCleanText,
+  };
+}
+
+export function rankAndDeduplicateChunks(
+  candidates: RetrievedChunk[],
+  topK: number,
+  threshold: number,
+): RetrievedChunk[] {
+  const ordered = [...candidates]
+    .filter((candidate) => candidate.similarity >= threshold)
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        left.sourceId.localeCompare(right.sourceId) ||
+        left.chunkIndex - right.chunkIndex ||
+        left.id.localeCompare(right.id),
+    );
+
+  const selected: RetrievedChunk[] = [];
+  const exactPassages = new Set<string>();
+  for (const candidate of ordered) {
+    const normalized = normalizePassage(candidate.content);
+    if (exactPassages.has(normalized)) continue;
+    const duplicatePassage = selected.some(
+      (existing) =>
+        existing.sourceId === candidate.sourceId &&
+        passageOverlap(existing.content, candidate.content) >= 0.9,
+    );
+    if (duplicatePassage) continue;
+    exactPassages.add(normalized);
+    selected.push(candidate);
+    if (selected.length >= topK) break;
+  }
+  return selected;
+}
+
+// Generates a query vector using the Prompt 3 document/query embedding contract.
+export async function generateQueryEmbedding(query: string): Promise<{
+  vector: number[];
+  contract: EmbeddingContract;
+}> {
   const result = await generateEmbeddingsBatch([query]);
-  return result.vectors[0];
+  const vector = result.vectors[0];
+  validateEmbeddingVector(vector, result.contract, 'query embedding');
+  return { vector, contract: result.contract };
 }
 
-// Searches workspace chunks using vector semantic similarity with strict isolation
 export async function searchWorkspaceChunks(
   workspaceId: string,
+  userId: string,
   query: string,
-  options: { topK?: number; threshold?: number } = {}
+  options: RetrievalOptions = {},
+  dependencies: RetrievalDependencies = {},
 ): Promise<RetrievedChunk[]> {
-  const topK = options.topK || 5;
-  const threshold = options.threshold ?? 0.15;
+  const database = dependencies.database || prisma;
+  const embedQuery = dependencies.embedQuery || generateEmbeddingsBatch;
+  const cleanQuery = query.trim();
+  if (!workspaceId || !userId) {
+    throw new Error('Workspace and authenticated user are required for retrieval');
+  }
+  if (!cleanQuery || cleanQuery.length > MAX_QUERY_CHARACTERS) {
+    throw new Error('Retrieval query is empty or exceeds the supported size');
+  }
 
-  // 1. Fetch workspace sources to map metadata
-  const sources = await getWorkspaceSources(workspaceId);
-  const sourceMap = new Map<string, SourceRecord>();
-  sources.forEach((s) => sourceMap.set(s.id, s));
+  const topK = Math.min(Math.max(Math.floor(options.topK || DEFAULT_TOP_K), 1), MAX_TOP_K);
+  const threshold = options.threshold ?? DEFAULT_THRESHOLD;
+  if (!Number.isFinite(threshold) || threshold < -1 || threshold > 1) {
+    throw new Error('Retrieval similarity threshold must be between -1 and 1');
+  }
 
-  // 2. Generate Query Embedding
-  const embeddingBatch = await generateEmbeddingsBatch([query]);
-  const queryVector = embeddingBatch.vectors[0];
-  const contract = embeddingBatch.contract;
-
-  const workspace = await prisma.workspace.findFirst({
-    where: { OR: [{ id: workspaceId }, { slug: workspaceId }] },
+  const workspace = await database.workspace.findFirst({
+    where: {
+      userId,
+      OR: [{ id: workspaceId }, { slug: workspaceId }],
+    },
     select: { id: true },
   });
   if (!workspace) {
-    throw new Error('Workspace not found during vector search');
+    throw new Error('Workspace retrieval access denied');
   }
 
-  const incompatibleIndexes = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(*)::bigint AS count
-    FROM "Source" source
-    INNER JOIN "SourceIndex" source_index
-      ON source_index.id = source."activeIndexId"
-      AND source_index.status = 'READY'::"SourceIndexStatus"
-    WHERE source."workspaceId" = ${workspace.id}
-      AND (
-        source_index."embeddingProvider" <> ${contract.provider}
-        OR source_index."embeddingModel" <> ${contract.model}
-        OR source_index."embeddingVersion" <> ${contract.version}
-        OR source_index."vectorDimensions" <> ${contract.dimensions}
-      )
+  const embeddingBatch = await embedQuery([cleanQuery]);
+  const queryVector = embeddingBatch.vectors[0];
+  const contract = embeddingBatch.contract;
+  validateEmbeddingVector(queryVector, contract, 'query embedding');
+
+  const vectorLiteral = `[${queryVector.join(',')}]`;
+  const candidateLimit = Math.max(topK * 4, 20);
+  const rows = await database.$queryRaw<RawRetrievalRow[]>`
+    WITH active_indexes AS (
+      SELECT
+        source.id AS "sourceId",
+        source."workspaceId",
+        source.title AS "sourceTitle",
+        source.type::text AS "sourceType",
+        source."activeIndexId",
+        source_index.id AS "indexId",
+        source_index.status::text AS "indexStatus",
+        source_index."sourceVersion",
+        source_index."expectedChunkCount",
+        source_index."embeddingProvider",
+        source_index."embeddingModel",
+        source_index."embeddingVersion",
+        source_index."vectorDimensions",
+        source_content.version AS "contentVersion",
+        source_content."sourceUrl",
+        source_content."parserMetadata",
+        source_content."cleanText" AS "sourceCleanText",
+        (
+          SELECT COUNT(*)::integer
+          FROM "Chunk" counted_chunk
+          WHERE counted_chunk."indexId" = source_index.id
+        ) AS "actualChunkCount",
+        (
+          SELECT COUNT(*)::integer
+          FROM "Chunk" valid_chunk
+          WHERE valid_chunk."indexId" = source_index.id
+            AND valid_chunk.embedding IS NOT NULL
+            AND vector_dims(valid_chunk.embedding) = source_index."vectorDimensions"
+            AND valid_chunk."sourceVersion" = source_index."sourceVersion"
+            AND valid_chunk."sourceId" = source.id
+            AND valid_chunk."workspaceId" = source."workspaceId"
+        ) AS "validChunkCount"
+      FROM "Source" source
+      INNER JOIN "SourceIndex" source_index
+        ON source_index.id = source."activeIndexId"
+        AND source_index.status = 'READY'::"SourceIndexStatus"
+      LEFT JOIN "SourceContent" source_content
+        ON source_content."sourceId" = source.id
+        AND source_content.version = source_index."sourceVersion"
+      WHERE source."workspaceId" = ${workspace.id}
+    ),
+    index_state AS (
+      SELECT
+        (
+          COUNT(*) FILTER (
+            WHERE "embeddingProvider" <> ${contract.provider}
+              OR "embeddingModel" <> ${contract.model}
+              OR "embeddingVersion" <> ${contract.version}
+              OR "vectorDimensions" <> ${contract.dimensions}
+          )
+        )::bigint AS "incompatibleCount",
+        (
+          COUNT(*) FILTER (
+            WHERE "contentVersion" IS NULL
+              OR "actualChunkCount" <> "expectedChunkCount"
+              OR "validChunkCount" <> "expectedChunkCount"
+          )
+        )::bigint AS "corruptCount"
+      FROM active_indexes
+    ),
+    candidates AS (
+      SELECT
+        chunk.id,
+        active_index."sourceId",
+        chunk."workspaceId",
+        active_index."indexId",
+        active_index."activeIndexId",
+        active_index."indexStatus",
+        active_index."sourceVersion",
+        chunk."sourceVersion" AS "chunkSourceVersion",
+        chunk.content,
+        chunk."tokenCount",
+        chunk."chunkIndex",
+        (1 - (chunk.embedding <=> ${vectorLiteral}::vector)) AS similarity,
+        active_index."sourceTitle",
+        active_index."sourceType",
+        active_index."sourceUrl",
+        active_index."parserMetadata",
+        active_index."sourceCleanText",
+        active_index."embeddingProvider",
+        active_index."embeddingModel",
+        active_index."embeddingVersion",
+        active_index."vectorDimensions"
+      FROM "Chunk" chunk
+      INNER JOIN active_indexes active_index
+        ON active_index."indexId" = chunk."indexId"
+        AND active_index."sourceId" = chunk."sourceId"
+      WHERE chunk."workspaceId" = ${workspace.id}
+        AND chunk."sourceVersion" = active_index."sourceVersion"
+        AND chunk.embedding IS NOT NULL
+        AND vector_dims(chunk.embedding) = ${contract.dimensions}
+        AND active_index."actualChunkCount" = active_index."expectedChunkCount"
+        AND active_index."validChunkCount" = active_index."expectedChunkCount"
+        AND active_index."contentVersion" IS NOT NULL
+        AND active_index."embeddingProvider" = ${contract.provider}
+        AND active_index."embeddingModel" = ${contract.model}
+        AND active_index."embeddingVersion" = ${contract.version}
+        AND active_index."vectorDimensions" = ${contract.dimensions}
+      ORDER BY
+        chunk.embedding <=> ${vectorLiteral}::vector,
+        chunk."sourceId",
+        chunk."chunkIndex",
+        chunk.id
+      LIMIT ${candidateLimit}
+    )
+    SELECT
+      index_state."incompatibleCount",
+      index_state."corruptCount",
+      candidates.*
+    FROM index_state
+    LEFT JOIN candidates ON TRUE
+    ORDER BY
+      candidates.similarity DESC NULLS LAST,
+      candidates."sourceId",
+      candidates."chunkIndex",
+      candidates.id
   `;
-  if (Number(incompatibleIndexes[0]?.count ?? 0) > 0) {
+
+  const incompatibleCount = Number(rows[0]?.incompatibleCount ?? 0);
+  const corruptCount = Number(rows[0]?.corruptCount ?? 0);
+  if (incompatibleCount > 0) {
     throw new Error(
       'Active Workspace indexes are incompatible with the configured embedding contract; re-indexing is required',
     );
   }
-
-  const vectorStr = `[${queryVector.join(',')}]`;
-  const rawResults: any[] = await prisma.$queryRaw`
-    SELECT
-      chunk.id,
-      chunk."sourceId",
-      chunk."workspaceId",
-      chunk.content,
-      chunk."tokenCount",
-      chunk."chunkIndex",
-      (1 - (chunk.embedding <=> ${vectorStr}::vector)) AS similarity
-    FROM "Chunk" chunk
-    INNER JOIN "Source" source
-      ON source.id = chunk."sourceId"
-      AND source."activeIndexId" = chunk."indexId"
-    INNER JOIN "SourceIndex" source_index
-      ON source_index.id = chunk."indexId"
-      AND source_index.status = 'READY'::"SourceIndexStatus"
-    WHERE chunk."workspaceId" = ${workspace.id}
-      AND chunk.embedding IS NOT NULL
-      AND vector_dims(chunk.embedding) = ${contract.dimensions}
-      AND source_index."embeddingProvider" = ${contract.provider}
-      AND source_index."embeddingModel" = ${contract.model}
-      AND source_index."embeddingVersion" = ${contract.version}
-      AND source_index."vectorDimensions" = ${contract.dimensions}
-    ORDER BY chunk.embedding <=> ${vectorStr}::vector
-    LIMIT ${topK * 2}
-  `;
-
-  const retrieved: RetrievedChunk[] = [];
-  for (const row of rawResults) {
-    const sim =
-      typeof row.similarity === 'number'
-        ? row.similarity
-        : parseFloat(row.similarity || '0');
-    if (sim >= threshold) {
-      const src = sourceMap.get(row.sourceId);
-      retrieved.push({
-        id: row.id,
-        sourceId: row.sourceId,
-        workspaceId: row.workspaceId,
-        content: row.content,
-        tokenCount: row.tokenCount || 0,
-        chunkIndex: row.chunkIndex || 0,
-        similarity: Math.round(sim * 1000) / 1000,
-        sourceTitle: src?.title || 'Workspace Document',
-        sourceType: src?.type || 'TEXT',
-        sourceUrl: src?.url || src?.metadata?.url || null,
-        sourceMetadata: src?.metadata || null,
-      });
-    }
+  if (corruptCount > 0) {
+    throw new Error('Active Workspace index integrity validation failed; re-indexing is required');
   }
 
-  // Deduplicate near-identical content snippets
-  const uniqueChunks: RetrievedChunk[] = [];
-  const seenTexts = new Set<string>();
-
-  for (const item of retrieved) {
-    const snippetKey = item.content.trim().substring(0, 100).toLowerCase();
-    if (!seenTexts.has(snippetKey)) {
-      seenTexts.add(snippetKey);
-      uniqueChunks.push(item);
-    }
-    if (uniqueChunks.length >= topK) break;
-  }
-
-  return uniqueChunks;
+  const candidates = rows
+    .map((row) => toRetrievedChunk(row, workspace.id, contract))
+    .filter((chunk): chunk is RetrievedChunk => Boolean(chunk));
+  return rankAndDeduplicateChunks(candidates, topK, threshold);
 }
 
-// Builds system/context prompt and citation objects for RAG generation
+function parseClockTimestamp(value: string): number | null {
+  const parts = value.split(':').map(Number);
+  if (
+    parts.length !== 3 ||
+    parts.some((part) => !Number.isFinite(part)) ||
+    parts[0] < 0 ||
+    parts[1] < 0 ||
+    parts[1] >= 60 ||
+    parts[2] < 0 ||
+    parts[2] >= 60
+  ) {
+    return null;
+  }
+  return Math.round((parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000);
+}
+
+function formatTimestamp(milliseconds: number): string {
+  const totalSeconds = milliseconds / 1000;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function findPdfPage(chunk: RetrievedChunk): number | null {
+  const pages = Array.isArray(chunk.parserMetadata?.pages)
+    ? chunk.parserMetadata.pages
+    : [];
+  const pageMarker = chunk.content.match(/\[Page\s+(\d+)\]/i);
+  if (pageMarker) {
+    const pageNumber = Number(pageMarker[1]);
+    if (
+      pages.some(
+        (page) =>
+          page &&
+          typeof page === 'object' &&
+          Number((page as Record<string, unknown>).pageNumber) === pageNumber,
+      )
+    ) {
+      return pageNumber;
+    }
+  }
+
+  const sourceOffset = chunk.sourceCleanText.indexOf(chunk.content);
+  if (sourceOffset >= 0) {
+    const matchingPage = pages.find((page) => {
+      if (!page || typeof page !== 'object') return false;
+      const candidate = page as Record<string, unknown>;
+      return (
+        Number.isInteger(candidate.characterStart) &&
+        Number.isInteger(candidate.characterEnd) &&
+        sourceOffset >= Number(candidate.characterStart) &&
+        sourceOffset <= Number(candidate.characterEnd)
+      );
+    }) as Record<string, unknown> | undefined;
+    if (matchingPage && Number.isInteger(matchingPage.pageNumber)) {
+      return Number(matchingPage.pageNumber);
+    }
+  }
+
+  const normalizedChunk = normalizePassage(chunk.content.replace(/\[Page\s+\d+\]/gi, ''));
+  for (const page of pages) {
+    if (!page || typeof page !== 'object') continue;
+    const candidate = page as Record<string, unknown>;
+    if (typeof candidate.text !== 'string' || !Number.isInteger(candidate.pageNumber)) continue;
+    const normalizedPage = normalizePassage(candidate.text);
+    const probe = normalizedChunk.slice(0, Math.min(120, normalizedChunk.length));
+    if (probe.length >= 30 && normalizedPage.includes(probe)) {
+      return Number(candidate.pageNumber);
+    }
+  }
+  return null;
+}
+
+function findTranscriptRange(chunk: RetrievedChunk): {
+  startMs: number | null;
+  endMs: number | null;
+} {
+  const timestampPattern =
+    /\[(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\s*(?:-->|-)\s*(\d{2}:\d{2}:\d{2}(?:\.\d{3})?)\]/g;
+  const ranges: Array<{ startMs: number; endMs: number }> = [];
+  for (const match of chunk.content.matchAll(timestampPattern)) {
+    const startMs = parseClockTimestamp(match[1]);
+    const endMs = parseClockTimestamp(match[2]);
+    if (startMs !== null && endMs !== null && endMs >= startMs) {
+      ranges.push({ startMs, endMs });
+    }
+  }
+  if (ranges.length) {
+    return {
+      startMs: Math.min(...ranges.map((range) => range.startMs)),
+      endMs: Math.max(...ranges.map((range) => range.endMs)),
+    };
+  }
+
+  const cues = Array.isArray(chunk.parserMetadata?.cues)
+    ? chunk.parserMetadata.cues
+    : [];
+  const normalizedChunk = normalizePassage(chunk.content);
+  for (const cue of cues) {
+    if (!cue || typeof cue !== 'object') continue;
+    const candidate = cue as Record<string, unknown>;
+    if (
+      typeof candidate.text !== 'string' ||
+      !normalizedChunk.includes(normalizePassage(candidate.text))
+    ) {
+      continue;
+    }
+    const startMs =
+      Number.isFinite(candidate.offset)
+        ? Number(candidate.offset)
+        : Number.isFinite(candidate.startMs)
+          ? Number(candidate.startMs)
+          : null;
+    const endMs =
+      Number.isFinite(candidate.duration) && startMs !== null
+        ? startMs + Number(candidate.duration)
+        : Number.isFinite(candidate.endMs)
+          ? Number(candidate.endMs)
+          : null;
+    if (startMs !== null && endMs !== null && endMs >= startMs) {
+      return { startMs, endMs };
+    }
+  }
+  return { startMs: null, endMs: null };
+}
+
+function validSourceUrl(sourceType: SourceType, sourceUrl: string | null): string | null {
+  if (!sourceUrl) {
+    if (sourceType === 'WEBSITE') {
+      throw new Error('Website citation metadata is missing its source URL');
+    }
+    return null;
+  }
+  try {
+    const parsed = new URL(sourceUrl);
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Citation source URL is not HTTPS');
+    }
+    return parsed.toString();
+  } catch {
+    throw new Error('Citation source URL is invalid');
+  }
+}
+
+export function createCitation(chunk: RetrievedChunk): RAGCitation {
+  const url = validSourceUrl(chunk.sourceType, chunk.sourceUrl);
+  const page = chunk.sourceType === 'PDF' ? findPdfPage(chunk) : null;
+  const transcriptRange =
+    chunk.sourceType === 'YOUTUBE' || chunk.sourceType === 'VTT'
+      ? findTranscriptRange(chunk)
+      : { startMs: null, endMs: null };
+  if (chunk.sourceType === 'PDF' && page === null) {
+    throw new Error('PDF citation page could not be derived from parser metadata');
+  }
+  if (
+    (chunk.sourceType === 'YOUTUBE' || chunk.sourceType === 'VTT') &&
+    (transcriptRange.startMs === null || transcriptRange.endMs === null)
+  ) {
+    throw new Error(`${chunk.sourceType} citation timestamp could not be derived`);
+  }
+
+  let textOrigin: string;
+  if (chunk.sourceType === 'PDF') {
+    textOrigin = page ? `PDF page ${page}` : 'PDF extracted text';
+  } else if (chunk.sourceType === 'WEBSITE') {
+    textOrigin = `Website ${url}`;
+  } else if (chunk.sourceType === 'YOUTUBE') {
+    textOrigin =
+      transcriptRange.startMs !== null && transcriptRange.endMs !== null
+        ? `YouTube transcript ${formatTimestamp(transcriptRange.startMs)}–${formatTimestamp(
+            transcriptRange.endMs,
+          )}`
+        : 'YouTube transcript';
+  } else if (chunk.sourceType === 'VTT') {
+    textOrigin =
+      transcriptRange.startMs !== null && transcriptRange.endMs !== null
+        ? `VTT transcript ${formatTimestamp(transcriptRange.startMs)}–${formatTimestamp(
+            transcriptRange.endMs,
+          )}`
+        : 'VTT transcript';
+  } else {
+    textOrigin = 'Plain text source';
+  }
+
+  const normalizedSnippet = chunk.content.replace(/\s+/g, ' ').trim();
+  const snippet =
+    normalizedSnippet.length > 300
+      ? `${normalizedSnippet.slice(0, 300).trimEnd()}…`
+      : normalizedSnippet;
+  return {
+    id: `citation:${chunk.indexId}:${chunk.id}`,
+    chunkId: chunk.id,
+    sourceId: chunk.sourceId,
+    indexId: chunk.indexId,
+    title: chunk.sourceTitle,
+    snippet,
+    kind: chunk.sourceType === 'WEBSITE' ? 'WEB' : 'DOCUMENT',
+    score: chunk.similarity,
+    url,
+    page,
+    timestampStartMs: transcriptRange.startMs,
+    timestampEndMs: transcriptRange.endMs,
+    textOrigin,
+  };
+}
+
+function citationLocation(citation: RAGCitation): string {
+  const details = [citation.textOrigin];
+  if (citation.url) details.push(`URL: ${citation.url}`);
+  return details.join(' | ');
+}
+
+// Builds context using complete chunks only; the instruction template remains unchanged.
 export function buildRAGContext(
   retrievedChunks: RetrievedChunk[],
   query: string,
-  mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED'
+  mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED',
+  options: ContextOptions = {},
 ): RAGContextResult {
-  const hasContext = retrievedChunks.length > 0;
+  const tokenBudget = Math.max(Math.floor(options.tokenBudget || DEFAULT_CONTEXT_TOKEN_BUDGET), 1);
+  const selectedChunks: RetrievedChunk[] = [];
+  let consumedTokens = 0;
+  for (const chunk of retrievedChunks) {
+    const requiredTokens = Math.max(chunk.tokenCount, Math.ceil(chunk.content.length / 4)) + 40;
+    if (consumedTokens + requiredTokens > tokenBudget) continue;
+    selectedChunks.push(chunk);
+    consumedTokens += requiredTokens;
+  }
 
+  const hasContext = selectedChunks.length > 0;
   if (!hasContext) {
     return {
       hasContext: false,
@@ -170,31 +684,13 @@ export function buildRAGContext(
     };
   }
 
-  const citationItems = retrievedChunks.map((chk, idx) => {
-    const kind: 'DOCUMENT' | 'WEB' | 'CALCULATION' =
-      chk.sourceType === 'WEBSITE' ? 'WEB' : 'DOCUMENT';
-
-    const page = chk.sourceMetadata?.pages ? `Page ${Math.min(chk.chunkIndex + 1, chk.sourceMetadata.pages)}` : null;
-
-    return {
-      id: `cit_${chk.id}_${idx}`,
-      chunkId: chk.id,
-      title: chk.sourceTitle,
-      snippet: chk.content.substring(0, 200).replace(/\n+/g, ' ') + '...',
-      kind,
-      score: chk.similarity,
-      url: chk.sourceUrl || null,
-      page,
-    };
-  });
-
-  const contextBlocks = retrievedChunks
-    .map((chk, idx) => {
-      const pageInfo = chk.sourceMetadata?.pages
-        ? ` | Page ${Math.min(chk.chunkIndex + 1, chk.sourceMetadata.pages)}`
-        : '';
-      const urlInfo = chk.sourceUrl ? ` | URL: ${chk.sourceUrl}` : '';
-      return `[CITATION #${idx + 1}] Source: "${chk.sourceTitle}" (Type: ${chk.sourceType}${pageInfo}${urlInfo})\n${chk.content.trim()}`;
+  const citations = selectedChunks.map(createCitation);
+  const contextBlocks = selectedChunks
+    .map((chunk, index) => {
+      const citation = citations[index];
+      return `[CITATION #${index + 1}] Source: "${citation.title}" (Type: ${
+        chunk.sourceType
+      } | Source ID: ${citation.sourceId} | ${citationLocation(citation)})\n${chunk.content.trim()}`;
     })
     .join('\n\n---\n\n');
 
@@ -224,7 +720,7 @@ INSTRUCTIONS:
   return {
     hasContext: true,
     contextPrompt,
-    chunks: retrievedChunks,
-    citations: citationItems,
+    chunks: selectedChunks,
+    citations,
   };
 }

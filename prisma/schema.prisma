@@ -109,6 +109,7 @@ model Source {
   processingAttempts SourceProcessingAttempt[]
   indexes     SourceIndex[] @relation("SourceIndexes")
   chunks      Chunk[]
+  citations   Citation[]
 
   @@index([workspaceId])
   @@index([type])
@@ -132,6 +133,7 @@ model SourceIndex {
   createdAt         DateTime          @default(now())
 
   chunks Chunk[]
+  citations Citation[]
 
   @@index([sourceId])
   @@index([sourceId, sourceVersion])
@@ -234,17 +236,28 @@ model Message {
 }
 
 model Citation {
-  id        String       @id @default(cuid())
-  messageId String
-  message   Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  chunkId   String?
-  chunk     Chunk?       @relation(fields: [chunkId], references: [id], onDelete: SetNull)
-  title     String
-  snippet   String       @db.Text
-  kind      CitationKind @default(DOCUMENT)
-  score     Float?
-  createdAt DateTime     @default(now())
+  id               String       @id @default(cuid())
+  messageId        String
+  message          Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chunkId          String
+  chunk            Chunk        @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  sourceId         String
+  source           Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  indexId          String
+  index             SourceIndex  @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  title            String
+  snippet          String        @db.Text
+  kind             CitationKind  @default(DOCUMENT)
+  score            Float?
+  sourceUrl        String?       @db.Text
+  pageNumber       Int?
+  timestampStartMs Int?
+  timestampEndMs   Int?
+  textOrigin       String
+  createdAt        DateTime      @default(now())
 
   @@index([messageId])
   @@index([chunkId])
+  @@index([sourceId])
+  @@index([indexId])
 }
