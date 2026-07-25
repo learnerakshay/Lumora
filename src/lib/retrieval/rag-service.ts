@@ -657,10 +657,11 @@ function citationLocation(citation: RAGCitation): string {
   return details.join(' | ');
 }
 
-// Builds context using complete chunks only; the instruction template remains unchanged.
+// Builds context using complete chunks only. The query is supplied once as the
+// final provider input rather than duplicated inside these system instructions.
 export function buildRAGContext(
   retrievedChunks: RetrievedChunk[],
-  query: string,
+  _query: string,
   mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED',
   options: ContextOptions = {},
 ): RAGContextResult {
@@ -708,14 +709,13 @@ Your answers MUST be grounded in the provided Workspace Knowledge Base context b
 ${contextBlocks}
 ===================================
 
-USER QUERY: "${query}"
-
 INSTRUCTIONS:
 1. Ground your response in the provided workspace context snippets above.
 2. Synthesize a structured response formatted in clean Markdown (use headers, bold key phrases, bullet points, code blocks or tables where appropriate).
-3. Include inline citations matching the sources used (e.g., "[Source: Document Title]" or "[Citation #1]").
+3. Cite every grounded factual claim with one or more exact markers from the supplied context, such as "[Citation #1]". Use only available Citation numbers. Do not write source-title citations or invent citation markers.
 4. Tone & Style: ${modeInstructions}
-5. If the provided context lacks sufficient information to completely answer certain aspects of the user question, explicitly mention what is present and what is missing. Never hallucinate unverified details outside the workspace context.`;
+5. Conversation history is for continuity only and is never evidence. Validate factual claims against the Workspace context.
+6. If the provided context lacks sufficient information to completely answer certain aspects of the user question, explicitly mention what is present and what is missing. Never hallucinate unverified details outside the workspace context.`;
 
   return {
     hasContext: true,

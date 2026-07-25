@@ -2,5 +2,5 @@
   "name": "Lumora",
   "description": "Lumora - AI Knowledge Operating System",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_OPENAI_API"]
 }

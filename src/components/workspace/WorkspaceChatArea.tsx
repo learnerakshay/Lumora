@@ -20,6 +20,7 @@ interface WorkspaceChatAreaProps {
   isGenerating: boolean;
   streamingText: string;
   streamingCitations: StoredCitation[];
+  error?: string | null;
   hasIndexedSources: boolean;
   onSelectCitation?: (citation: StoredCitation) => void;
   onSubmitMessage: (prompt: string) => void;
@@ -31,6 +32,7 @@ export function WorkspaceChatArea({
   isGenerating,
   streamingText,
   streamingCitations,
+  error,
   hasIndexedSources,
   onSelectCitation,
   onSubmitMessage,
@@ -101,6 +103,14 @@ export function WorkspaceChatArea({
 
       {/* Messages Feed */}
       <div className="max-w-4xl mx-auto w-full space-y-6 flex-1">
+        {error && (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-900/70 bg-rose-950/30 px-4 py-3 text-xs text-rose-200"
+          >
+            {error}
+          </div>
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}

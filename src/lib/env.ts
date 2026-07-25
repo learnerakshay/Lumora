@@ -17,7 +17,14 @@ const serverEnvSchema = z
     EMBEDDING_VERSION: z.string().trim().min(1).default('v1'),
     TAVILY_API_KEY: z.string().optional(),
     BLOB_READ_WRITE_TOKEN: z.string().optional(),
-    GEMINI_API_KEY: z.string().optional(),
+    CHAT_MODEL: z
+      .enum(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+      .default('gpt-5.6-sol'),
+    CHAT_REASONING_EFFORT: z
+      .enum(['none', 'low', 'medium', 'high', 'xhigh'])
+      .default('medium'),
+    CHAT_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(60_000),
+    CHAT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(16_384).default(2_048),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
   })

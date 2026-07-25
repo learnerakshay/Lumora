@@ -34,6 +34,7 @@ export function WorkspaceDetailPage() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [loadingSources, setLoadingSources] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   // Streaming State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -90,8 +91,8 @@ export function WorkspaceDetailPage() {
           if (fresh) setSelectedSourceDetails(fresh);
         }
       }
-    } catch (err) {
-      // Fall back silently
+    } catch (err: any) {
+      setActivityError(err.message || 'Unable to refresh Workspace sources.');
     } finally {
       setLoadingSources(false);
     }
@@ -102,13 +103,13 @@ export function WorkspaceDetailPage() {
     if (!workspaceId) return;
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/messages`);
-      if (!res.ok) return;
+      if (!res.ok) throw new Error('Failed to refresh conversation history.');
       const payload = await res.json();
       if (payload.success && Array.isArray(payload.data)) {
         setMessages(payload.data);
       }
-    } catch (err) {
-      // Ignore error
+    } catch (err: any) {
+      setActivityError(err.message || 'Unable to refresh conversation history.');
     }
   }, [workspaceId]);
 
@@ -150,6 +151,7 @@ export function WorkspaceDetailPage() {
 
     setMessages((prev) => [...prev, tempUserMsg]);
     setIsGenerating(true);
+    setActivityError(null);
     setStreamingText('');
     setStreamingCitations([]);
 
@@ -171,6 +173,7 @@ export function WorkspaceDetailPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let terminalEventReceived = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -182,33 +185,31 @@ export function WorkspaceDetailPage() {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.substring(6));
-              if (data.type === 'start') {
-                if (data.citations) setStreamingCitations(data.citations);
-              } else if (data.type === 'chunk' && data.text) {
-                setStreamingText((prev) => prev + data.text);
-              } else if (data.type === 'done') {
-                fetchMessages();
-              } else if (data.type === 'error') {
-                setError(data.error || 'AI generation failed.');
-              }
-            } catch (e) {
-              // Partial buffer guard
+            const data = JSON.parse(line.substring(6));
+            if (data.type === 'chunk' && data.text) {
+              setStreamingText((prev) => prev + data.text);
+            } else if (data.type === 'done') {
+              terminalEventReceived = true;
+            } else if (data.type === 'error') {
+              terminalEventReceived = true;
+              throw new Error(data.error || 'AI generation failed.');
             }
           }
         }
       }
+      if (!terminalEventReceived && !abortController.signal.aborted) {
+        throw new Error('The AI response stream ended before completion.');
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        setError(err.message || 'Error communicating with RAG response stream.');
+        setActivityError(err.message || 'Error communicating with RAG response stream.');
       }
     } finally {
       setIsGenerating(false);
       setStreamingText('');
       setStreamingCitations([]);
       abortControllerRef.current = null;
-      fetchMessages();
+      await fetchMessages();
     }
   };
 
@@ -223,17 +224,19 @@ export function WorkspaceDetailPage() {
   const handleClearHistory = async () => {
     if (!workspaceId) return;
     try {
-      await fetch(`/api/workspaces/${workspaceId}/messages`, { method: 'DELETE' });
+      const response = await fetch(`/api/workspaces/${workspaceId}/messages`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to clear conversation history.');
       setMessages([]);
-    } catch (err) {
-      // Ignore
+      setActivityError(null);
+    } catch (err: any) {
+      setActivityError(err.message || 'Unable to clear conversation history.');
     }
   };
 
   const handleSelectCitation = (cit: StoredCitation) => {
     // Locate source in current sources list
     const matchedSource = sources.find(
-      (s) => s.title.toLowerCase().trim() === cit.title.toLowerCase().trim() || s.id === cit.chunkId
+      (s) => s.id === cit.sourceId
     );
     if (matchedSource) {
       setSelectedSourceDetails(matchedSource);
@@ -284,7 +287,7 @@ export function WorkspaceDetailPage() {
   };
 
   const hasIndexedSources = sources.some(
-    (s) => s.status === 'COMPLETED' || s.status === 'PROCESSING'
+    (source) => source.status === 'COMPLETED' && source.stage === 'COMPLETED'
   );
 
   if (loadingWorkspace && !workspace) {
@@ -383,6 +386,7 @@ export function WorkspaceDetailPage() {
             isGenerating={isGenerating}
             streamingText={streamingText}
             streamingCitations={streamingCitations}
+            error={activityError}
             hasIndexedSources={hasIndexedSources}
             onSelectCitation={handleSelectCitation}
             onSubmitMessage={handleSubmitMessage}

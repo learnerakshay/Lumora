@@ -1,6 +1,5 @@
 import { Router, Request, Response, RequestHandler } from 'express';
 import multer from 'multer';
-import { GoogleGenAI } from '@google/genai';
 import {
   getWorkspaces,
   createWorkspace,
@@ -25,6 +24,16 @@ import {
   createWorkspaceMessage,
   clearWorkspaceMessages,
 } from '../lib/chat/conversation-store';
+import { buildConversationHistory } from '../lib/chat/conversation-context';
+import {
+  CitationSafeStream,
+  citationsUsedByResponse,
+} from '../lib/chat/citation-consistency';
+import {
+  ChatGenerationAbortedError,
+  ChatProviderError,
+  generateGroundedResponse,
+} from '../lib/chat/openai-provider';
 import { requireApiAuth } from '../lib/auth';
 import { AppError } from '../lib/errors';
 import { successResponse, errorResponse } from '../lib/api-response';
@@ -492,40 +501,71 @@ workspaceRouter.delete('/:id/messages', async (req: Request, res: Response) => {
 workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => {
   const workspaceId = res.locals.workspace.id;
   const { message, mode = 'DETAILED' } = req.body || {};
+  const validModes = ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
-    return res.status(400).json(errorResponse(new Error('Message query cannot be empty')).payload);
+    const response = errorResponse(
+      AppError.badRequest('Message query cannot be empty', 'EMPTY_CHAT_MESSAGE'),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
+  if (message.trim().length > 20_000) {
+    const response = errorResponse(
+      new AppError(
+        'Message query cannot exceed 20,000 characters',
+        413,
+        'CHAT_MESSAGE_TOO_LARGE',
+      ),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
+  if (!validModes.includes(mode)) {
+    const response = errorResponse(
+      AppError.badRequest('Chat mode is invalid', 'INVALID_CHAT_MODE'),
+    );
+    return res.status(response.statusCode).json(response.payload);
   }
 
   const queryText = message.trim();
+  const generationController = new AbortController();
+  let responseFinished = false;
 
-  // Set SSE Headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  const sendEvent = (eventData: object) => {
-    res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+  const abortGeneration = () => generationController.abort();
+  const handleResponseClose = () => {
+    if (!responseFinished) abortGeneration();
+  };
+  req.once('aborted', abortGeneration);
+  res.once('close', handleResponseClose);
+
+  const sendEvent = (eventData: object): boolean => {
+    if (generationController.signal.aborted || res.destroyed || res.writableEnded) {
+      abortGeneration();
+      return false;
+    }
+    const accepted = res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+    if (!accepted && res.destroyed) abortGeneration();
+    return !generationController.signal.aborted;
   };
 
   try {
-    // 1. Save User Message
-    await createWorkspaceMessage({
+    const savedUserMessage = await createWorkspaceMessage({
       workspaceId,
       role: 'USER',
       content: queryText,
       mode,
     });
 
-    // 2. Fetch Recent Conversation History for Follow-Up Context Awareness
     const recentHistory = await getWorkspaceMessages(workspaceId);
-    const conversationTurns = recentHistory
-      .slice(-7, -1)
-      .map((m) => `${m.role === 'USER' ? 'User' : 'Assistant'}: ${m.content}`)
-      .join('\n\n');
+    const conversationHistory = buildConversationHistory(
+      recentHistory,
+      savedUserMessage.id,
+    );
 
-    // 3. Search Workspace Chunks (Vector Semantic Search with Workspace Isolation)
     let retrievedChunks;
     try {
       retrievedChunks = await searchWorkspaceChunks(
@@ -538,76 +578,62 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       logger.error('Validated Workspace retrieval failed', retrievalError);
       sendEvent({
         type: 'error',
-        error: `Unable to retrieve validated indexed knowledge for this Workspace. ${
-          retrievalError?.message || 'Retrieval infrastructure is unavailable.'
-        }`,
+        code: 'RETRIEVAL_FAILED',
+        error: 'Unable to retrieve validated indexed knowledge for this Workspace.',
       });
-      res.end();
       return;
     }
 
-    // 4. Build Context & Citations
     const ragContext = buildRAGContext(retrievedChunks, queryText, mode);
-
-    // Send initial start event with citations
     sendEvent({
       type: 'start',
       hasContext: ragContext.hasContext,
-      citations: ragContext.citations,
+      candidateCitationCount: ragContext.citations.length,
+      citations: [],
     });
 
-    // 5. Construct LLM Prompt
-    let fullPrompt = ragContext.contextPrompt;
-    if (conversationTurns) {
-      fullPrompt += `\n\n=== RECENT CONVERSATION HISTORY ===\n${conversationTurns}\n===================================`;
+    if (!ragContext.hasContext) {
+      const insufficientContext =
+        "I couldn't find sufficient indexed knowledge in this Workspace to answer that question. Add or reprocess a relevant source, then try again.";
+      sendEvent({ type: 'chunk', text: insufficientContext });
+      const savedMessage = await createWorkspaceMessage({
+        workspaceId,
+        role: 'ASSISTANT',
+        content: insufficientContext,
+        mode,
+      });
+      sendEvent({ type: 'done', messageId: savedMessage.id, citations: [] });
+      return;
     }
 
-    let fullAnswerText = '';
+    const citationSafeStream = new CitationSafeStream(
+      ragContext.citations,
+      (text) => {
+        if (!sendEvent({ type: 'chunk', text })) abortGeneration();
+      },
+    );
+    const generated = await generateGroundedResponse({
+      instructions: ragContext.contextPrompt,
+      history: conversationHistory,
+      query: queryText,
+      userId: res.locals.userId,
+      mode,
+      signal: generationController.signal,
+      onTextDelta: (text) => citationSafeStream.push(text),
+    });
+    if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
-    // 6. Gemini Generation Call
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey && ragContext.hasContext) {
-      try {
-        const ai = new GoogleGenAI({
-          apiKey: geminiKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-        });
-
-        const responseStream = await ai.models.generateContentStream({
-          model: 'gemini-3.6-flash',
-          contents: fullPrompt,
-        });
-
-        for await (const chunk of responseStream) {
-          const textChunk = chunk.text;
-          if (textChunk) {
-            fullAnswerText += textChunk;
-            sendEvent({ type: 'chunk', text: textChunk });
-          }
-        }
-      } catch (geminiErr) {
-        logger.error('Gemini API streaming error, executing grounded fallback stream', geminiErr);
-      }
-    }
-
-    // Fallback if no LLM response or API unavailable
-    if (!fullAnswerText) {
-      if (!ragContext.hasContext) {
-        fullAnswerText = "I couldn't find sufficient information inside your current workspace to answer this question. Please upload relevant documents, web pages, or transcripts to expand your workspace knowledge.";
-      } else {
-        const topChunk = ragContext.chunks[0];
-        fullAnswerText = `Based on your workspace source **${topChunk.sourceTitle}**:\n\n${topChunk.content}\n\n*This response was directly extracted from your grounded workspace knowledge base.*`;
-      }
-      sendEvent({ type: 'chunk', text: fullAnswerText });
-    }
-
-    // 7. Save Assistant Message + Citations
+    const usedCitations = citationsUsedByResponse(
+      generated.text,
+      ragContext.citations,
+    );
+    citationSafeStream.finish(generated.text);
     const savedAssistantMessage = await createWorkspaceMessage({
       workspaceId,
       role: 'ASSISTANT',
-      content: fullAnswerText,
+      content: generated.text,
       mode,
-      citations: ragContext.citations.map((c) => ({
+      citations: usedCitations.map((c) => ({
         chunkId: c.chunkId,
         sourceId: c.sourceId,
         indexId: c.indexId,
@@ -622,21 +648,38 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         textOrigin: c.textOrigin,
       })),
     });
+    logger.info('Grounded response completed and persisted', {
+      workspaceId,
+      messageId: savedAssistantMessage.id,
+      provider: generated.provider,
+      model: generated.model,
+      providerResponseId: generated.responseId,
+      citationCount: usedCitations.length,
+    });
 
-    // Send final 'done' event
     sendEvent({
       type: 'done',
       messageId: savedAssistantMessage.id,
-      citations: ragContext.citations,
+      citations: usedCitations,
     });
-
-    res.end();
   } catch (err: any) {
+    if (err instanceof ChatGenerationAbortedError || generationController.signal.aborted) {
+      logger.info('Grounded response generation cancelled', { workspaceId });
+      return;
+    }
     logger.error('RAG Stream Handler Error', err);
     sendEvent({
       type: 'error',
-      error: err.message || 'An unexpected error occurred during grounded AI response generation.',
+      code: err instanceof ChatProviderError ? err.code : 'CHAT_GENERATION_FAILED',
+      error:
+        err instanceof ChatProviderError
+          ? err.message
+          : 'Grounded AI response generation failed before completion.',
     });
-    res.end();
+  } finally {
+    responseFinished = true;
+    req.removeListener('aborted', abortGeneration);
+    res.removeListener('close', handleResponseClose);
+    if (!res.writableEnded && !res.destroyed) res.end();
   }
 });
