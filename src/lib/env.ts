@@ -8,7 +8,13 @@ const serverEnvSchema = z
     VITE_CLERK_PUBLISHABLE_KEY: z
       .string()
       .min(1, 'VITE_CLERK_PUBLISHABLE_KEY is required'),
-    OPENAI_API_KEY: z.string().optional(),
+    OPENAI_API_KEY: z.string().trim().min(1).optional(),
+    EMBEDDING_PROVIDER: z.literal('openai').default('openai'),
+    EMBEDDING_MODEL: z
+      .enum(['text-embedding-3-small', 'text-embedding-3-large'])
+      .default('text-embedding-3-small'),
+    EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
+    EMBEDDING_VERSION: z.string().trim().min(1).default('v1'),
     TAVILY_API_KEY: z.string().optional(),
     BLOB_READ_WRITE_TOKEN: z.string().optional(),
     GEMINI_API_KEY: z.string().optional(),
@@ -28,6 +34,21 @@ const serverEnvSchema = z
       });
     }
 
+    if (!env.OPENAI_API_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['OPENAI_API_KEY'],
+        message: 'OPENAI_API_KEY is required in production',
+      });
+    }
+
+    if (env.EMBEDDING_DIMENSIONS !== 1536) {
+      context.addIssue({
+        code: 'custom',
+        path: ['EMBEDDING_DIMENSIONS'],
+        message: 'EMBEDDING_DIMENSIONS must be 1536 for the configured pgvector schema',
+      });
+    }
   });
 
 export function getServerEnv() {

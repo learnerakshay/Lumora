@@ -1,8 +1,6 @@
 import { prisma } from '../prisma';
-import { logger } from '../logger';
-import { generateEmbeddingsBatch, generateDeterministicEmbedding } from '../ingestion/embedder';
+import { generateEmbeddingsBatch } from '../ingestion/embedder';
 import { getWorkspaceSources, SourceRecord } from '../source-store';
-import { getWorkspaceChunks, StoredChunkRecord } from '../chunk-store';
 
 export interface RetrievedChunk {
   id: string;
@@ -34,25 +32,10 @@ export interface RAGContextResult {
   }>;
 }
 
-// Cosine similarity helper for vectors
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
 // Generates query embedding vector
 export async function generateQueryEmbedding(query: string): Promise<number[]> {
-  const [vector] = await generateEmbeddingsBatch([query]);
-  return vector || generateDeterministicEmbedding(query, 1536);
+  const result = await generateEmbeddingsBatch([query]);
+  return result.vectors[0];
 }
 
 // Searches workspace chunks using vector semantic similarity with strict isolation
@@ -70,89 +53,88 @@ export async function searchWorkspaceChunks(
   sources.forEach((s) => sourceMap.set(s.id, s));
 
   // 2. Generate Query Embedding
-  const queryVector = await generateQueryEmbedding(query);
+  const embeddingBatch = await generateEmbeddingsBatch([query]);
+  const queryVector = embeddingBatch.vectors[0];
+  const contract = embeddingBatch.contract;
 
-  let retrieved: RetrievedChunk[] = [];
-
-  try {
-    if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost:5432/lumora')) {
-      // Resolve workspace ID if slug passed
-      let targetWsId = workspaceId;
-      const ws = await prisma.workspace.findFirst({
-        where: { OR: [{ id: workspaceId }, { slug: workspaceId }] },
-      });
-      if (ws) {
-        targetWsId = ws.id;
-      }
-
-      const vectorStr = `[${queryVector.join(',')}]`;
-
-      // Perform pgvector cosine distance query
-      const rawResults: any[] = await prisma.$queryRaw`
-        SELECT 
-          c.id,
-          c."sourceId",
-          c."workspaceId",
-          c.content,
-          c."tokenCount",
-          c."chunkIndex",
-          (1 - (c.embedding <=> ${vectorStr}::vector)) AS similarity
-        FROM "Chunk" c
-        WHERE c."workspaceId" = ${targetWsId}
-        ORDER BY c.embedding <=> ${vectorStr}::vector
-        LIMIT ${topK * 2}
-      `;
-
-      if (Array.isArray(rawResults) && rawResults.length > 0) {
-        for (const row of rawResults) {
-          const sim = typeof row.similarity === 'number' ? row.similarity : parseFloat(row.similarity || '0');
-          if (sim >= threshold) {
-            const src = sourceMap.get(row.sourceId);
-            retrieved.push({
-              id: row.id,
-              sourceId: row.sourceId,
-              workspaceId: row.workspaceId,
-              content: row.content,
-              tokenCount: row.tokenCount || 0,
-              chunkIndex: row.chunkIndex || 0,
-              similarity: Math.round(sim * 1000) / 1000,
-              sourceTitle: src?.title || 'Workspace Document',
-              sourceType: src?.type || 'TEXT',
-              sourceUrl: src?.url || src?.metadata?.url || null,
-              sourceMetadata: src?.metadata || null,
-            });
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.warn('pgvector search workspace chunks raw query failed, falling back to in-memory search', err);
+  const workspace = await prisma.workspace.findFirst({
+    where: { OR: [{ id: workspaceId }, { slug: workspaceId }] },
+    select: { id: true },
+  });
+  if (!workspace) {
+    throw new Error('Workspace not found during vector search');
   }
 
-  // 3. Fallback or additional in-memory vector cosine similarity search
-  if (retrieved.length === 0) {
-    const allChunks = await getWorkspaceChunks(workspaceId);
-    const scored = allChunks.map((chk) => {
-      const chkVec = chk.embedding || generateDeterministicEmbedding(chk.content, 1536);
-      const sim = cosineSimilarity(queryVector, chkVec);
-      const src = sourceMap.get(chk.sourceId);
-      return {
-        id: chk.id,
-        sourceId: chk.sourceId,
-        workspaceId: chk.workspaceId,
-        content: chk.content,
-        tokenCount: chk.tokenCount,
-        chunkIndex: chk.chunkIndex,
+  const incompatibleIndexes = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(*)::bigint AS count
+    FROM "Source" source
+    INNER JOIN "SourceIndex" source_index
+      ON source_index.id = source."activeIndexId"
+      AND source_index.status = 'READY'::"SourceIndexStatus"
+    WHERE source."workspaceId" = ${workspace.id}
+      AND (
+        source_index."embeddingProvider" <> ${contract.provider}
+        OR source_index."embeddingModel" <> ${contract.model}
+        OR source_index."embeddingVersion" <> ${contract.version}
+        OR source_index."vectorDimensions" <> ${contract.dimensions}
+      )
+  `;
+  if (Number(incompatibleIndexes[0]?.count ?? 0) > 0) {
+    throw new Error(
+      'Active Workspace indexes are incompatible with the configured embedding contract; re-indexing is required',
+    );
+  }
+
+  const vectorStr = `[${queryVector.join(',')}]`;
+  const rawResults: any[] = await prisma.$queryRaw`
+    SELECT
+      chunk.id,
+      chunk."sourceId",
+      chunk."workspaceId",
+      chunk.content,
+      chunk."tokenCount",
+      chunk."chunkIndex",
+      (1 - (chunk.embedding <=> ${vectorStr}::vector)) AS similarity
+    FROM "Chunk" chunk
+    INNER JOIN "Source" source
+      ON source.id = chunk."sourceId"
+      AND source."activeIndexId" = chunk."indexId"
+    INNER JOIN "SourceIndex" source_index
+      ON source_index.id = chunk."indexId"
+      AND source_index.status = 'READY'::"SourceIndexStatus"
+    WHERE chunk."workspaceId" = ${workspace.id}
+      AND chunk.embedding IS NOT NULL
+      AND vector_dims(chunk.embedding) = ${contract.dimensions}
+      AND source_index."embeddingProvider" = ${contract.provider}
+      AND source_index."embeddingModel" = ${contract.model}
+      AND source_index."embeddingVersion" = ${contract.version}
+      AND source_index."vectorDimensions" = ${contract.dimensions}
+    ORDER BY chunk.embedding <=> ${vectorStr}::vector
+    LIMIT ${topK * 2}
+  `;
+
+  const retrieved: RetrievedChunk[] = [];
+  for (const row of rawResults) {
+    const sim =
+      typeof row.similarity === 'number'
+        ? row.similarity
+        : parseFloat(row.similarity || '0');
+    if (sim >= threshold) {
+      const src = sourceMap.get(row.sourceId);
+      retrieved.push({
+        id: row.id,
+        sourceId: row.sourceId,
+        workspaceId: row.workspaceId,
+        content: row.content,
+        tokenCount: row.tokenCount || 0,
+        chunkIndex: row.chunkIndex || 0,
         similarity: Math.round(sim * 1000) / 1000,
         sourceTitle: src?.title || 'Workspace Document',
         sourceType: src?.type || 'TEXT',
         sourceUrl: src?.url || src?.metadata?.url || null,
         sourceMetadata: src?.metadata || null,
-      };
-    });
-
-    scored.sort((a, b) => b.similarity - a.similarity);
-    retrieved = scored.filter((s) => s.similarity >= threshold).slice(0, topK);
+      });
+    }
   }
 
   // Deduplicate near-identical content snippets

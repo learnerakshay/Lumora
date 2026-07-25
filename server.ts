@@ -9,6 +9,7 @@ import { errorResponse, successResponse } from './src/lib/api-response';
 import { workspaceRouter } from './src/routes/workspaces';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
+import { assertPgvectorAvailable } from './src/lib/chunk-store';
 
 async function startServer() {
   const env = getServerEnv();
@@ -30,10 +31,14 @@ async function startServer() {
   app.get('/api/health', async (_req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
+      await assertPgvectorAvailable();
     } catch (err) {
-      logger.error('Health check database query failed', err);
+      logger.error('Health check database/vector query failed', err);
       const response = errorResponse(
-        AppError.serviceUnavailable('Database readiness check failed', 'DATABASE_UNAVAILABLE'),
+        AppError.serviceUnavailable(
+          'Database vector readiness check failed',
+          'VECTOR_DATABASE_UNAVAILABLE',
+        ),
       );
       return res.status(response.statusCode).json(response.payload);
     }
@@ -42,6 +47,7 @@ async function startServer() {
       successResponse({
         status: 'ok',
         database: 'connected',
+        vectorDatabase: 'ready',
         authentication: 'configured',
         environment: NODE_ENV,
         timestamp: new Date().toISOString(),

@@ -1,102 +1,187 @@
-import { GoogleGenAI } from '@google/genai';
-import { logger } from '../logger';
+import { getServerEnv } from '../env';
 
-export interface ChunkEmbeddingResult {
-  chunkIndex: number;
-  embedding: number[]; // 1536 dimensions
+const EMBEDDING_API_URL = 'https://api.openai.com/v1/embeddings';
+const MAX_BATCH_SIZE = 64;
+const MAX_ATTEMPTS = 3;
+const REQUEST_TIMEOUT_MS = 30_000;
+
+export interface EmbeddingContract {
+  provider: 'openai';
+  model: 'text-embedding-3-small' | 'text-embedding-3-large';
+  dimensions: 1536;
+  version: string;
 }
 
-// Generates 1536-dimensional embedding vector for text
+export interface EmbeddingBatchResult {
+  vectors: number[][];
+  contract: EmbeddingContract;
+}
+
+interface OpenAIEmbeddingResponse {
+  data?: Array<{ index?: number; embedding?: number[] }>;
+  error?: { message?: string };
+}
+
+export function getEmbeddingContract(): EmbeddingContract {
+  const env = getServerEnv();
+  if (!env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is required for embedding generation');
+  }
+  if (env.EMBEDDING_DIMENSIONS !== 1536) {
+    throw new Error(
+      `Embedding dimension ${env.EMBEDDING_DIMENSIONS} is incompatible with vector(1536)`,
+    );
+  }
+
+  return {
+    provider: env.EMBEDDING_PROVIDER,
+    model: env.EMBEDDING_MODEL,
+    dimensions: 1536,
+    version: env.EMBEDDING_VERSION,
+  };
+}
+
+export function validateEmbeddingVector(
+  value: unknown,
+  contract: EmbeddingContract,
+  label = 'embedding',
+): asserts value is number[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} is not a vector`);
+  }
+  if (value.length !== contract.dimensions) {
+    throw new Error(
+      `${label} has ${value.length} dimensions; expected ${contract.dimensions}`,
+    );
+  }
+  if (value.some((component) => typeof component !== 'number' || !Number.isFinite(component))) {
+    throw new Error(`${label} contains a non-finite numeric value`);
+  }
+  if (!value.some((component) => component !== 0)) {
+    throw new Error(`${label} is a zero vector`);
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function retryDelay(attempt: number, retryAfter: string | null): number {
+  const retryAfterSeconds = retryAfter ? Number(retryAfter) : Number.NaN;
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.min(retryAfterSeconds * 1000, 10_000);
+  }
+  return Math.min(250 * 2 ** (attempt - 1), 2_000);
+}
+
+async function requestEmbeddingBatch(
+  texts: string[],
+  contract: EmbeddingContract,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<number[][]> {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetchImpl(EMBEDDING_API_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: texts,
+          model: contract.model,
+          dimensions: contract.dimensions,
+          encoding_format: 'float',
+        }),
+        signal: controller.signal,
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as OpenAIEmbeddingResponse;
+      if (!response.ok) {
+        const message = payload.error?.message || `OpenAI embeddings returned HTTP ${response.status}`;
+        if (attempt < MAX_ATTEMPTS && isRetryableStatus(response.status)) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, retryDelay(attempt, response.headers.get('retry-after'))),
+          );
+          continue;
+        }
+        throw new Error(`Embedding provider failure: ${message}`);
+      }
+
+      if (!Array.isArray(payload.data) || payload.data.length !== texts.length) {
+        throw new Error(
+          `Embedding provider returned ${payload.data?.length ?? 0} vectors for ${texts.length} inputs`,
+        );
+      }
+
+      const indexed = new Map<number, { index?: number; embedding?: number[] }>();
+      payload.data.forEach((item) => {
+        if (
+          !Number.isInteger(item.index) ||
+          item.index! < 0 ||
+          item.index! >= texts.length ||
+          indexed.has(item.index!)
+        ) {
+          throw new Error('Embedding provider returned invalid or duplicate vector indexes');
+        }
+        indexed.set(item.index!, item);
+      });
+      return texts.map((_text, index) => {
+        const item = indexed.get(index);
+        if (!item) {
+          throw new Error(`Embedding provider omitted vector index ${index}`);
+        }
+        validateEmbeddingVector(item.embedding, contract, `embedding ${index}`);
+        return item.embedding;
+      });
+    } catch (error) {
+      const retryableNetworkFailure =
+        error instanceof TypeError ||
+        (error instanceof DOMException && error.name === 'AbortError');
+      if (attempt < MAX_ATTEMPTS && retryableNetworkFailure) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt, null)));
+        continue;
+      }
+      if (error instanceof Error) throw error;
+      throw new Error('Embedding provider failed with an unknown error');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw new Error('Embedding provider exhausted all retry attempts');
+}
+
 export async function generateEmbeddingsBatch(
   texts: string[],
-  onProgress?: (processed: number, total: number) => void
-): Promise<number[][]> {
-  const total = texts.length;
-  const results: number[][] = [];
-
-  // Check if GEMINI_API_KEY or OPENAI_API_KEY is available
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  for (let i = 0; i < texts.length; i++) {
-    const text = texts[i];
-    let vector: number[] | null = null;
-
-    if (geminiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-        const response = await ai.models.embedContent({
-          model: 'text-embedding-004',
-          contents: text,
-        });
-
-        const respAny = response as any;
-        const rawValues = respAny.embedding?.values || respAny.embeddings?.[0]?.values;
-        if (rawValues && Array.isArray(rawValues)) {
-          vector = padOrTruncateVector(rawValues, 1536);
-        }
-      } catch (err) {
-        logger.warn(`Gemini embedding failed for chunk ${i}, falling back to deterministic vector`, err);
-      }
-    }
-
-    if (!vector) {
-      vector = generateDeterministicEmbedding(text, 1536);
-    }
-
-    results.push(vector);
-
-    if (onProgress) {
-      onProgress(i + 1, total);
-    }
+  onProgress?: (processed: number, total: number) => void,
+  fetchImpl: typeof fetch = fetch,
+): Promise<EmbeddingBatchResult> {
+  if (texts.length === 0) {
+    throw new Error('Embedding generation requires at least one input');
+  }
+  if (texts.some((text) => typeof text !== 'string' || text.trim().length === 0)) {
+    throw new Error('Embedding generation received an empty input');
   }
 
-  return results;
-}
+  const env = getServerEnv();
+  const contract = getEmbeddingContract();
+  const vectors: number[][] = [];
 
-// Fallback deterministic high-dimensional semantic feature vector
-export function generateDeterministicEmbedding(text: string, dimensions: number = 1536): number[] {
-  const vector = new Array(dimensions).fill(0);
-  const clean = text.toLowerCase().trim();
-
-  let hash = 5381;
-  for (let i = 0; i < clean.length; i++) {
-    const char = clean.charCodeAt(i);
-    hash = (hash * 33) ^ char;
-
-    const dim = Math.abs((hash + i * 31) % dimensions);
-    vector[dim] += (char / 255) * (i % 2 === 0 ? 1 : -1);
+  for (let offset = 0; offset < texts.length; offset += MAX_BATCH_SIZE) {
+    const batch = texts.slice(offset, offset + MAX_BATCH_SIZE);
+    const batchVectors = await requestEmbeddingBatch(
+      batch,
+      contract,
+      env.OPENAI_API_KEY!,
+      fetchImpl,
+    );
+    vectors.push(...batchVectors);
+    onProgress?.(vectors.length, texts.length);
   }
 
-  // Feature hash n-grams (bigrams & trigrams)
-  const words = clean.split(/\s+/);
-  for (let w = 0; w < words.length; w++) {
-    const word = words[w];
-    let wordHash = 0;
-    for (let c = 0; c < word.length; c++) {
-      wordHash = (wordHash << 5) - wordHash + word.charCodeAt(c);
-    }
-    const idx = Math.abs(wordHash % dimensions);
-    vector[idx] += 1.0;
-  }
-
-  // L2 Vector Normalization
-  let normSq = 0;
-  for (let d = 0; d < dimensions; d++) {
-    normSq += vector[d] * vector[d];
-  }
-
-  const norm = Math.sqrt(normSq) || 1;
-  return vector.map((v) => parseFloat((v / norm).toFixed(6)));
-}
-
-function padOrTruncateVector(vec: number[], targetDim: number = 1536): number[] {
-  if (vec.length === targetDim) return vec;
-  if (vec.length > targetDim) return vec.slice(0, targetDim);
-
-  // Pad
-  const padded = [...vec];
-  while (padded.length < targetDim) {
-    padded.push(0);
-  }
-  return padded;
+  return { vectors, contract };
 }

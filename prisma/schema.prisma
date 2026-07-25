@@ -41,6 +41,12 @@ enum ProcessingStage {
   FAILED
 }
 
+enum SourceIndexStatus {
+  BUILDING
+  READY
+  SUPERSEDED
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -93,16 +99,42 @@ model Source {
   status      SourceStatus  @default(PENDING)
   stage       ProcessingStage @default(CREATED)
   currentVersion Int        @default(1)
+  activeIndexId  String?     @unique
+  activeIndex    SourceIndex? @relation("ActiveSourceIndex", fields: [activeIndexId], references: [id], onDelete: SetNull)
   metadata    Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   contents    SourceContent[]
   processingAttempts SourceProcessingAttempt[]
+  indexes     SourceIndex[] @relation("SourceIndexes")
   chunks      Chunk[]
 
   @@index([workspaceId])
   @@index([type])
+  @@index([status])
+}
+
+model SourceIndex {
+  id                String            @id @default(cuid())
+  sourceId          String
+  source             Source            @relation("SourceIndexes", fields: [sourceId], references: [id], onDelete: Cascade)
+  activeForSource   Source?           @relation("ActiveSourceIndex")
+  sourceVersion     Int
+  chunkVersion      String
+  status            SourceIndexStatus @default(BUILDING)
+  expectedChunkCount Int
+  embeddingProvider String
+  embeddingModel    String
+  embeddingVersion  String
+  vectorDimensions  Int
+  indexedAt         DateTime?
+  createdAt         DateTime          @default(now())
+
+  chunks Chunk[]
+
+  @@index([sourceId])
+  @@index([sourceId, sourceVersion])
   @@index([status])
 }
 
@@ -168,6 +200,9 @@ model Chunk {
   source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  indexId     String?
+  index       SourceIndex? @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  sourceVersion Int      @default(1)
   content     String    @db.Text
   tokenCount  Int       @default(0)
   chunkIndex  Int       @default(0)
@@ -178,6 +213,8 @@ model Chunk {
 
   @@index([sourceId])
   @@index([workspaceId])
+  @@index([indexId])
+  @@unique([indexId, chunkIndex])
 }
 
 model Message {

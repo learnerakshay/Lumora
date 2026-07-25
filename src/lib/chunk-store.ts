@@ -1,5 +1,10 @@
+import { randomUUID } from 'node:crypto';
+import { Prisma, SourceIndexStatus } from '@prisma/client';
 import { prisma } from './prisma';
-import { logger } from './logger';
+import {
+  EmbeddingContract,
+  validateEmbeddingVector,
+} from './ingestion/embedder';
 
 export interface StoredChunkRecord {
   id: string;
@@ -8,85 +13,288 @@ export interface StoredChunkRecord {
   content: string;
   tokenCount: number;
   chunkIndex: number;
-  embedding?: number[] | null;
   createdAt: string;
 }
 
-export async function saveSourceChunks(
-  workspaceId: string,
-  sourceId: string,
-  chunks: Array<{ content: string; tokenEstimate: number; chunkIndex: number; embedding: number[] }>,
-): Promise<StoredChunkRecord[]> {
-  await deleteSourceChunks(sourceId);
+export interface SourceIndexCommit {
+  indexId: string;
+  sourceVersion: number;
+  chunkVersion: string;
+  chunkCount: number;
+  indexedAt: string;
+  chunks: StoredChunkRecord[];
+}
 
-  const workspace = await prisma.workspace.findFirst({
-    where: { OR: [{ id: workspaceId }, { slug: workspaceId }] },
-    select: { id: true },
-  });
-  if (!workspace) {
-    throw new Error('Workspace not found');
+interface IndexChunkInput {
+  content: string;
+  tokenEstimate: number;
+  chunkIndex: number;
+  embedding: number[];
+}
+
+export interface SaveSourceIndexInput {
+  workspaceId: string;
+  sourceId: string;
+  sourceVersion: number;
+  chunkVersion: string;
+  contract: EmbeddingContract;
+  chunks: IndexChunkInput[];
+}
+
+type VectorDatabaseClient = Pick<typeof prisma, '$queryRaw' | '$transaction'>;
+
+function vectorLiteral(vector: number[]): string {
+  return `[${vector.join(',')}]`;
+}
+
+function validateIndexInput(input: SaveSourceIndexInput): void {
+  if (!Number.isInteger(input.sourceVersion) || input.sourceVersion < 1) {
+    throw new Error('Source index version must be a positive integer');
+  }
+  if (!input.chunkVersion.trim()) {
+    throw new Error('Chunk version is required');
+  }
+  if (input.chunks.length === 0) {
+    throw new Error('A source index must contain at least one chunk');
   }
 
-  const savedRecords: StoredChunkRecord[] = [];
-  for (const item of chunks) {
-    const createdChunk = await prisma.chunk.create({
-      data: {
-        workspaceId: workspace.id,
-        sourceId,
-        content: item.content,
-        tokenCount: item.tokenEstimate,
-        chunkIndex: item.chunkIndex,
-      },
-    });
-
-    if (item.embedding && item.embedding.length > 0) {
-      try {
-        const vectorString = `[${item.embedding.join(',')}]`;
-        await prisma.$executeRaw`
-          UPDATE "Chunk"
-          SET embedding = ${vectorString}::vector
-          WHERE id = ${createdChunk.id}
-        `;
-      } catch (error) {
-        logger.warn(`pgvector update bypassed for chunk ${createdChunk.id}`, error);
-      }
+  const indexes = new Set<number>();
+  input.chunks.forEach((chunk, position) => {
+    if (!chunk.content.trim()) {
+      throw new Error(`Chunk ${position} has empty content`);
     }
+    if (!Number.isInteger(chunk.chunkIndex) || chunk.chunkIndex < 0) {
+      throw new Error(`Chunk ${position} has an invalid chunk index`);
+    }
+    if (indexes.has(chunk.chunkIndex)) {
+      throw new Error(`Duplicate chunk index ${chunk.chunkIndex}`);
+    }
+    indexes.add(chunk.chunkIndex);
+    validateEmbeddingVector(chunk.embedding, input.contract, `chunk ${chunk.chunkIndex} embedding`);
+  });
+}
 
-    savedRecords.push({
-      id: createdChunk.id,
-      sourceId: createdChunk.sourceId,
-      workspaceId: createdChunk.workspaceId,
-      content: createdChunk.content,
-      tokenCount: createdChunk.tokenCount,
-      chunkIndex: createdChunk.chunkIndex,
-      embedding: item.embedding,
-      createdAt: createdChunk.createdAt.toISOString(),
-    });
+export async function assertPgvectorAvailable(
+  database: Pick<typeof prisma, '$queryRaw'> = prisma,
+): Promise<string> {
+  const rows = await database.$queryRaw<Array<{ extversion: string }>>`
+    SELECT extversion
+    FROM pg_extension
+    WHERE extname = 'vector'
+  `;
+  if (rows.length !== 1 || !rows[0].extversion) {
+    throw new Error('pgvector extension is not available');
   }
+  return rows[0].extversion;
+}
 
-  return savedRecords;
+export async function saveSourceIndex(
+  input: SaveSourceIndexInput,
+  database: VectorDatabaseClient = prisma,
+): Promise<SourceIndexCommit> {
+  validateIndexInput(input);
+  await assertPgvectorAvailable(database);
+
+  return database.$transaction(
+    async (tx) => {
+      const sources = await tx.$queryRaw<
+        Array<{
+          id: string;
+          workspaceId: string;
+          activeIndexId: string | null;
+          currentVersion: number;
+        }>
+      >`
+        SELECT
+          source.id,
+          source."workspaceId",
+          source."activeIndexId",
+          source."currentVersion"
+        FROM "Source" source
+        INNER JOIN "Workspace" workspace ON workspace.id = source."workspaceId"
+        WHERE source.id = ${input.sourceId}
+          AND (workspace.id = ${input.workspaceId} OR workspace.slug = ${input.workspaceId})
+        FOR UPDATE
+      `;
+      const source = sources[0];
+      if (!source) {
+        throw new Error('Source was not found in the requested Workspace');
+      }
+      if (source.currentVersion !== input.sourceVersion) {
+        throw new Error(
+          `Source version changed during indexing (expected ${input.sourceVersion}, current ${source.currentVersion})`,
+        );
+      }
+
+      const createdIndex = await tx.sourceIndex.create({
+        data: {
+          sourceId: source.id,
+          sourceVersion: input.sourceVersion,
+          chunkVersion: input.chunkVersion,
+          expectedChunkCount: input.chunks.length,
+          embeddingProvider: input.contract.provider,
+          embeddingModel: input.contract.model,
+          embeddingVersion: input.contract.version,
+          vectorDimensions: input.contract.dimensions,
+          status: SourceIndexStatus.BUILDING,
+        },
+        select: { id: true },
+      });
+
+      const createdAt = new Date();
+      const records: StoredChunkRecord[] = [];
+      for (const chunk of input.chunks) {
+        const id = randomUUID();
+        const affected = await tx.$executeRaw`
+          INSERT INTO "Chunk" (
+            id,
+            "sourceId",
+            "workspaceId",
+            "indexId",
+            "sourceVersion",
+            content,
+            "tokenCount",
+            "chunkIndex",
+            embedding,
+            "createdAt"
+          )
+          VALUES (
+            ${id},
+            ${source.id},
+            ${source.workspaceId},
+            ${createdIndex.id},
+            ${input.sourceVersion},
+            ${chunk.content},
+            ${chunk.tokenEstimate},
+            ${chunk.chunkIndex},
+            ${vectorLiteral(chunk.embedding)}::vector,
+            ${createdAt}
+          )
+        `;
+        if (affected !== 1) {
+          throw new Error(`pgvector insert failed for chunk ${chunk.chunkIndex}`);
+        }
+        records.push({
+          id,
+          sourceId: source.id,
+          workspaceId: source.workspaceId,
+          content: chunk.content,
+          tokenCount: chunk.tokenEstimate,
+          chunkIndex: chunk.chunkIndex,
+          createdAt: createdAt.toISOString(),
+        });
+      }
+
+      const verification = await tx.$queryRaw<
+        Array<{ total: bigint; valid: bigint }>
+      >`
+        SELECT
+          COUNT(*)::bigint AS total,
+          COUNT(*) FILTER (
+            WHERE embedding IS NOT NULL
+              AND vector_dims(embedding) = ${input.contract.dimensions}
+          )::bigint AS valid
+        FROM "Chunk"
+        WHERE "indexId" = ${createdIndex.id}
+      `;
+      const total = Number(verification[0]?.total ?? 0);
+      const valid = Number(verification[0]?.valid ?? 0);
+      if (total !== input.chunks.length || valid !== input.chunks.length) {
+        throw new Error(
+          `Index verification failed: expected ${input.chunks.length} vectors, stored ${total}, valid ${valid}`,
+        );
+      }
+
+      if (source.activeIndexId) {
+        const superseded = await tx.sourceIndex.updateMany({
+          where: {
+            id: source.activeIndexId,
+            sourceId: source.id,
+            status: SourceIndexStatus.READY,
+          },
+          data: { status: SourceIndexStatus.SUPERSEDED },
+        });
+        if (superseded.count !== 1) {
+          throw new Error('The previous active index is not a valid READY index');
+        }
+      }
+
+      const indexedAt = new Date();
+      await tx.sourceIndex.update({
+        where: { id: createdIndex.id },
+        data: {
+          status: SourceIndexStatus.READY,
+          indexedAt,
+        },
+      });
+      await tx.source.update({
+        where: { id: source.id },
+        data: { activeIndexId: createdIndex.id },
+      });
+
+      return {
+        indexId: createdIndex.id,
+        sourceVersion: input.sourceVersion,
+        chunkVersion: input.chunkVersion,
+        chunkCount: records.length,
+        indexedAt: indexedAt.toISOString(),
+        chunks: records,
+      };
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: 10_000,
+      timeout: 120_000,
+    },
+  );
 }
 
 export async function deleteSourceChunks(sourceId: string): Promise<boolean> {
-  await prisma.chunk.deleteMany({ where: { sourceId } });
+  await prisma.$transaction(async (tx) => {
+    await tx.source.update({
+      where: { id: sourceId },
+      data: { activeIndexId: null },
+    });
+    await tx.sourceIndex.deleteMany({ where: { sourceId } });
+    await tx.chunk.deleteMany({ where: { sourceId, indexId: null } });
+  });
   return true;
 }
 
 export async function getWorkspaceChunks(workspaceId: string): Promise<StoredChunkRecord[]> {
-  const chunks = await prisma.chunk.findMany({
-    where: {
-      OR: [{ workspaceId }, { workspace: { slug: workspaceId } }],
-    },
-    orderBy: { chunkIndex: 'asc' },
-  });
+  const chunks = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      sourceId: string;
+      workspaceId: string;
+      content: string;
+      tokenCount: number;
+      chunkIndex: number;
+      createdAt: Date;
+    }>
+  >`
+    SELECT
+      chunk.id,
+      chunk."sourceId",
+      chunk."workspaceId",
+      chunk.content,
+      chunk."tokenCount",
+      chunk."chunkIndex",
+      chunk."createdAt"
+    FROM "Chunk" chunk
+    INNER JOIN "Source" source
+      ON source.id = chunk."sourceId"
+      AND source."activeIndexId" = chunk."indexId"
+    INNER JOIN "SourceIndex" source_index
+      ON source_index.id = chunk."indexId"
+      AND source_index.status = 'READY'::"SourceIndexStatus"
+    INNER JOIN "Workspace" workspace ON workspace.id = chunk."workspaceId"
+    WHERE workspace.id = ${workspaceId} OR workspace.slug = ${workspaceId}
+    ORDER BY chunk."sourceId", chunk."chunkIndex"
+  `;
 
   return chunks.map((chunk) => ({
-    id: chunk.id,
-    sourceId: chunk.sourceId,
-    workspaceId: chunk.workspaceId,
-    content: chunk.content,
-    tokenCount: chunk.tokenCount,
-    chunkIndex: chunk.chunkIndex,
+    ...chunk,
     createdAt: chunk.createdAt.toISOString(),
   }));
 }

@@ -8,8 +8,10 @@ import {
 import { parseSourceContent } from './parsers';
 import { generateSemanticChunks } from './chunker';
 import { generateEmbeddingsBatch } from './embedder';
-import { saveSourceChunks } from '../chunk-store';
+import { saveSourceIndex } from '../chunk-store';
 import { logger } from '../logger';
+
+const CHUNK_VERSION = 'semantic-1200-200-v1';
 
 export interface IngestionOptions {
   sourceId: string;
@@ -159,12 +161,11 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       details: { chunkCount: chunks.length },
     });
 
-    const embeddings = await generateEmbeddingsBatch(
+    const embeddingBatch = await generateEmbeddingsBatch(
       chunks.map((chunk) => chunk.content),
     );
     if (
-      embeddings.length !== chunks.length ||
-      embeddings.some((embedding) => !Array.isArray(embedding) || embedding.length === 0)
+      embeddingBatch.vectors.length !== chunks.length
     ) {
       throw new Error('Embedding generation did not return one vector per chunk');
     }
@@ -173,21 +174,31 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       sourceId: options.sourceId,
       version,
       nextStage: 'INDEXING',
-      details: { chunkCount: chunks.length },
+      details: {
+        chunkCount: chunks.length,
+        embeddingProvider: embeddingBatch.contract.provider,
+        embeddingModel: embeddingBatch.contract.model,
+        embeddingVersion: embeddingBatch.contract.version,
+        vectorDimensions: embeddingBatch.contract.dimensions,
+        chunkVersion: CHUNK_VERSION,
+      },
     });
-    const savedChunks = await saveSourceChunks(
-      options.workspaceId,
-      options.sourceId,
-      chunks.map((chunk, index) => ({
+    const committedIndex = await saveSourceIndex({
+      workspaceId: options.workspaceId,
+      sourceId: options.sourceId,
+      sourceVersion: version,
+      chunkVersion: CHUNK_VERSION,
+      contract: embeddingBatch.contract,
+      chunks: chunks.map((chunk, index) => ({
         ...chunk,
-        embedding: embeddings[index],
+        embedding: embeddingBatch.vectors[index],
       })),
-    );
-    if (savedChunks.length !== chunks.length || savedChunks.length === 0) {
+    });
+    if (committedIndex.chunkCount !== chunks.length || committedIndex.chunkCount === 0) {
       throw new Error('Chunk persistence did not save the complete processed source');
     }
 
-    const tokenCount = savedChunks.reduce(
+    const tokenCount = committedIndex.chunks.reduce(
       (total, chunk) => total + chunk.tokenCount,
       0,
     );
@@ -196,17 +207,25 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       version,
       nextStage: 'COMPLETED',
       details: {
-        chunkCount: savedChunks.length,
+        chunkCount: committedIndex.chunkCount,
         tokenCount,
         textLength: parsed.cleanText.length,
         parserVersion: parsed.parserVersion,
+        indexId: committedIndex.indexId,
+        indexedAt: committedIndex.indexedAt,
+        sourceVersion: committedIndex.sourceVersion,
+        chunkVersion: committedIndex.chunkVersion,
+        embeddingProvider: embeddingBatch.contract.provider,
+        embeddingModel: embeddingBatch.contract.model,
+        embeddingVersion: embeddingBatch.contract.version,
+        vectorDimensions: embeddingBatch.contract.dimensions,
       },
     });
 
     logger.info(
       `Completed ingestion for source [${options.sourceId}] version ${version}`,
     );
-    return { success: true, chunkCount: savedChunks.length, tokenCount };
+    return { success: true, chunkCount: committedIndex.chunkCount, tokenCount };
   } catch (error: any) {
     const errorMessage = error?.message || 'Unexpected ingestion failure';
     logger.error(
