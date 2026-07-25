@@ -89,12 +89,7 @@ export function WorkspacesPage() {
       setLoading(true);
       setError(null);
 
-      const headers: Record<string, string> = {};
-      if (user?.id) {
-        headers['x-lumora-user-id'] = user.id;
-      }
-
-      const res = await fetch('/api/workspaces', { headers });
+      const res = await fetch('/api/workspaces');
       if (!res.ok) {
         throw new Error(`Server returned status ${res.status}`);
       }
@@ -126,10 +121,6 @@ export function WorkspacesPage() {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (user?.id) {
-      headers['x-lumora-user-id'] = user.id;
-    }
-
     const res = await fetch('/api/workspaces', {
       method: 'POST',
       headers,
@@ -155,10 +146,6 @@ export function WorkspacesPage() {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (user?.id) {
-      headers['x-lumora-user-id'] = user.id;
-    }
-
     const res = await fetch(`/api/workspaces/${id}`, {
       method: 'PATCH',
       headers,
@@ -180,10 +167,6 @@ export function WorkspacesPage() {
   // Delete Workspace
   const handleDeleteWorkspace = async (id: string) => {
     const headers: Record<string, string> = {};
-    if (user?.id) {
-      headers['x-lumora-user-id'] = user.id;
-    }
-
     const res = await fetch(`/api/workspaces/${id}`, {
       method: 'DELETE',
       headers,

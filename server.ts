@@ -1,16 +1,26 @@
+import 'dotenv/config';
 import express from 'express';
+import { clerkMiddleware } from '@clerk/express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { prisma } from './src/lib/prisma';
 import { logger } from './src/lib/logger';
 import { errorResponse, successResponse } from './src/lib/api-response';
 import { workspaceRouter } from './src/routes/workspaces';
+import { getServerEnv } from './src/lib/env';
+import { AppError } from './src/lib/errors';
 
 async function startServer() {
+  const env = getServerEnv();
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  const NODE_ENV = process.env.NODE_ENV || 'development';
+  const { PORT, NODE_ENV } = env;
 
+  app.use(
+    clerkMiddleware({
+      publishableKey: env.VITE_CLERK_PUBLISHABLE_KEY,
+      secretKey: env.CLERK_SECRET_KEY,
+    }),
+  );
   app.use(express.json());
 
   // Workspace API routes
@@ -18,38 +28,26 @@ async function startServer() {
 
   // Health check API
   app.get('/api/health', async (_req, res) => {
-    let dbStatus: 'connected' | 'disconnected' | 'disabled' = 'disconnected';
-    let dbConnected = false;
-
     try {
-      if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost:5432/lumora')) {
-        await prisma.$queryRaw`SELECT 1`;
-        dbStatus = 'connected';
-        dbConnected = true;
-      } else {
-        // Local placeholder mode or unconfigured DB
-        dbStatus = 'disabled';
-        dbConnected = true; // allow health check pass in local unconfigured dev mode
-      }
+      await prisma.$queryRaw`SELECT 1`;
     } catch (err) {
       logger.error('Health check database query failed', err);
-      dbStatus = 'disconnected';
-      dbConnected = false;
+      const response = errorResponse(
+        AppError.serviceUnavailable('Database readiness check failed', 'DATABASE_UNAVAILABLE'),
+      );
+      return res.status(response.statusCode).json(response.payload);
     }
 
-    const response = {
-      status: dbConnected ? 'ok' : 'error',
-      database: dbStatus,
-      environment: NODE_ENV,
-      timestamp: new Date().toISOString(),
-      version: '1.0.0',
-    };
-
-    if (!dbConnected) {
-      return res.status(503).json(errorResponse(new Error('Database connection failed')).payload);
-    }
-
-    return res.status(200).json(successResponse(response));
+    return res.status(200).json(
+      successResponse({
+        status: 'ok',
+        database: 'connected',
+        authentication: 'configured',
+        environment: NODE_ENV,
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      }),
+    );
   });
 
   // Vite middleware for dev / static for prod

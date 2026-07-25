@@ -58,7 +58,7 @@ model Workspace {
   slug        String    @unique
   description String?
   icon        String?   @default("folder")
-  userId      String?
+  userId      String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

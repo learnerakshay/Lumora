@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../components/AuthProvider';
 import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
 import { WorkspaceSourcesSidebar } from '../components/workspace/WorkspaceSourcesSidebar';
@@ -27,7 +26,6 @@ interface WorkspaceData {
 export function WorkspaceDetailPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -56,12 +54,7 @@ export function WorkspaceDetailPage() {
     try {
       setLoadingWorkspace(true);
       setError(null);
-      const headers: Record<string, string> = {};
-      if (user?.id) {
-        headers['x-lumora-user-id'] = user.id;
-      }
-
-      const res = await fetch(`/api/workspaces/${workspaceId}`, { headers });
+      const res = await fetch(`/api/workspaces/${workspaceId}`);
       if (!res.ok) {
         throw new Error(`Failed to load workspace details (${res.status})`);
       }
@@ -77,7 +70,7 @@ export function WorkspaceDetailPage() {
     } finally {
       setLoadingWorkspace(false);
     }
-  }, [workspaceId, user?.id]);
+  }, [workspaceId]);
 
   const selectedSourceIdRef = useRef<string | null>(null);
   selectedSourceIdRef.current = selectedSourceDetails?.id || null;
@@ -256,7 +249,6 @@ export function WorkspaceDetailPage() {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...(user?.id ? { 'x-lumora-user-id': user.id } : {}),
       },
       body: JSON.stringify(updatedData),
     });
@@ -438,4 +430,3 @@ export function WorkspaceDetailPage() {
     </div>
   );
 }
-

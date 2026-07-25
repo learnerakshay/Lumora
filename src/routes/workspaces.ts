@@ -11,29 +11,50 @@ import {
   getWorkspaceSources,
   createSource,
   updateSource,
-  deleteSource,
+  updateWorkspaceSource,
+  deleteWorkspaceSource,
   SourceType,
 } from '../lib/source-store';
 import { validateSourceInput } from '../lib/ingestion/validators';
 import { processSourcePipeline } from '../lib/ingestion/pipeline';
-import { deleteSourceChunks, getWorkspaceChunks } from '../lib/chunk-store';
+import { getWorkspaceChunks } from '../lib/chunk-store';
 import { searchWorkspaceChunks, buildRAGContext } from '../lib/retrieval/rag-service';
 import {
   getWorkspaceMessages,
   createWorkspaceMessage,
   clearWorkspaceMessages,
 } from '../lib/chat/conversation-store';
-import { getUserIdFromRequest } from '../lib/auth';
+import { requireApiAuth } from '../lib/auth';
+import { AppError } from '../lib/errors';
 import { successResponse, errorResponse } from '../lib/api-response';
 import { logger } from '../lib/logger';
 
 export const workspaceRouter = Router();
 
+workspaceRouter.use(requireApiAuth);
+
+workspaceRouter.param('id', async (req: Request, res: Response, next, workspaceId: string) => {
+  try {
+    const workspace = await getWorkspaceById(workspaceId, res.locals.userId);
+    if (!workspace) {
+      const response = errorResponse(
+        AppError.forbidden('You do not have access to this workspace', 'WORKSPACE_ACCESS_DENIED'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+    res.locals.workspace = workspace;
+    next();
+  } catch (error) {
+    logger.error('Workspace ownership verification failed', error);
+    const response = errorResponse(error);
+    return res.status(response.statusCode).json(response.payload);
+  }
+});
+
 // GET /api/workspaces
 workspaceRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromRequest(req);
-    const workspaces = await getWorkspaces(userId);
+    const workspaces = await getWorkspaces(res.locals.userId);
     return res.status(200).json(successResponse(workspaces));
   } catch (err: any) {
     logger.error('Failed to fetch workspaces', err);
@@ -46,7 +67,6 @@ workspaceRouter.get('/', async (req: Request, res: Response) => {
 // POST /api/workspaces
 workspaceRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromRequest(req);
     const { name, description, icon } = req.body || {};
 
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -65,7 +85,7 @@ workspaceRouter.post('/', async (req: Request, res: Response) => {
       name,
       description,
       icon,
-      userId,
+      userId: res.locals.userId,
     });
 
     return res.status(201).json(successResponse(created));
@@ -80,17 +100,7 @@ workspaceRouter.post('/', async (req: Request, res: Response) => {
 // GET /api/workspaces/:id
 workspaceRouter.get('/:id', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromRequest(req);
-    const id = req.params.id;
-    const workspace = await getWorkspaceById(id, userId);
-
-    if (!workspace) {
-      return res
-        .status(404)
-        .json(errorResponse(new Error('Workspace not found')).payload);
-    }
-
-    return res.status(200).json(successResponse(workspace));
+    return res.status(200).json(successResponse(res.locals.workspace));
   } catch (err: any) {
     logger.error('Failed to fetch workspace', err);
     return res
@@ -102,8 +112,7 @@ workspaceRouter.get('/:id', async (req: Request, res: Response) => {
 // PATCH /api/workspaces/:id
 workspaceRouter.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromRequest(req);
-    const id = req.params.id;
+    const id = res.locals.workspace.id;
     const { name, description, icon } = req.body || {};
 
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
@@ -115,7 +124,7 @@ workspaceRouter.patch('/:id', async (req: Request, res: Response) => {
     const updated = await updateWorkspace(
       id,
       { name, description, icon },
-      userId
+      res.locals.userId
     );
 
     if (!updated) {
@@ -136,10 +145,9 @@ workspaceRouter.patch('/:id', async (req: Request, res: Response) => {
 // DELETE /api/workspaces/:id
 workspaceRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const userId = getUserIdFromRequest(req);
-    const id = req.params.id;
+    const id = res.locals.workspace.id;
 
-    const deleted = await deleteWorkspace(id, userId);
+    const deleted = await deleteWorkspace(id, res.locals.userId);
 
     if (!deleted) {
       return res
@@ -159,7 +167,7 @@ workspaceRouter.delete('/:id', async (req: Request, res: Response) => {
 // GET /api/workspaces/:id/sources
 workspaceRouter.get('/:id/sources', async (req: Request, res: Response) => {
   try {
-    const workspaceId = req.params.id;
+    const workspaceId = res.locals.workspace.id;
     const sources = await getWorkspaceSources(workspaceId);
     return res.status(200).json(successResponse(sources));
   } catch (err: any) {
@@ -173,7 +181,7 @@ workspaceRouter.get('/:id/sources', async (req: Request, res: Response) => {
 // POST /api/workspaces/:id/sources
 workspaceRouter.post('/:id/sources', async (req: Request, res: Response) => {
   try {
-    const workspaceId = req.params.id;
+    const workspaceId = res.locals.workspace.id;
     const { title, type, url, fileSize, rawContent, metadata } = req.body || {};
 
     const validTypes: SourceType[] = ['PDF', 'WEBSITE', 'TEXT', 'YOUTUBE', 'VTT'];
@@ -241,7 +249,8 @@ workspaceRouter.post('/:id/sources', async (req: Request, res: Response) => {
 // POST /api/workspaces/:id/sources/:sourceId/reprocess (Retry capability)
 workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, res: Response) => {
   try {
-    const { id: workspaceId, sourceId } = req.params;
+    const workspaceId = res.locals.workspace.id;
+    const { sourceId } = req.params;
     const sources = await getWorkspaceSources(workspaceId);
     const source = sources.find((s) => s.id === sourceId);
 
@@ -292,7 +301,12 @@ workspaceRouter.patch('/:id/sources/:sourceId', async (req: Request, res: Respon
     const sourceId = req.params.sourceId;
     const { title, status } = req.body || {};
 
-    const updated = await updateSource(sourceId, { title, status });
+    const updated = await updateWorkspaceSource(
+      res.locals.workspace.id,
+      sourceId,
+      res.locals.userId,
+      { title, status },
+    );
     if (!updated) {
       return res
         .status(404)
@@ -313,11 +327,11 @@ workspaceRouter.delete('/:id/sources/:sourceId', async (req: Request, res: Respo
   try {
     const sourceId = req.params.sourceId;
 
-    // Delete chunks and vector embeddings first
-    await deleteSourceChunks(sourceId);
-
-    // Delete source record
-    const deleted = await deleteSource(sourceId);
+    const deleted = await deleteWorkspaceSource(
+      res.locals.workspace.id,
+      sourceId,
+      res.locals.userId,
+    );
 
     if (!deleted) {
       return res
@@ -337,7 +351,8 @@ workspaceRouter.delete('/:id/sources/:sourceId', async (req: Request, res: Respo
 // GET /api/workspaces/:id/sources/:sourceId/chunks
 workspaceRouter.get('/:id/sources/:sourceId/chunks', async (req: Request, res: Response) => {
   try {
-    const { id: workspaceId, sourceId } = req.params;
+    const workspaceId = res.locals.workspace.id;
+    const { sourceId } = req.params;
     const chunks = await getWorkspaceChunks(workspaceId);
     const sourceChunks = chunks.filter((c) => c.sourceId === sourceId);
 
@@ -351,7 +366,7 @@ workspaceRouter.get('/:id/sources/:sourceId/chunks', async (req: Request, res: R
 // GET /api/workspaces/:id/messages
 workspaceRouter.get('/:id/messages', async (req: Request, res: Response) => {
   try {
-    const workspaceId = req.params.id;
+    const workspaceId = res.locals.workspace.id;
     const messages = await getWorkspaceMessages(workspaceId);
     return res.status(200).json(successResponse(messages));
   } catch (err: any) {
@@ -363,7 +378,7 @@ workspaceRouter.get('/:id/messages', async (req: Request, res: Response) => {
 // DELETE /api/workspaces/:id/messages
 workspaceRouter.delete('/:id/messages', async (req: Request, res: Response) => {
   try {
-    const workspaceId = req.params.id;
+    const workspaceId = res.locals.workspace.id;
     await clearWorkspaceMessages(workspaceId);
     return res.status(200).json(successResponse({ success: true }));
   } catch (err: any) {
@@ -374,7 +389,7 @@ workspaceRouter.delete('/:id/messages', async (req: Request, res: Response) => {
 
 // POST /api/workspaces/:id/chat/stream
 workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => {
-  const workspaceId = req.params.id;
+  const workspaceId = res.locals.workspace.id;
   const { message, mode = 'DETAILED' } = req.body || {};
 
   if (!message || typeof message !== 'string' || !message.trim()) {
@@ -501,4 +516,3 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     res.end();
   }
 });
-
