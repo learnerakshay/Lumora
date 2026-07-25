@@ -1,0 +1,151 @@
+// Prisma Schema for Lumora Knowledge Operating System
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+enum SourceType {
+  PDF
+  WEBSITE
+  YOUTUBE
+  VTT
+  TEXT
+}
+
+enum SourceStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum MessageStatus {
+  SENDING
+  SUCCESS
+  ERROR
+}
+
+enum AnswerMode {
+  CONCISE
+  DETAILED
+  CRITICAL
+  CREATIVE
+}
+
+enum CitationKind {
+  DOCUMENT
+  WEB
+  CALCULATION
+}
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  icon        String?   @default("folder")
+  userId      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  sources   Source[]
+  messages  Message[]
+  chunks    Chunk[]
+
+  @@index([slug])
+  @@index([userId])
+}
+
+model Source {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String
+  type        SourceType
+  status      SourceStatus  @default(PENDING)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  contents    SourceContent[]
+  chunks      Chunk[]
+
+  @@index([workspaceId])
+  @@index([type])
+  @@index([status])
+}
+
+model SourceContent {
+  id         String   @id @default(cuid())
+  sourceId   String
+  source     Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  rawContent String   @db.Text
+  cleanText  String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([sourceId])
+}
+
+model Chunk {
+  id          String    @id @default(cuid())
+  sourceId    String
+  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  content     String    @db.Text
+  tokenCount  Int       @default(0)
+  chunkIndex  Int       @default(0)
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime  @default(now())
+
+  citations   Citation[]
+
+  @@index([sourceId])
+  @@index([workspaceId])
+}
+
+model Message {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role        MessageRole
+  content     String        @db.Text
+  mode        AnswerMode    @default(DETAILED)
+  status      MessageStatus @default(SUCCESS)
+  createdAt   DateTime      @default(now())
+
+  citations   Citation[]
+
+  @@index([workspaceId])
+  @@index([createdAt])
+}
+
+model Citation {
+  id        String       @id @default(cuid())
+  messageId String
+  message   Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chunkId   String?
+  chunk     Chunk?       @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  title     String
+  snippet   String       @db.Text
+  kind      CitationKind @default(DOCUMENT)
+  score     Float?
+  createdAt DateTime     @default(now())
+
+  @@index([messageId])
+  @@index([chunkId])
+}

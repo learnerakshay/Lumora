@@ -1,0 +1,174 @@
+import React, { useState } from 'react';
+import { WORKSPACE_ICONS, WorkspaceIcon } from './WorkspaceIcon';
+import { X, Sparkles, Loader2 } from 'lucide-react';
+
+interface CreateWorkspaceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreate: (data: { name: string; description?: string; icon?: string }) => Promise<void>;
+}
+
+export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorkspaceModalProps) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedIcon, setSelectedIcon] = useState('brain');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError('Workspace name is required.');
+      return;
+    }
+
+    if (trimmedName.length > 60) {
+      setError('Workspace name cannot exceed 60 characters.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await onCreate({
+        name: trimmedName,
+        description: description.trim() || undefined,
+        icon: selectedIcon,
+      });
+      // Reset form
+      setName('');
+      setDescription('');
+      setSelectedIcon('brain');
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to create workspace. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+      <div
+        className="w-full max-w-md bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-slate-800/80 bg-slate-900/50">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-lg bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-white">Create Workspace</h2>
+              <p className="text-xs text-slate-400">Setup an isolated knowledge workspace</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body Form */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {error && (
+            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300">
+              {error}
+            </div>
+          )}
+
+          {/* Name */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-300">
+              Workspace Name <span className="text-rose-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Lumora Architecture & Docs"
+              maxLength={60}
+              required
+              autoFocus
+              className="w-full px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors"
+            />
+          </div>
+
+          {/* Description */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-300">
+              Description <span className="text-slate-500">(Optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief summary of what this workspace contains..."
+              rows={3}
+              maxLength={200}
+              className="w-full px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors resize-none"
+            />
+          </div>
+
+          {/* Icon Selector */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-300">Workspace Icon</label>
+            <div className="grid grid-cols-5 gap-2">
+              {WORKSPACE_ICONS.map(({ id, label, Icon }) => {
+                const isSelected = selectedIcon === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setSelectedIcon(id)}
+                    title={label}
+                    className={`flex items-center justify-center p-2.5 rounded-xl border transition-all ${
+                      isSelected
+                        ? 'bg-sky-950/80 border-sky-500 text-sky-400 shadow-sm shadow-sky-500/20'
+                        : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Buttons */}
+          <div className="pt-3 flex items-center justify-end space-x-3 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !name.trim()}
+              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold rounded-xl text-xs transition-colors flex items-center space-x-1.5 shadow-md shadow-sky-500/20"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Creating...</span>
+                </>
+              ) : (
+                <span>Create Workspace</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
