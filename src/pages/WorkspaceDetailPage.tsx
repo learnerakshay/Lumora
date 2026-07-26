@@ -2,6 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
+import {
+  ConversationOperationGate,
+  reconcileCompletedTurn,
+  removeDeletedMessages,
+  replaceCompletedAssistant,
+  shouldApplyMessageSnapshot,
+} from '../lib/chat/conversation-lifecycle';
 import type { ToolStatusUpdate, WebSource } from '../lib/ai/types';
 import type { AIActionRequest } from '../lib/ai/actions/types';
 import { getAIActionMetadata } from '../lib/ai/actions/catalog';
@@ -46,7 +53,10 @@ export function WorkspaceDetailPage() {
   const [toolExecutions, setToolExecutions] = useState<ToolStatusUpdate[]>([]);
   const [streamingWebSources, setStreamingWebSources] = useState<WebSource[]>([]);
   const [activeActionLabel, setActiveActionLabel] = useState<string | null>(null);
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const conversationRevisionRef = useRef(0);
+  const operationGateRef = useRef(new ConversationOperationGate());
 
   // Modal States
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
@@ -107,12 +117,20 @@ export function WorkspaceDetailPage() {
   // Fetch Workspace Chat Messages
   const fetchMessages = useCallback(async () => {
     if (!workspaceId) return;
+    const requestedAtRevision = conversationRevisionRef.current;
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/messages`);
       if (!res.ok) throw new Error('Failed to refresh conversation history.');
       const payload = await res.json();
       if (payload.success && Array.isArray(payload.data)) {
-        setMessages(payload.data);
+        if (
+          shouldApplyMessageSnapshot(
+            requestedAtRevision,
+            conversationRevisionRef.current,
+          )
+        ) {
+          setMessages(payload.data);
+        }
       }
     } catch (err: any) {
       setActivityError(err.message || 'Unable to refresh conversation history.');
@@ -120,6 +138,8 @@ export function WorkspaceDetailPage() {
   }, [workspaceId]);
 
   useEffect(() => {
+    conversationRevisionRef.current += 1;
+    setMessages([]);
     fetchWorkspace();
     fetchSources();
     fetchMessages();
@@ -145,21 +165,33 @@ export function WorkspaceDetailPage() {
     promptText: string,
     mode: AnswerMode = 'DETAILED',
     action?: AIActionRequest,
+    regenerateAssistant?: StoredMessage,
   ) => {
-    if (!workspaceId || isGenerating || !promptText.trim()) return;
+    if (!workspaceId || !promptText.trim()) return;
+    const operationId = regenerateAssistant
+      ? `regenerate:${regenerateAssistant.id}`
+      : `submit:${Date.now()}`;
+    if (!operationGateRef.current.begin(operationId)) return;
+    conversationRevisionRef.current += 1;
 
-    // Optimistically add user message
+    const isRegeneration = Boolean(regenerateAssistant);
     const tempUserMsg: StoredMessage = {
       id: `usr_${Date.now()}`,
       workspaceId,
+      parentMessageId: null,
       role: 'USER',
       content: promptText.trim(),
       mode,
       status: 'SUCCESS',
+      action: action || null,
       createdAt: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, tempUserMsg]);
+    if (!isRegeneration) {
+      setMessages((prev) => [...prev, tempUserMsg]);
+    } else {
+      setRegeneratingMessageId(regenerateAssistant!.id);
+    }
     setIsGenerating(true);
     setActivityError(null);
     setStreamingText('');
@@ -167,7 +199,11 @@ export function WorkspaceDetailPage() {
     setToolExecutions([]);
     setStreamingWebSources([]);
     setActiveActionLabel(
-      action ? getAIActionMetadata(action.actionId)?.label || 'AI Action' : null,
+      isRegeneration
+        ? 'Regenerating response'
+        : action
+          ? getAIActionMetadata(action.actionId)?.label || 'AI Action'
+          : null,
     );
 
     const abortController = new AbortController();
@@ -177,11 +213,15 @@ export function WorkspaceDetailPage() {
       const res = await fetch(`/api/workspaces/${workspaceId}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: promptText.trim(),
-          mode,
-          ...(action ? { action } : {}),
-        }),
+        body: JSON.stringify(
+          isRegeneration
+            ? { regenerateMessageId: regenerateAssistant!.id }
+            : {
+                message: promptText.trim(),
+                mode,
+                ...(action ? { action } : {}),
+              },
+        ),
         signal: abortController.signal,
       });
 
@@ -205,6 +245,7 @@ export function WorkspaceDetailPage() {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let terminalEventReceived = false;
+      let completedResponse = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -219,6 +260,20 @@ export function WorkspaceDetailPage() {
             const data = JSON.parse(line.substring(6));
             if (data.type === 'chunk' && data.text) {
               setStreamingText((prev) => prev + data.text);
+            } else if (
+              data.type === 'user_persisted' &&
+              !isRegeneration &&
+              data.message &&
+              typeof data.message === 'object' &&
+              typeof data.message.id === 'string'
+            ) {
+              setMessages((current) =>
+                current.map((item) =>
+                  item.id === tempUserMsg.id
+                    ? (data.message as StoredMessage)
+                    : item,
+                ),
+              );
             } else if (
               data.type === 'tool_status' &&
               typeof data.requestId === 'string' &&
@@ -260,6 +315,36 @@ export function WorkspaceDetailPage() {
               setStreamingWebSources(validSources);
             } else if (data.type === 'done') {
               terminalEventReceived = true;
+              if (
+                !data.message ||
+                typeof data.message !== 'object' ||
+                typeof data.message.id !== 'string'
+              ) {
+                throw new Error('The completed response was not persisted correctly.');
+              }
+              if (isRegeneration) {
+                setMessages((current) =>
+                  replaceCompletedAssistant(current, data.message as StoredMessage),
+                );
+              } else {
+                if (
+                  !data.userMessage ||
+                  typeof data.userMessage !== 'object' ||
+                  typeof data.userMessage.id !== 'string'
+                ) {
+                  throw new Error('The submitted query was not persisted correctly.');
+                }
+                setMessages((current) =>
+                  reconcileCompletedTurn(
+                    current,
+                    tempUserMsg.id,
+                    data.userMessage as StoredMessage,
+                    data.message as StoredMessage,
+                  ),
+                );
+              }
+              conversationRevisionRef.current += 1;
+              completedResponse = true;
             } else if (data.type === 'error') {
               terminalEventReceived = true;
               throw new Error(data.error || 'AI generation failed.');
@@ -270,9 +355,15 @@ export function WorkspaceDetailPage() {
       if (!terminalEventReceived && !abortController.signal.aborted) {
         throw new Error('The AI response stream ended before completion.');
       }
+      if (terminalEventReceived && !completedResponse) {
+        throw new Error('The AI response did not reach a persisted completed state.');
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setActivityError(err.message || 'Error communicating with RAG response stream.');
+      }
+      if (!isRegeneration) {
+        await fetchMessages();
       }
     } finally {
       setIsGenerating(false);
@@ -281,8 +372,9 @@ export function WorkspaceDetailPage() {
       setToolExecutions([]);
       setStreamingWebSources([]);
       setActiveActionLabel(null);
+      setRegeneratingMessageId(null);
       abortControllerRef.current = null;
-      await fetchMessages();
+      operationGateRef.current.end(operationId);
     }
   };
 
@@ -292,6 +384,26 @@ export function WorkspaceDetailPage() {
     mode: AnswerMode,
   ) => {
     void handleSubmitMessage(displayMessage, mode, request);
+  };
+
+  const handleRegenerateResponse = (assistantMessage: StoredMessage) => {
+    if (!assistantMessage.parentMessageId) {
+      setActivityError('The originating query for this response is unavailable.');
+      return;
+    }
+    const userMessage = messages.find(
+      (message) => message.id === assistantMessage.parentMessageId,
+    );
+    if (!userMessage) {
+      setActivityError('The originating query for this response is unavailable.');
+      return;
+    }
+    void handleSubmitMessage(
+      userMessage.content,
+      userMessage.mode,
+      userMessage.action || undefined,
+      assistantMessage,
+    );
   };
 
   const handleCancelGeneration = () => {
@@ -305,13 +417,53 @@ export function WorkspaceDetailPage() {
 
   const handleClearHistory = async () => {
     if (!workspaceId) return;
+    const operationId = 'clear-history';
+    if (!operationGateRef.current.begin(operationId)) return;
     try {
       const response = await fetch(`/api/workspaces/${workspaceId}/messages`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to clear conversation history.');
+      conversationRevisionRef.current += 1;
       setMessages([]);
       setActivityError(null);
     } catch (err: any) {
       setActivityError(err.message || 'Unable to clear conversation history.');
+    } finally {
+      operationGateRef.current.end(operationId);
+    }
+  };
+
+  const handleDeleteQuery = async (userMessageId: string): Promise<boolean> => {
+    if (!workspaceId) return false;
+    const operationId = `delete:${userMessageId}`;
+    if (!operationGateRef.current.begin(operationId)) return false;
+    try {
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/messages/${userMessageId}`,
+        { method: 'DELETE' },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error?.message === 'string'
+            ? payload.error.message
+            : 'Unable to delete this query.',
+        );
+      }
+      const deletedMessageIds = payload?.data?.deletedMessageIds;
+      if (!Array.isArray(deletedMessageIds)) {
+        throw new Error('The server returned an invalid delete result.');
+      }
+      conversationRevisionRef.current += 1;
+      setMessages((current) =>
+        removeDeletedMessages(current, deletedMessageIds),
+      );
+      setActivityError(null);
+      return true;
+    } catch (err: any) {
+      setActivityError(err.message || 'Unable to delete this query.');
+      return false;
+    } finally {
+      operationGateRef.current.end(operationId);
     }
   };
 
@@ -491,6 +643,7 @@ export function WorkspaceDetailPage() {
             toolExecutions={toolExecutions}
             streamingWebSources={streamingWebSources}
             activeActionLabel={activeActionLabel}
+            regeneratingMessageId={regeneratingMessageId}
             error={activityError}
             hasIndexedSources={hasIndexedSources}
             sourceCount={sources.length}
@@ -500,6 +653,8 @@ export function WorkspaceDetailPage() {
             onSelectCitation={handleSelectCitation}
             onSubmitMessage={handleSubmitMessage}
             onClearHistory={handleClearHistory}
+            onDeleteQuery={handleDeleteQuery}
+            onRegenerateResponse={handleRegenerateResponse}
           />
         ) : (
           <WorkspaceCenter

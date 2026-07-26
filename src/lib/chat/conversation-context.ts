@@ -24,28 +24,44 @@ export function buildConversationHistory(
   const uniqueMessages = messages.filter((message) => {
     if (seenIds.has(message.id)) return false;
     seenIds.add(message.id);
-    return message.id !== currentUserMessageId && message.status === 'SUCCESS';
+    return message.status === 'SUCCESS';
   });
 
   const completeTurns: Array<[StoredMessage, StoredMessage]> = [];
+  const usersById = new Map(
+    uniqueMessages
+      .filter((message) => message.role === 'USER')
+      .map((message) => [message.id, message]),
+  );
+  const pairedUserIds = new Set<string>();
   let pendingUser: StoredMessage | null = null;
 
   for (const message of uniqueMessages) {
     if (message.role === 'USER') {
-      pendingUser = message;
+      if (message.id !== currentUserMessageId) pendingUser = message;
       continue;
     }
-    if (message.role !== 'ASSISTANT' || !pendingUser) continue;
+    if (message.role !== 'ASSISTANT') continue;
+
+    const explicitParent = message.parentMessageId
+      ? usersById.get(message.parentMessageId)
+      : undefined;
+    const user =
+      explicitParent?.id === currentUserMessageId
+        ? null
+        : explicitParent || pendingUser;
+    if (!user || pairedUserIds.has(user.id)) continue;
 
     // An assistant response without any currently valid citation is not safe
     // evidence for a later grounded answer.
     if (!message.citations?.length) {
-      pendingUser = null;
+      if (pendingUser?.id === user.id) pendingUser = null;
       continue;
     }
 
-    completeTurns.push([pendingUser, message]);
-    pendingUser = null;
+    completeTurns.push([user, message]);
+    pairedUserIds.add(user.id);
+    if (pendingUser?.id === user.id) pendingUser = null;
   }
 
   const selected: Array<[StoredMessage, StoredMessage]> = [];

@@ -220,18 +220,24 @@ model Chunk {
 }
 
 model Message {
-  id          String        @id @default(cuid())
-  workspaceId String
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  role        MessageRole
-  content     String        @db.Text
-  mode        AnswerMode    @default(DETAILED)
-  status      MessageStatus @default(SUCCESS)
-  createdAt   DateTime      @default(now())
+  id              String        @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parentMessageId String?       @unique
+  parentMessage   Message?      @relation("MessageReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  replies         Message[]     @relation("MessageReplies")
+  role            MessageRole
+  content         String        @db.Text
+  mode            AnswerMode    @default(DETAILED)
+  status          MessageStatus @default(SUCCESS)
+  action          Json?
+  regenerationStartedAt DateTime?
+  createdAt       DateTime      @default(now())
 
   citations   Citation[]
 
   @@index([workspaceId])
+  @@index([parentMessageId])
   @@index([createdAt])
 }
 

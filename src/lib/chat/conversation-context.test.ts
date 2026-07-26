@@ -12,6 +12,7 @@ function message(
   return {
     id,
     workspaceId: 'workspace-1',
+    parentMessageId: null,
     role,
     content,
     mode: 'DETAILED',
@@ -43,4 +44,28 @@ test('history excludes stale ungrounded answers, duplicate IDs, and oversized tu
     message('a2', 'ASSISTANT', 'y'.repeat(100)),
   ];
   assert.deepEqual(buildConversationHistory(messages, 'current', 10), []);
+});
+
+test('history pairs responses by parent message ID and excludes the regenerating turn', () => {
+  const firstUser = message('u1', 'USER', 'first');
+  const secondUser = message('u2', 'USER', 'second');
+  const firstAssistant = {
+    ...message('a1', 'ASSISTANT', 'first answer'),
+    parentMessageId: firstUser.id,
+  };
+  const secondAssistant = {
+    ...message('a2', 'ASSISTANT', 'second answer'),
+    parentMessageId: secondUser.id,
+  };
+
+  assert.deepEqual(
+    buildConversationHistory(
+      [firstUser, secondUser, firstAssistant, secondAssistant],
+      secondUser.id,
+    ),
+    [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'first answer' },
+    ],
+  );
 });

@@ -23,6 +23,12 @@ import {
   getWorkspaceMessages,
   createWorkspaceMessage,
   clearWorkspaceMessages,
+  deleteWorkspaceQueryTurn,
+  reserveAssistantRegeneration,
+  releaseAssistantRegeneration,
+  replaceWorkspaceAssistantMessage,
+  ChatMessageConflictError,
+  type StoredMessage,
 } from '../lib/chat/conversation-store';
 import { buildConversationHistory } from '../lib/chat/conversation-context';
 import {
@@ -512,16 +518,116 @@ workspaceRouter.delete('/:id/messages', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/workspaces/:id/messages/:messageId
+workspaceRouter.delete('/:id/messages/:messageId', async (req: Request, res: Response) => {
+  try {
+    const deletedMessageIds = await deleteWorkspaceQueryTurn(
+      res.locals.workspace.id,
+      req.params.messageId,
+    );
+    if (!deletedMessageIds) {
+      return res
+        .status(404)
+        .json(errorResponse(new Error('User query not found')).payload);
+    }
+    return res.status(200).json(successResponse({ deletedMessageIds }));
+  } catch (error) {
+    if (error instanceof ChatMessageConflictError) {
+      const response = errorResponse(
+        new AppError(error.message, 409, 'CHAT_MESSAGE_CONFLICT'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+    logger.error('Failed to delete chat query turn', error, {
+      workspaceId: res.locals.workspace.id,
+      messageId: req.params.messageId,
+    });
+    return res
+      .status(500)
+      .json(errorResponse(new Error('Failed to delete the selected query')).payload);
+  }
+});
+
 // POST /api/workspaces/:id/chat/stream
 workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => {
   const workspaceId = res.locals.workspace.id;
-  const { message, mode = 'DETAILED', action } = req.body || {};
+  const {
+    message,
+    mode: requestedMode = 'DETAILED',
+    action: requestedAction,
+    regenerateMessageId,
+  } = req.body || {};
   const validModes = ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const;
+  const isRegeneration = regenerateMessageId !== undefined;
+  let regenerationTurn:
+    | Awaited<ReturnType<typeof reserveAssistantRegeneration>>
+    | null = null;
+  let regenerationReserved = false;
+
+  if (
+    isRegeneration &&
+    (typeof regenerateMessageId !== 'string' || !regenerateMessageId.trim())
+  ) {
+    const response = errorResponse(
+      AppError.badRequest(
+        'A valid assistant message is required for regeneration',
+        'INVALID_REGENERATION_REQUEST',
+      ),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
+  if (isRegeneration) {
+    try {
+      regenerationTurn = await reserveAssistantRegeneration(
+        workspaceId,
+        regenerateMessageId,
+      );
+      if (!regenerationTurn) {
+        return res
+          .status(404)
+          .json(errorResponse(new Error('Assistant response not found')).payload);
+      }
+      regenerationReserved = true;
+    } catch (error) {
+      if (error instanceof ChatMessageConflictError) {
+        const response = errorResponse(
+          new AppError(error.message, 409, 'REGENERATION_IN_PROGRESS'),
+        );
+        return res.status(response.statusCode).json(response.payload);
+      }
+      logger.error('Failed to reserve assistant response regeneration', error, {
+        workspaceId,
+        regenerateMessageId,
+      });
+      return res
+        .status(500)
+        .json(errorResponse(new Error('Unable to regenerate this response')).payload);
+    }
+  }
+
+  const action = isRegeneration
+    ? regenerationTurn?.userMessage.action || undefined
+    : requestedAction;
+  const mode = isRegeneration
+    ? regenerationTurn!.userMessage.mode
+    : requestedMode;
+  const submittedMessage = isRegeneration
+    ? regenerationTurn!.userMessage.content
+    : message;
+  const releaseReservation = async () => {
+    if (!regenerationReserved || !regenerationTurn) return;
+    regenerationReserved = false;
+    await releaseAssistantRegeneration(
+      workspaceId,
+      regenerationTurn.assistantMessage.id,
+    );
+  };
 
   if (
     action !== undefined &&
     (!action || typeof action !== 'object' || Array.isArray(action))
   ) {
+    await releaseReservation();
     const response = errorResponse(
       AppError.badRequest('AI action request is invalid', 'INVALID_AI_ACTION'),
     );
@@ -529,14 +635,21 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   }
   if (
     action === undefined &&
-    (!message || typeof message !== 'string' || !message.trim())
+    (!submittedMessage ||
+      typeof submittedMessage !== 'string' ||
+      !submittedMessage.trim())
   ) {
+    await releaseReservation();
     const response = errorResponse(
       AppError.badRequest('Message query cannot be empty', 'EMPTY_CHAT_MESSAGE'),
     );
     return res.status(response.statusCode).json(response.payload);
   }
-  if (typeof message === 'string' && message.trim().length > 20_000) {
+  if (
+    typeof submittedMessage === 'string' &&
+    submittedMessage.trim().length > 20_000
+  ) {
+    await releaseReservation();
     const response = errorResponse(
       new AppError(
         'Message query cannot exceed 20,000 characters',
@@ -547,6 +660,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     return res.status(response.statusCode).json(response.payload);
   }
   if (!validModes.includes(mode)) {
+    await releaseReservation();
     const response = errorResponse(
       AppError.badRequest('Chat mode is invalid', 'INVALID_CHAT_MODE'),
     );
@@ -575,6 +689,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         })),
         conversation: actionMessages.flatMap((item) =>
           item.status === 'SUCCESS' &&
+          item.id !== regenerationTurn?.userMessage.id &&
+          item.id !== regenerationTurn?.assistantMessage.id &&
           (item.role === 'USER' || item.role === 'ASSISTANT')
             ? [{ role: item.role, content: item.content }]
             : [],
@@ -582,12 +698,14 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       });
     } catch (error) {
       if (error instanceof AIActionError) {
+        await releaseReservation();
         const response = errorResponse(
           new AppError(error.message, error.statusCode, error.code),
         );
         return res.status(response.statusCode).json(response.payload);
       }
       logger.error('AI action preparation failed', error, { workspaceId });
+      await releaseReservation();
       const response = errorResponse(
         new AppError(
           'The AI action could not be prepared.',
@@ -601,7 +719,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
 
   const queryText =
     actionPlan?.displayMessage ||
-    (typeof message === 'string' ? message.trim() : '');
+    (typeof submittedMessage === 'string' ? submittedMessage.trim() : '');
   const retrievalQuery = actionPlan?.retrievalQuery || queryText;
   const modelQuery = actionPlan?.modelPrompt || queryText;
   const generationController = new AbortController();
@@ -630,12 +748,18 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   };
 
   try {
-    const savedUserMessage = await createWorkspaceMessage({
-      workspaceId,
-      role: 'USER',
-      content: queryText,
-      mode,
-    });
+    const savedUserMessage: StoredMessage = regenerationTurn
+      ? regenerationTurn.userMessage
+      : await createWorkspaceMessage({
+          workspaceId,
+          role: 'USER',
+          content: queryText,
+          mode,
+          action: action as AIActionRequest | undefined,
+        });
+    if (!regenerationTurn) {
+      sendEvent({ type: 'user_persisted', message: savedUserMessage });
+    }
 
     const recentHistory =
       actionMessageSnapshot || (await getWorkspaceMessages(workspaceId));
@@ -689,13 +813,29 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           ? `I couldn't retrieve sufficient validated Workspace evidence to complete ${actionPlan.actionLabel}. Check that the selected sources are fully indexed, then try again.`
           : "I couldn't find sufficient indexed knowledge in this Workspace to answer that question. Add or reprocess a relevant source, then try again.";
       sendEvent({ type: 'chunk', text: insufficientContext });
-      const savedMessage = await createWorkspaceMessage({
-        workspaceId,
-        role: 'ASSISTANT',
-        content: insufficientContext,
-        mode,
+      const savedMessage = regenerationTurn
+        ? await replaceWorkspaceAssistantMessage({
+            workspaceId,
+            assistantMessageId: regenerationTurn.assistantMessage.id,
+            content: insufficientContext,
+            mode,
+          })
+        : await createWorkspaceMessage({
+            workspaceId,
+            parentMessageId: savedUserMessage.id,
+            role: 'ASSISTANT',
+            content: insufficientContext,
+            mode,
+          });
+      regenerationReserved = false;
+      sendEvent({
+        type: 'done',
+        messageId: savedMessage.id,
+        userMessage: savedUserMessage,
+        message: savedMessage,
+        citations: [],
+        regenerated: Boolean(regenerationTurn),
       });
-      sendEvent({ type: 'done', messageId: savedMessage.id, citations: [] });
       return;
     }
 
@@ -761,26 +901,37 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     if (webAppendix) externalWebSafeStream.push(webAppendix);
     externalWebSafeStream.finish(finalResponse);
     citationSafeStream?.finish(finalResponse);
-    const savedAssistantMessage = await createWorkspaceMessage({
-      workspaceId,
-      role: 'ASSISTANT',
-      content: finalResponse,
-      mode,
-      citations: usedCitations.map((c) => ({
-        chunkId: c.chunkId,
-        sourceId: c.sourceId,
-        indexId: c.indexId,
-        title: c.title,
-        snippet: c.snippet,
-        kind: c.kind,
-        score: c.score,
-        url: c.url,
-        page: c.page,
-        timestampStartMs: c.timestampStartMs,
-        timestampEndMs: c.timestampEndMs,
-        textOrigin: c.textOrigin,
-      })),
-    });
+    const persistedCitations = usedCitations.map((c) => ({
+      chunkId: c.chunkId,
+      sourceId: c.sourceId,
+      indexId: c.indexId,
+      title: c.title,
+      snippet: c.snippet,
+      kind: c.kind,
+      score: c.score,
+      url: c.url,
+      page: c.page,
+      timestampStartMs: c.timestampStartMs,
+      timestampEndMs: c.timestampEndMs,
+      textOrigin: c.textOrigin,
+    }));
+    const savedAssistantMessage = regenerationTurn
+      ? await replaceWorkspaceAssistantMessage({
+          workspaceId,
+          assistantMessageId: regenerationTurn.assistantMessage.id,
+          content: finalResponse,
+          mode,
+          citations: persistedCitations,
+        })
+      : await createWorkspaceMessage({
+          workspaceId,
+          parentMessageId: savedUserMessage.id,
+          role: 'ASSISTANT',
+          content: finalResponse,
+          mode,
+          citations: persistedCitations,
+        });
+    regenerationReserved = false;
     logger.info('Grounded response completed and persisted', {
       workspaceId,
       messageId: savedAssistantMessage.id,
@@ -798,9 +949,12 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     sendEvent({
       type: 'done',
       messageId: savedAssistantMessage.id,
+      userMessage: savedUserMessage,
+      message: savedAssistantMessage,
       citations: usedCitations,
       intelligenceMode: generated.orchestration.intelligenceMode,
       webSources: generated.orchestration.webSources,
+      regenerated: Boolean(regenerationTurn),
     });
   } catch (err: any) {
     if (err instanceof ChatGenerationAbortedError || generationController.signal.aborted) {
@@ -820,6 +974,14 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           : 'Grounded AI response generation failed before completion.',
     });
   } finally {
+    try {
+      await releaseReservation();
+    } catch (releaseError) {
+      logger.error('Failed to release assistant regeneration reservation', releaseError, {
+        workspaceId,
+        regenerateMessageId,
+      });
+    }
     responseFinished = true;
     req.removeListener('aborted', abortGeneration);
     res.removeListener('close', handleResponseClose);

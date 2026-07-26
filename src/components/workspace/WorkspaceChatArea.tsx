@@ -12,6 +12,7 @@ import {
   FileText,
   Globe,
   MessageSquare,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -28,6 +29,7 @@ interface WorkspaceChatAreaProps {
   toolExecutions?: ToolStatusUpdate[];
   streamingWebSources?: WebSource[];
   activeActionLabel?: string | null;
+  regeneratingMessageId?: string | null;
   error?: string | null;
   hasIndexedSources: boolean;
   sourceCount: number;
@@ -35,6 +37,8 @@ interface WorkspaceChatAreaProps {
   onSelectCitation?: (citation: StoredCitation) => void;
   onSubmitMessage: (prompt: string) => void;
   onClearHistory: () => void;
+  onDeleteQuery: (userMessageId: string) => Promise<boolean>;
+  onRegenerateResponse: (assistantMessage: StoredMessage) => void;
 }
 
 const KEYWORDS = new Set([
@@ -174,6 +178,7 @@ export function WorkspaceChatArea({
   toolExecutions = [],
   streamingWebSources = [],
   activeActionLabel,
+  regeneratingMessageId,
   error,
   hasIndexedSources,
   sourceCount,
@@ -181,9 +186,12 @@ export function WorkspaceChatArea({
   onSelectCitation,
   onSubmitMessage,
   onClearHistory,
+  onDeleteQuery,
+  onRegenerateResponse,
 }: WorkspaceChatAreaProps) {
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const assistantMessages = messages.filter((message) => message.role === 'ASSISTANT').length;
   const latestActivity = messages.at(-1)?.createdAt;
 
@@ -201,6 +209,30 @@ export function WorkspaceChatArea({
     const feed = feedRef.current;
     if (!feed) return;
     stickToBottomRef.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
+  };
+
+  const handleDeleteQuery = async (messageId: string) => {
+    if (deletingMessageId || isGenerating) return;
+    if (
+      !window.confirm(
+        'Delete this query and its assistant response? This cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    const feed = feedRef.current;
+    const previousScrollTop = feed?.scrollTop ?? 0;
+    setDeletingMessageId(messageId);
+    try {
+      const deleted = await onDeleteQuery(messageId);
+      if (deleted) {
+        requestAnimationFrame(() => {
+          if (feedRef.current) feedRef.current.scrollTop = previousScrollTop;
+        });
+      }
+    } finally {
+      setDeletingMessageId(null);
+    }
   };
 
   const starterQuestions = [
@@ -226,6 +258,7 @@ export function WorkspaceChatArea({
             <button
               type="button"
               onClick={onClearHistory}
+              disabled={isGenerating || Boolean(deletingMessageId)}
               className="flex w-fit items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-medium text-slate-400 transition hover:border-rose-900 hover:bg-rose-950/40 hover:text-rose-300"
               aria-label="Clear chat history"
             >
@@ -312,7 +345,21 @@ export function WorkspaceChatArea({
                   }`}
                 >
                   {isUser ? (
-                    <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
+                    <div>
+                      <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
+                      <div className="mt-2 flex justify-end border-t border-sky-500/30 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteQuery(message.id)}
+                          disabled={isGenerating || Boolean(deletingMessageId)}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-sky-100/75 transition hover:bg-sky-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="Delete this query and its response"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          {deletingMessageId === message.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <div>
                       {message.mode && (
@@ -350,6 +397,29 @@ export function WorkspaceChatArea({
                               </button>
                             ))}
                           </div>
+                        </div>
+                      )}
+
+                      {message.parentMessageId && (
+                        <div className="mt-3 flex justify-end border-t border-slate-800/80 pt-2.5">
+                          <button
+                            type="button"
+                            onClick={() => onRegenerateResponse(message)}
+                            disabled={isGenerating || Boolean(deletingMessageId)}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-medium text-slate-400 transition hover:bg-slate-900 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+                            aria-label="Regenerate this assistant response"
+                          >
+                            <RotateCcw
+                              className={`h-3.5 w-3.5 ${
+                                regeneratingMessageId === message.id
+                                  ? 'animate-spin'
+                                  : ''
+                              }`}
+                            />
+                            {regeneratingMessageId === message.id
+                              ? 'Regenerating…'
+                              : 'Regenerate'}
+                          </button>
                         </div>
                       )}
                     </div>
