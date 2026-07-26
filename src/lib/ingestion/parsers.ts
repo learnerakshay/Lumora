@@ -327,31 +327,38 @@ async function parseYouTubeSource(
     }
   }
 
-  let cues = storedTranscript?.cues || [];
-  if (cues.length === 0) {
-    const { YoutubeTranscript } = await import('youtube-transcript');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
-    try {
-      cues = await YoutubeTranscript.fetchTranscript(videoId, {
-        fetch: (url, init) =>
-          fetch(url, {
-            ...init,
-            signal: controller.signal,
-          }),
-      });
-    } catch (error: any) {
-      if (error?.name === 'AbortError') {
-        throw new Error('YouTube transcript retrieval timed out');
-      }
-      throw new Error(
-        `YouTube transcript retrieval failed: ${error?.message || 'transcript unavailable'}`,
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
+let cues = storedTranscript?.cues || [];
 
+if (cues.length === 0) {
+  const { fetchTranscript } = await import('youtube-transcript-plus');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    cues = await fetchTranscript(videoId, {
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+        'Chrome/124.0.0.0 Safari/537.36',
+      retries: 2,
+      retryDelay: 1000,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === 'AbortError' || controller.signal.aborted) {
+      throw new Error('YouTube transcript retrieval timed out');
+    }
+
+    throw new Error(
+      `YouTube transcript retrieval failed: ${
+        error?.message || 'transcript unavailable'
+      }`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
   await input.onParsing?.();
   if (!Array.isArray(cues) || cues.length === 0) {
     throw new Error('YouTube transcript is unavailable or empty');
