@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { StoredMessage } from './conversation-store';
 import {
   ConversationOperationGate,
+  parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
   replaceCompletedAssistant,
@@ -32,6 +33,65 @@ function message(
 test('stale message snapshots cannot replace a newer completed local turn', () => {
   assert.equal(shouldApplyMessageSnapshot(3, 4), false);
   assert.equal(shouldApplyMessageSnapshot(4, 4), true);
+});
+
+test('empty conversation history responses are valid initial Workspace states', () => {
+  assert.deepEqual(
+    parseConversationHistoryResponse(
+      { ok: true, status: 200 },
+      { success: true, data: [] },
+    ),
+    [],
+  );
+  assert.deepEqual(
+    parseConversationHistoryResponse(
+      { ok: true, status: 200 },
+      { success: true, data: null },
+    ),
+    [],
+  );
+  assert.deepEqual(
+    parseConversationHistoryResponse({ ok: true, status: 204 }, null),
+    [],
+  );
+  assert.deepEqual(
+    parseConversationHistoryResponse(
+      { ok: false, status: 404 },
+      {
+        success: false,
+        error: {
+          code: 'CONVERSATION_NOT_FOUND',
+          message: 'No conversation exists yet.',
+        },
+      },
+    ),
+    [],
+  );
+});
+
+test('unexpected conversation history failures remain visible', () => {
+  assert.throws(
+    () =>
+      parseConversationHistoryResponse(
+        { ok: false, status: 500 },
+        {
+          success: false,
+          error: {
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'History storage is unavailable.',
+          },
+        },
+      ),
+    /History storage is unavailable/,
+  );
+  assert.throws(
+    () =>
+      parseConversationHistoryResponse(
+        { ok: true, status: 200 },
+        { success: true, data: { invalid: true } },
+      ),
+    /response was invalid/,
+  );
 });
 
 test('optimistic query reconciles directly to its persisted query and response', () => {

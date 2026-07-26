@@ -1,5 +1,60 @@
 import type { StoredMessage } from './conversation-store';
 
+interface ConversationHistoryPayload {
+  success?: boolean;
+  data?: unknown;
+  error?: {
+    code?: unknown;
+    message?: unknown;
+  };
+}
+
+const EMPTY_HISTORY_CODES = new Set([
+  'CONVERSATION_NOT_FOUND',
+  'HISTORY_NOT_FOUND',
+  'NO_CONVERSATION',
+]);
+
+export function parseConversationHistoryResponse(
+  response: { ok: boolean; status: number },
+  payload: unknown,
+): StoredMessage[] {
+  const candidate =
+    payload && typeof payload === 'object'
+      ? (payload as ConversationHistoryPayload)
+      : null;
+
+  if (response.ok) {
+    if (response.status === 204) return [];
+    if (Array.isArray(candidate?.data)) {
+      return candidate.data as StoredMessage[];
+    }
+    if (
+      candidate?.success === true &&
+      (candidate.data === null || candidate.data === undefined)
+    ) {
+      return [];
+    }
+    throw new Error('Conversation history response was invalid.');
+  }
+
+  const errorCode =
+    typeof candidate?.error?.code === 'string'
+      ? candidate.error.code
+      : null;
+  if (response.status === 404 && errorCode && EMPTY_HISTORY_CODES.has(errorCode)) {
+    return [];
+  }
+
+  const serverMessage =
+    typeof candidate?.error?.message === 'string'
+      ? candidate.error.message.trim()
+      : '';
+  throw new Error(
+    serverMessage || `Failed to refresh conversation history (${response.status}).`,
+  );
+}
+
 export function shouldApplyMessageSnapshot(
   requestedAtRevision: number,
   currentRevision: number,

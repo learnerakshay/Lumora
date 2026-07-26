@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { LogOut, User, Sparkles, Github, Twitter, Menu, X as CloseIcon } from 'lucide-react';
+import { LumoraBrand } from './landing/LumoraBrand';
+import { scrollToLandingSection } from './landing/LandingSmoothScroll';
 
 export function Navbar() {
   const { isSignedIn, user, signOut } = useAuth();
@@ -10,6 +12,7 @@ export function Navbar() {
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isPublicPresentation = ['/', '/sign-in', '/sign-up'].includes(location.pathname);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -30,17 +33,17 @@ export function Navbar() {
       navigate(`/#${anchorId}`);
       setTimeout(() => {
         const el = document.getElementById(anchorId);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
+        if (el) scrollToLandingSection(el);
       }, 100);
     } else {
       const el = document.getElementById(anchorId);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      if (el) scrollToLandingSection(el);
     }
   };
 
   return (
     <header
-      className={`sticky top-0 z-50 transition-all duration-300 border-b ${
+      className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-300 border-b ${
         scrolled
           ? 'bg-[#0b0f17]/85 backdrop-blur-md border-slate-800/80 shadow-lg shadow-sky-950/10 py-3'
           : 'bg-[#0b0f17]/40 backdrop-blur-sm border-transparent py-4'
@@ -48,18 +51,24 @@ export function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Brand Logo */}
-        <Link to="/" className="flex items-center space-x-3 group">
-          <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 group-hover:border-sky-400/60 group-hover:bg-sky-500/20 transition-all">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-lg font-bold tracking-tight text-white group-hover:text-sky-300 transition-colors">
-              Lumora
+        <Link to="/" className="group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+          {isPublicPresentation ? (
+            <LumoraBrand compact />
+          ) : (
+            <span className="flex items-center space-x-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-400 transition-all group-hover:border-sky-400/60 group-hover:bg-sky-500/20">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <span className="flex flex-col">
+                <span className="text-lg font-bold tracking-tight text-white transition-colors group-hover:text-sky-300">
+                  Lumora
+                </span>
+                <span className="-mt-1 font-mono text-[10px] uppercase tracking-widest text-slate-400">
+                  Knowledge OS
+                </span>
+              </span>
             </span>
-            <span className="text-[10px] tracking-widest text-slate-400 uppercase font-mono -mt-1">
-              Knowledge OS
-            </span>
-          </div>
+          )}
         </Link>
 
         {/* Desktop Nav Links (Public) */}

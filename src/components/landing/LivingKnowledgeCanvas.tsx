@@ -1,8 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
-export function LivingKnowledgeCanvas() {
+interface LivingKnowledgeCanvasProps {
+  activeInput?: number | null;
+}
+
+export function LivingKnowledgeCanvas({
+  activeInput = null,
+}: LivingKnowledgeCanvasProps) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const activeInputRef = useRef<number | null>(activeInput);
+  activeInputRef.current = activeInput;
 
   useEffect(() => {
     const container = mountRef.current;
@@ -16,7 +24,7 @@ export function LivingKnowledgeCanvas() {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.z = 8;
+    camera.position.z = isMobile ? 7.2 : 6.4;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -54,6 +62,10 @@ export function LivingKnowledgeCanvas() {
     // Curved Data Flow Lines (Left -> Core -> Right)
     const curveLinesGroup = new THREE.Group();
     mainGroup.add(curveLinesGroup);
+    const flowGeometries: THREE.BufferGeometry[] = [];
+    const flowMaterials: THREE.Material[] = [];
+    const inputLineMaterials: THREE.LineBasicMaterial[] = [];
+    const outputLineMaterials: THREE.LineBasicMaterial[] = [];
 
     const inputPoints = [
       new THREE.Vector3(-4, 1.5, 0),
@@ -71,7 +83,7 @@ export function LivingKnowledgeCanvas() {
 
     const pulses: { mesh: THREE.Mesh; path: THREE.CatmullRomCurve3; speed: number; progress: number }[] = [];
 
-    inputPoints.forEach((inPt) => {
+    inputPoints.forEach((inPt, inputIndex) => {
       const curve = new THREE.CatmullRomCurve3([
         inPt,
         new THREE.Vector3(-1.8, inPt.y * 0.5, 0.5),
@@ -85,12 +97,17 @@ export function LivingKnowledgeCanvas() {
         transparent: true,
         opacity: 0.2,
       });
+      inputLineMaterials[inputIndex] = lineMat;
+      flowGeometries.push(lineGeo);
+      flowMaterials.push(lineMat);
       const line = new THREE.Line(lineGeo, lineMat);
       curveLinesGroup.add(line);
 
       // Pulse
       const pulseGeo = new THREE.SphereGeometry(0.06, 8, 8);
       const pulseMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+      flowGeometries.push(pulseGeo);
+      flowMaterials.push(pulseMat);
       const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
       curveLinesGroup.add(pulseMesh);
 
@@ -102,7 +119,7 @@ export function LivingKnowledgeCanvas() {
       });
     });
 
-    outputPoints.forEach((outPt) => {
+    outputPoints.forEach((outPt, outputIndex) => {
       const curve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(1.8, outPt.y * 0.5, -0.5),
@@ -112,16 +129,21 @@ export function LivingKnowledgeCanvas() {
       const points = curve.getPoints(50);
       const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
       const lineMat = new THREE.LineBasicMaterial({
-        color: 0x818cf8,
+        color: 0x60a5fa,
         transparent: true,
         opacity: 0.2,
       });
+      outputLineMaterials[outputIndex] = lineMat;
+      flowGeometries.push(lineGeo);
+      flowMaterials.push(lineMat);
       const line = new THREE.Line(lineGeo, lineMat);
       curveLinesGroup.add(line);
 
       // Pulse
       const pulseGeo = new THREE.SphereGeometry(0.06, 8, 8);
-      const pulseMat = new THREE.MeshBasicMaterial({ color: 0x818cf8 });
+      const pulseMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
+      flowGeometries.push(pulseGeo);
+      flowMaterials.push(pulseMat);
       const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
       curveLinesGroup.add(pulseMesh);
 
@@ -169,11 +191,13 @@ export function LivingKnowledgeCanvas() {
     });
     resizeObserver.observe(container);
 
-    let animationFrameId: number;
-    let clock = new THREE.Clock();
+    let animationFrameId = 0;
+    const clock = new THREE.Clock();
+    let inView = true;
+    let pageVisible = document.visibilityState === 'visible';
 
     const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
+      if (!inView || !pageVisible) return;
       const elapsedTime = clock.getElapsedTime();
 
       if (!prefersReducedMotion) {
@@ -182,6 +206,21 @@ export function LivingKnowledgeCanvas() {
         innerMesh.rotation.y = -elapsedTime * 0.3;
 
         particles.rotation.y = elapsedTime * 0.08;
+        const coreBreath = 1 + Math.sin(elapsedTime * 0.72) * 0.045;
+        innerMesh.scale.setScalar(coreBreath);
+        coreMat.opacity = 0.32 + Math.sin(elapsedTime * 0.43) * 0.08;
+        inputLineMaterials.forEach((material, index) => {
+          material.opacity =
+            activeInputRef.current === null
+              ? 0.2
+              : activeInputRef.current === index
+                ? 0.72
+                : 0.1;
+        });
+        outputLineMaterials.forEach((material, index) => {
+          material.opacity =
+            0.18 + Math.max(0, Math.sin(elapsedTime * 0.9 - index * 0.65)) * 0.18;
+        });
 
         // Animate pulses along bezier paths
         pulses.forEach((p) => {
@@ -193,13 +232,38 @@ export function LivingKnowledgeCanvas() {
       }
 
       renderer.render(scene, camera);
+      if (!prefersReducedMotion) animationFrameId = requestAnimationFrame(animate);
     };
 
-    animate();
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        inView = entry.isIntersecting;
+        if (inView && pageVisible && !prefersReducedMotion) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = requestAnimationFrame(animate);
+        }
+      },
+      { rootMargin: '120px' },
+    );
+    intersectionObserver.observe(container);
+
+    const handleVisibility = () => {
+      pageVisible = document.visibilityState === 'visible';
+      if (pageVisible && inView && !prefersReducedMotion) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    if (prefersReducedMotion) animate();
+    else animationFrameId = requestAnimationFrame(animate);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
+      intersectionObserver.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
       if (container && renderer.domElement) {
         container.removeChild(renderer.domElement);
       }
@@ -209,6 +273,8 @@ export function LivingKnowledgeCanvas() {
       innerMat.dispose();
       particleGeo.dispose();
       particleMat.dispose();
+      flowGeometries.forEach((geometry) => geometry.dispose());
+      flowMaterials.forEach((material) => material.dispose());
       renderer.dispose();
     };
   }, []);

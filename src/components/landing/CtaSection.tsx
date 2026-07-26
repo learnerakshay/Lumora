@@ -39,12 +39,24 @@ export function CtaSection() {
   return (
     <section
       ref={ctaRef}
-      className="py-28 px-4 sm:px-6 lg:px-8 bg-[#0b0f17] border-t border-slate-800/60 relative overflow-hidden text-center"
+      className="landing-section landing-horizon relative overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8"
     >
       {/* Observatory Ambient Background Lights */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[900px] h-[400px] bg-gradient-to-t from-sky-500/15 via-indigo-500/10 to-transparent blur-[140px] rounded-full" />
+        <div className="absolute bottom-0 left-1/2 h-[400px] w-[min(900px,90vw)] -translate-x-1/2 rounded-full bg-gradient-to-t from-sky-500/15 via-blue-500/8 to-transparent blur-[140px]" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-sky-950/20 via-transparent to-transparent pointer-events-none" />
+        {Array.from({ length: 18 }, (_, index) => (
+          <span
+            key={index}
+            className="cta-particle absolute h-1 w-1 rounded-full bg-sky-300"
+            style={{
+              left: `${8 + ((index * 17) % 84)}%`,
+              top: `${12 + ((index * 29) % 68)}%`,
+              '--particle-delay': `${index * -0.37}s`,
+              '--particle-duration': `${5.5 + (index % 5) * 0.8}s`,
+            } as React.CSSProperties}
+          />
+        ))}
       </div>
 
       <div ref={contentRef} className="max-w-4xl mx-auto space-y-8 relative z-10">
@@ -55,7 +67,7 @@ export function CtaSection() {
 
         <h2 className="text-4xl sm:text-6xl font-bold tracking-tight text-white leading-tight">
           Ready to build your{' '}
-          <span className="bg-gradient-to-r from-sky-300 via-teal-200 to-indigo-300 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-blue-300 bg-clip-text text-transparent">
             knowledge system?
           </span>
         </h2>
@@ -68,7 +80,7 @@ export function CtaSection() {
           {isSignedIn ? (
             <Link
               to="/workspaces"
-              className="inline-flex items-center space-x-2 px-8 py-4 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold text-sm transition-all shadow-xl shadow-sky-500/25 hover:shadow-sky-400/40 cursor-pointer"
+              className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
             >
               <span>Go to Workspaces</span>
               <ArrowRight className="w-4 h-4" />
@@ -76,7 +88,7 @@ export function CtaSection() {
           ) : (
             <Link
               to="/sign-in"
-              className="inline-flex items-center space-x-2 px-8 py-4 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold text-sm transition-all shadow-xl shadow-sky-500/25 hover:shadow-sky-400/40 cursor-pointer"
+              className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
             >
               <span>Try Lumora Now</span>
               <ArrowRight className="w-4 h-4" />

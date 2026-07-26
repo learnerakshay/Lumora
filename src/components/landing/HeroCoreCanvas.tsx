@@ -1,20 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
-// Easing functions for smooth staggered animation
-const easeOutBack = (x: number): number => {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-};
+interface NeuralNode {
+  base: THREE.Vector3;
+  phase: number;
+}
 
-const easeOutCubic = (x: number): number => {
-  return 1 - Math.pow(1 - x, 3);
-};
-
-const easeInOutQuad = (x: number): number => {
-  return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
-};
+interface TravellingSignal {
+  mesh: THREE.Mesh;
+  from: number;
+  to: number;
+  progress: number;
+  speed: number;
+}
 
 export function HeroCoreCanvas() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -23,396 +21,338 @@ export function HeroCoreCanvas() {
     const container = mountRef.current;
     if (!container) return;
 
-    // Check reduced motion
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const isMobile = window.innerWidth < 768;
+    const reducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    const mobile = window.innerWidth < 768;
+    let width = Math.max(1, container.clientWidth);
+    let height = Math.max(1, container.clientHeight);
+    let inView = true;
+    let pageVisible = document.visibilityState === 'visible';
+    let frame = 0;
 
-    // Dimensions
-    let width = container.clientWidth;
-    let height = container.clientHeight;
-
-    // Scene, Camera, Renderer
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.z = 7;
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
+    camera.position.z = mobile ? 8.1 : 7.25;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: !isMobile,
+      antialias: !mobile,
       powerPreference: 'high-performance',
     });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.25 : 1.6));
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
-    // Group for Core & Charts
-    const coreGroup = new THREE.Group();
-    scene.add(coreGroup);
+    const system = new THREE.Group();
+    scene.add(system);
 
-    // 1. Central Glowing Sphere
-    const sphereGeo = new THREE.IcosahedronGeometry(1.2, 3);
-    const sphereMat = new THREE.MeshBasicMaterial({
+    const coreGeometry = new THREE.IcosahedronGeometry(1.08, mobile ? 2 : 3);
+    const coreMaterial = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.22,
       wireframe: true,
-      transparent: true,
-      opacity: 0.35,
-    });
-    const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
-    sphereMesh.scale.setScalar(0);
-    coreGroup.add(sphereMesh);
-
-    // Inner Solid Core
-    const innerGeo = new THREE.SphereGeometry(0.85, 32, 32);
-    const innerMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.6,
-    });
-    const innerMesh = new THREE.Mesh(innerGeo, innerMat);
-    innerMesh.scale.setScalar(0);
-    coreGroup.add(innerMesh);
-
-    // Core point light
-    const pointLight = new THREE.PointLight(0x38bdf8, 3, 10);
-    scene.add(pointLight);
-
-    // 2. Orbital Rings
-    const ringCount = 3;
-    const rings: THREE.Mesh[] = [];
-    const ringTargetOpacities = [0.5, 0.4, 0.3];
-    const ringRotations = [
-      { x: 0.005, y: 0.008 },
-      { x: -0.006, y: 0.004 },
-      { x: 0.003, y: -0.007 },
-    ];
-
-    for (let i = 0; i < ringCount; i++) {
-      const radius = 1.8 + i * 0.45;
-      const tubeRadius = 0.012;
-      const ringGeo = new THREE.TorusGeometry(radius, tubeRadius, 16, 100);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: i === 0 ? 0x38bdf8 : i === 1 ? 0x818cf8 : 0x2dd4bf,
-        transparent: true,
-        opacity: 0,
-      });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.rotation.x = Math.PI / (3 + i);
-      ringMesh.rotation.y = (Math.PI / 4) * i;
-      ringMesh.scale.setScalar(0);
-      coreGroup.add(ringMesh);
-      rings.push(ringMesh);
-    }
-
-    // 3. Staggered Chart Drawing Lines & Network Nodes
-    const chartConfigs = [
-      {
-        points: [
-          new THREE.Vector3(-2.8, -1.2, 0.5),
-          new THREE.Vector3(-1.8, 0.8, -0.4),
-          new THREE.Vector3(0, 0.2, 1.0),
-          new THREE.Vector3(1.6, 1.4, -0.2),
-          new THREE.Vector3(2.6, -0.6, 0.8),
-        ],
-        color: 0x38bdf8,
-        startTime: 0.2,
-        duration: 1.1,
-      },
-      {
-        points: [
-          new THREE.Vector3(-2.2, 1.4, -0.6),
-          new THREE.Vector3(-0.8, -1.3, 0.7),
-          new THREE.Vector3(1.1, -1.5, -0.4),
-          new THREE.Vector3(2.3, 0.9, 0.5),
-        ],
-        color: 0x2dd4bf,
-        startTime: 0.5,
-        duration: 1.1,
-      },
-      {
-        points: [
-          new THREE.Vector3(0, 2.3, -0.2),
-          new THREE.Vector3(2.1, 0.1, -1.1),
-          new THREE.Vector3(0.1, -2.2, 0.4),
-          new THREE.Vector3(-2.1, 0, -0.9),
-          new THREE.Vector3(0, 2.3, -0.2),
-        ],
-        color: 0x818cf8,
-        startTime: 0.8,
-        duration: 1.2,
-      },
-    ];
-
-    interface ChartNodeData {
-      mesh: THREE.Mesh;
-      ringMesh: THREE.Mesh;
-      revealTime: number;
-      initialPos: THREE.Vector3;
-    }
-
-    const chartLines: {
-      lineMesh: THREE.Line;
-      geo: THREE.BufferGeometry;
-      mat: THREE.LineBasicMaterial;
-      totalPoints: number;
-      startTime: number;
-      duration: number;
-    }[] = [];
-
-    const chartNodes: ChartNodeData[] = [];
-
-    const SEGMENTS_PER_LINE = 100;
-    const nodeSphereGeo = new THREE.SphereGeometry(0.08, 16, 16);
-    const nodeRingGeo = new THREE.RingGeometry(0.1, 0.18, 32);
-
-    chartConfigs.forEach((cfg) => {
-      const curve = new THREE.CatmullRomCurve3(cfg.points);
-      const curvePoints = curve.getPoints(SEGMENTS_PER_LINE);
-
-      const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
-      geo.setDrawRange(0, 0); // Start with 0 points rendered
-
-      const mat = new THREE.LineBasicMaterial({
-        color: cfg.color,
-        transparent: true,
-        opacity: 0.85,
-        linewidth: 2,
-      });
-
-      const lineMesh = new THREE.Line(geo, mat);
-      coreGroup.add(lineMesh);
-
-      chartLines.push({
-        lineMesh,
-        geo,
-        mat,
-        totalPoints: curvePoints.length,
-        startTime: cfg.startTime,
-        duration: cfg.duration,
-      });
-
-      // Create nodes at each key control point
-      cfg.points.forEach((pt, pIdx) => {
-        // Node reveal time matches line progress reaching this vertex
-        const vertexProgress = pIdx / (cfg.points.length - 1);
-        const revealTime = cfg.startTime + vertexProgress * cfg.duration;
-
-        const nodeMat = new THREE.MeshBasicMaterial({
-          color: cfg.color,
-          transparent: true,
-          opacity: 0.95,
-        });
-
-        const nodeMesh = new THREE.Mesh(nodeSphereGeo, nodeMat);
-        nodeMesh.position.copy(pt);
-        nodeMesh.scale.setScalar(0);
-        coreGroup.add(nodeMesh);
-
-        const haloMat = new THREE.MeshBasicMaterial({
-          color: cfg.color,
-          transparent: true,
-          opacity: 0,
-          side: THREE.DoubleSide,
-        });
-        const ringMesh = new THREE.Mesh(nodeRingGeo, haloMat);
-        ringMesh.position.copy(pt);
-        ringMesh.scale.setScalar(0);
-        coreGroup.add(ringMesh);
-
-        chartNodes.push({
-          mesh: nodeMesh,
-          ringMesh,
-          revealTime,
-          initialPos: pt.clone(),
-        });
-      });
-    });
-
-    // 4. Floating Particles
-    const particleCount = isMobile ? 80 : 250;
-    const particleGeo = new THREE.BufferGeometry();
-    const particlePositions = new Float32Array(particleCount * 3);
-    const particleScales = new Float32Array(particleCount);
-
-    for (let i = 0; i < particleCount; i++) {
-      const u = Math.random();
-      const v = Math.random();
-      const theta = u * 2.0 * Math.PI;
-      const phi = Math.acos(2.0 * v - 1.0);
-      const r = 2.2 + Math.random() * 2.5;
-
-      particlePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      particlePositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      particlePositions[i * 3 + 2] = r * Math.cos(phi);
-
-      particleScales[i] = Math.random();
-    }
-
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-    const particleMat = new THREE.PointsMaterial({
-      color: 0x38bdf8,
-      size: 0.04,
-      transparent: true,
-      opacity: 0,
       blending: THREE.AdditiveBlending,
     });
-    const particleSystem = new THREE.Points(particleGeo, particleMat);
-    coreGroup.add(particleSystem);
+    const core = new THREE.Mesh(coreGeometry, coreMaterial);
+    system.add(core);
 
-    // Parallax mouse target
+    const innerGeometry = new THREE.SphereGeometry(0.6, 28, 28);
+    const innerMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0284c7,
+      transparent: true,
+      opacity: 0.2,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const innerCore = new THREE.Mesh(innerGeometry, innerMaterial);
+    system.add(innerCore);
+
+    const haloGeometry = new THREE.SphereGeometry(1.38, 24, 24);
+    const haloMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0ea5e9,
+      transparent: true,
+      opacity: 0.04,
+      side: THREE.BackSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
+    system.add(halo);
+
+    const nodeCount = mobile ? 24 : 42;
+    const nodes: NeuralNode[] = [];
+    const nodePositions = new Float32Array(nodeCount * 3);
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    for (let index = 0; index < nodeCount; index += 1) {
+      const y = 1 - (index / Math.max(1, nodeCount - 1)) * 2;
+      const radius = Math.sqrt(Math.max(0, 1 - y * y));
+      const angle = goldenAngle * index;
+      const base = new THREE.Vector3(
+        Math.cos(angle) * radius,
+        y,
+        Math.sin(angle) * radius,
+      ).multiplyScalar(1.55 + (index % 4) * 0.035);
+      nodes.push({ base, phase: index * 0.61 });
+      base.toArray(nodePositions, index * 3);
+    }
+
+    const nodeGeometry = new THREE.BufferGeometry();
+    nodeGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(nodePositions, 3),
+    );
+    const nodeMaterial = new THREE.PointsMaterial({
+      color: 0x7dd3fc,
+      size: mobile ? 0.055 : 0.065,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const nodeCloud = new THREE.Points(nodeGeometry, nodeMaterial);
+    system.add(nodeCloud);
+
+    const edgePairs: Array<[number, number]> = [];
+    for (let first = 0; first < nodeCount; first += 1) {
+      const neighbors = nodes
+        .map((node, second) => ({
+          second,
+          distance: nodes[first].base.distanceTo(node.base),
+        }))
+        .filter(({ second }) => second !== first)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, mobile ? 2 : 3);
+      neighbors.forEach(({ second }) => {
+        const pair: [number, number] =
+          first < second ? [first, second] : [second, first];
+        if (
+          !edgePairs.some(
+            ([from, to]) => from === pair[0] && to === pair[1],
+          )
+        ) {
+          edgePairs.push(pair);
+        }
+      });
+    }
+
+    const edgePositions = new Float32Array(edgePairs.length * 6);
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(edgePositions, 3),
+    );
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x0ea5e9,
+      transparent: true,
+      opacity: 0.2,
+      blending: THREE.AdditiveBlending,
+    });
+    const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    system.add(edges);
+
+    const signalGeometry = new THREE.SphereGeometry(
+      mobile ? 0.035 : 0.045,
+      8,
+      8,
+    );
+    const signals: TravellingSignal[] = Array.from(
+      { length: mobile ? 6 : 12 },
+      (_, index) => {
+        const pair = edgePairs[(index * 7) % edgePairs.length];
+        const material = new THREE.MeshBasicMaterial({
+          color: index % 3 === 0 ? 0x67e8f9 : 0x7dd3fc,
+          transparent: true,
+          opacity: 0.95,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(signalGeometry, material);
+        system.add(mesh);
+        return {
+          mesh,
+          from: pair[0],
+          to: pair[1],
+          progress: (index * 0.17) % 1,
+          speed: 0.0018 + (index % 5) * 0.00025,
+        };
+      },
+    );
+
+    const dustCount = mobile ? 70 : 170;
+    const dustPositions = new Float32Array(dustCount * 3);
+    for (let index = 0; index < dustCount; index += 1) {
+      const radius = 2.1 + Math.random() * 2.7;
+      const angle = Math.random() * Math.PI * 2;
+      const elevation = (Math.random() - 0.5) * 3.2;
+      dustPositions[index * 3] = Math.cos(angle) * radius;
+      dustPositions[index * 3 + 1] = elevation;
+      dustPositions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const dustGeometry = new THREE.BufferGeometry();
+    dustGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(dustPositions, 3),
+    );
+    const dustMaterial = new THREE.PointsMaterial({
+      color: 0x38bdf8,
+      size: mobile ? 0.025 : 0.032,
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    system.add(dust);
+
     let targetX = 0;
     let targetY = 0;
+    const pointerSurface = container.closest('section') ?? container;
+    const onPointerMove = (event: PointerEvent) => {
+      if (mobile || reducedMotion) return;
+      const rect = pointerSurface.getBoundingClientRect();
+      targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.5;
+      targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 0.36;
+    };
+    pointerSurface.addEventListener('pointermove', onPointerMove, { passive: true });
 
-    const onPointerMove = (e: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-      targetX = x * 0.4;
-      targetY = y * 0.4;
+    const updateGeometry = (time: number) => {
+      nodes.forEach((node, index) => {
+        const breath =
+          1 +
+          Math.sin(time * (0.42 + (index % 5) * 0.017) + node.phase) * 0.035;
+        nodePositions[index * 3] = node.base.x * breath;
+        nodePositions[index * 3 + 1] = node.base.y * breath;
+        nodePositions[index * 3 + 2] = node.base.z * breath;
+      });
+      (nodeGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+
+      edgePairs.forEach(([from, to], index) => {
+        edgePositions[index * 6] = nodePositions[from * 3];
+        edgePositions[index * 6 + 1] = nodePositions[from * 3 + 1];
+        edgePositions[index * 6 + 2] = nodePositions[from * 3 + 2];
+        edgePositions[index * 6 + 3] = nodePositions[to * 3];
+        edgePositions[index * 6 + 4] = nodePositions[to * 3 + 1];
+        edgePositions[index * 6 + 5] = nodePositions[to * 3 + 2];
+      });
+      (edgeGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     };
 
-    window.addEventListener('mousemove', onPointerMove);
-
-    // Resize handler
-    const resizeObserver = new ResizeObserver(() => {
-      if (!container) return;
-      width = container.clientWidth;
-      height = container.clientHeight;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    });
-    resizeObserver.observe(container);
-
-    // Animation Loop
-    let animationFrameId: number;
     const clock = new THREE.Clock();
+    const render = () => {
+      if (!inView || !pageVisible) return;
+      const elapsed = clock.getElapsedTime();
+      updateGeometry(elapsed);
 
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
+      if (!reducedMotion) {
+        const entrance = Math.min(1, elapsed / 1.8);
+        system.scale.setScalar(0.86 + entrance * 0.14);
+        core.rotation.y = elapsed * 0.11;
+        core.rotation.z = elapsed * 0.047;
+        nodeCloud.rotation.y = elapsed * -0.035;
+        edges.rotation.y = nodeCloud.rotation.y;
+        dust.rotation.y = elapsed * 0.018;
+        dust.rotation.x = Math.sin(elapsed * 0.09) * 0.08;
+        const breath = 1 + Math.sin(elapsed * 0.72) * 0.045;
+        innerCore.scale.setScalar(breath);
+        halo.scale.setScalar(1 + Math.sin(elapsed * 0.41 + 1.2) * 0.07);
+        haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012;
+        system.rotation.y += (targetX - system.rotation.y) * 0.035;
+        system.rotation.x += (-targetY - system.rotation.x) * 0.035;
 
-      const elapsedTime = clock.getElapsedTime();
-
-      // --- Staggered Reveal Animation Pipeline ---
-      if (!prefersReducedMotion) {
-        // 1. Core Sphere Reveal (0.0s -> 0.7s)
-        const coreProgress = Math.min(1, Math.max(0, elapsedTime / 0.7));
-        const coreScale = easeOutBack(coreProgress);
-        sphereMesh.scale.setScalar(coreScale);
-        innerMesh.scale.setScalar(coreScale * (1 + Math.sin(elapsedTime * 1.5) * 0.04));
-
-        // 2. Orbital Rings Reveal (Staggered 0.2s, 0.45s, 0.7s)
-        rings.forEach((ring, idx) => {
-          const startTime = 0.2 + idx * 0.25;
-          const ringProgress = Math.min(1, Math.max(0, (elapsedTime - startTime) / 0.6));
-          const ringScale = easeOutCubic(ringProgress);
-          ring.scale.setScalar(ringScale);
-          (ring.material as THREE.MeshBasicMaterial).opacity =
-            ringProgress * ringTargetOpacities[idx];
-
-          ring.rotation.x += ringRotations[idx].x;
-          ring.rotation.y += ringRotations[idx].y;
-        });
-
-        // 3. Chart Drawing Reveal Process (Staggered Line Drawing)
-        chartLines.forEach((line) => {
-          const lineProgress = Math.min(
-            1,
-            Math.max(0, (elapsedTime - line.startTime) / line.duration)
-          );
-          const easedProg = easeInOutQuad(lineProgress);
-          const drawCount = Math.floor(easedProg * line.totalPoints);
-          line.geo.setDrawRange(0, drawCount);
-        });
-
-        // 4. Chart Nodes Reveal & Pulse Rings
-        chartNodes.forEach((node) => {
-          if (elapsedTime >= node.revealTime) {
-            const nodeProgress = Math.min(1, Math.max(0, (elapsedTime - node.revealTime) / 0.4));
-            const nodeScale = easeOutBack(nodeProgress);
-
-            // Slight floating bounce
-            const hoverY = Math.sin(elapsedTime * 2 + node.revealTime * 10) * 0.03;
-            node.mesh.position.y = node.initialPos.y + hoverY;
-            node.ringMesh.position.y = node.initialPos.y + hoverY;
-
-            node.mesh.scale.setScalar(nodeScale);
-
-            // Halo ripple effect upon reveal
-            if (nodeProgress < 1) {
-              const ringScale = nodeProgress * 2.2;
-              node.ringMesh.scale.setScalar(ringScale);
-              (node.ringMesh.material as THREE.MeshBasicMaterial).opacity =
-                (1 - nodeProgress) * 0.8;
-            } else {
-              node.ringMesh.scale.setScalar(1);
-              (node.ringMesh.material as THREE.MeshBasicMaterial).opacity = 0;
-            }
+        signals.forEach((signal, index) => {
+          signal.progress += signal.speed * (1 + Math.sin(elapsed * 0.3 + index) * 0.15);
+          if (signal.progress >= 1) {
+            signal.progress = 0;
+            const pair =
+              edgePairs[
+                Math.floor(
+                  Math.abs(Math.sin(elapsed * 0.37 + index * 2.1)) *
+                    edgePairs.length,
+                ) % edgePairs.length
+              ];
+            signal.from = pair[0];
+            signal.to = pair[1];
           }
+          const fromOffset = signal.from * 3;
+          const toOffset = signal.to * 3;
+          signal.mesh.position.set(
+            nodePositions[fromOffset] +
+              (nodePositions[toOffset] - nodePositions[fromOffset]) *
+                signal.progress,
+            nodePositions[fromOffset + 1] +
+              (nodePositions[toOffset + 1] - nodePositions[fromOffset + 1]) *
+                signal.progress,
+            nodePositions[fromOffset + 2] +
+              (nodePositions[toOffset + 2] - nodePositions[fromOffset + 2]) *
+                signal.progress,
+          );
         });
-
-        // 5. Particles Fade In (0.3s -> 1.5s)
-        const particleProgress = Math.min(1, Math.max(0, (elapsedTime - 0.3) / 1.2));
-        particleMat.opacity = particleProgress * 0.7;
-        particleSystem.rotation.y = elapsedTime * 0.05;
-
-        // Core parallax and continuous rotation
-        coreGroup.rotation.y += (targetX - coreGroup.rotation.y) * 0.03;
-        coreGroup.rotation.x += (-targetY - coreGroup.rotation.x) * 0.03;
-
-        sphereMesh.rotation.y = elapsedTime * 0.15;
-        sphereMesh.rotation.z = elapsedTime * 0.1;
-        innerMesh.rotation.y = -elapsedTime * 0.2;
-      } else {
-        // Fallback for reduced motion: immediate display
-        sphereMesh.scale.setScalar(1);
-        innerMesh.scale.setScalar(1);
-        rings.forEach((ring, idx) => {
-          ring.scale.setScalar(1);
-          (ring.material as THREE.MeshBasicMaterial).opacity = ringTargetOpacities[idx];
-        });
-        chartLines.forEach((line) => line.geo.setDrawRange(0, line.totalPoints));
-        chartNodes.forEach((node) => node.mesh.scale.setScalar(1));
-        particleMat.opacity = 0.7;
       }
 
       renderer.render(scene, camera);
+      if (!reducedMotion) frame = requestAnimationFrame(render);
     };
 
-    animate();
+    const resizeObserver = new ResizeObserver(() => {
+      width = Math.max(1, container.clientWidth);
+      height = Math.max(1, container.clientHeight);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+      if (reducedMotion) render();
+    });
+    resizeObserver.observe(container);
+
+    const intersectionObserver = new IntersectionObserver(
+      ([entry]) => {
+        inView = entry.isIntersecting;
+        if (inView && pageVisible && !reducedMotion) {
+          cancelAnimationFrame(frame);
+          frame = requestAnimationFrame(render);
+        }
+      },
+      { rootMargin: '120px' },
+    );
+    intersectionObserver.observe(container);
+
+    const handleVisibility = () => {
+      pageVisible = document.visibilityState === 'visible';
+      if (pageVisible && inView && !reducedMotion) {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(render);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    if (reducedMotion) render();
+    else frame = requestAnimationFrame(render);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('mousemove', onPointerMove);
+      cancelAnimationFrame(frame);
       resizeObserver.disconnect();
-      if (container && renderer.domElement) {
-        container.removeChild(renderer.domElement);
-      }
-
-      // Dispose geometries & materials
-      sphereGeo.dispose();
-      sphereMat.dispose();
-      innerGeo.dispose();
-      innerMat.dispose();
-      particleGeo.dispose();
-      particleMat.dispose();
-      nodeSphereGeo.dispose();
-      nodeRingGeo.dispose();
-
-      rings.forEach((r) => {
-        r.geometry.dispose();
-        (r.material as THREE.Material).dispose();
+      intersectionObserver.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      pointerSurface.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.remove();
+      coreGeometry.dispose();
+      coreMaterial.dispose();
+      innerGeometry.dispose();
+      innerMaterial.dispose();
+      haloGeometry.dispose();
+      haloMaterial.dispose();
+      nodeGeometry.dispose();
+      nodeMaterial.dispose();
+      edgeGeometry.dispose();
+      edgeMaterial.dispose();
+      signalGeometry.dispose();
+      signals.forEach(({ mesh }) => {
+        (mesh.material as THREE.Material).dispose();
       });
-
-      chartLines.forEach((cl) => {
-        cl.geo.dispose();
-        cl.mat.dispose();
-      });
-
-      chartNodes.forEach((cn) => {
-        (cn.mesh.material as THREE.Material).dispose();
-        (cn.ringMesh.material as THREE.Material).dispose();
-      });
-
+      dustGeometry.dispose();
+      dustMaterial.dispose();
       renderer.dispose();
     };
   }, []);
@@ -420,8 +360,8 @@ export function HeroCoreCanvas() {
   return (
     <div
       ref={mountRef}
-      className="w-full h-full min-h-[380px] sm:min-h-[480px] lg:min-h-[550px] relative flex items-center justify-center pointer-events-auto"
+      aria-hidden="true"
+      className="relative flex h-full min-h-[330px] w-full items-center justify-center sm:min-h-[440px] lg:min-h-[500px]"
     />
   );
 }
-

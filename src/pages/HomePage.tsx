@@ -5,16 +5,23 @@ import { LivingKnowledgeSection } from '../components/landing/LivingKnowledgeSec
 import { FeaturesSection } from '../components/landing/FeaturesSection';
 import { CtaSection } from '../components/landing/CtaSection';
 import { Footer } from '../components/landing/Footer';
+import { LandingAtmosphere } from '../components/landing/LandingAtmosphere';
+import { LandingSmoothScroll } from '../components/landing/LandingSmoothScroll';
+import '../components/landing/landing-motion.css';
 
 export function HomePage() {
   return (
-    <main className="min-h-screen bg-[#0b0f17] text-[#f0f4f8] overflow-x-hidden">
-      <HeroSection />
-      <HowItWorksSection />
-      <LivingKnowledgeSection />
-      <FeaturesSection />
-      <CtaSection />
-      <Footer />
+    <main className="landing-experience relative min-h-screen overflow-x-hidden text-[#f0f4f8]">
+      <LandingSmoothScroll />
+      <LandingAtmosphere />
+      <div className="relative z-10">
+        <HeroSection />
+        <HowItWorksSection />
+        <LivingKnowledgeSection />
+        <FeaturesSection />
+        <CtaSection />
+        <Footer />
+      </div>
     </main>
   );
 }

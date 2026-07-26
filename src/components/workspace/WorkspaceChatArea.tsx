@@ -1,12 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import {
-  ArrowUpRight,
   Bot,
   Check,
   Clock3,
   Code2,
-  Compass,
   Copy,
   ExternalLink,
   FileText,
@@ -31,7 +29,6 @@ interface WorkspaceChatAreaProps {
   activeActionLabel?: string | null;
   regeneratingMessageId?: string | null;
   error?: string | null;
-  hasIndexedSources: boolean;
   sourceCount: number;
   processingSourceCount: number;
   onSelectCitation?: (citation: StoredCitation) => void;
@@ -180,7 +177,6 @@ export function WorkspaceChatArea({
   activeActionLabel,
   regeneratingMessageId,
   error,
-  hasIndexedSources,
   sourceCount,
   processingSourceCount,
   onSelectCitation,
@@ -235,13 +231,6 @@ export function WorkspaceChatArea({
     }
   };
 
-  const starterQuestions = [
-    'Summarize key insights across all Workspace sources',
-    'What are the main technical specifications or findings?',
-    'Compare architectural trade-offs mentioned in the sources',
-    'Extract critical conclusions and actionable recommendations',
-  ];
-
   return (
     <div
       ref={feedRef}
@@ -286,31 +275,6 @@ export function WorkspaceChatArea({
             </div>
           ))}
         </div>
-
-        {messages.length === 0 && hasIndexedSources && (
-          <div className="my-auto space-y-5 py-6 animate-fade-in">
-            <div className="mx-auto max-w-lg text-center">
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-800/60 bg-sky-950/70 text-sky-300">
-                <Compass className="h-5 w-5" />
-              </div>
-              <h2 className="text-base font-bold text-white">Start exploring your knowledge</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-400">Choose a prompt or ask your own question below.</p>
-            </div>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {starterQuestions.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  onClick={() => onSubmitMessage(question)}
-                  className="group flex min-h-20 items-start justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/65 p-4 text-left text-xs leading-5 text-slate-300 transition duration-200 hover:-translate-y-0.5 hover:border-sky-500/50 hover:bg-slate-900 hover:text-white"
-                >
-                  <span>{question}</span>
-                  <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition group-hover:text-sky-400" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="flex-1 space-y-1" aria-live="polite">
           {error && (

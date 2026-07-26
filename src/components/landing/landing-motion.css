@@ -1,0 +1,798 @@
+.landing-experience {
+  --landing-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    radial-gradient(circle at 50% 8%, rgba(14, 165, 233, 0.07), transparent 28rem),
+    #070b12;
+}
+
+.landing-section {
+  isolation: isolate;
+  background: linear-gradient(180deg, rgba(7, 11, 18, 0.5), rgba(7, 11, 18, 0.72));
+}
+
+.landing-section::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: '';
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgba(14, 165, 233, 0.025), transparent),
+    radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.055), transparent 35rem);
+}
+
+.landing-navigation {
+  box-shadow: inset 0 -1px 0 rgba(56, 189, 248, 0.035);
+}
+
+.lumora-brand-mark {
+  position: relative;
+  display: block;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 0.7rem;
+  background: #030713;
+  box-shadow:
+    inset 0 0 16px rgba(14, 165, 233, 0.08),
+    0 0 0 rgba(14, 165, 233, 0);
+  transform: translateZ(0);
+  transition:
+    transform 480ms var(--landing-ease),
+    border-color 350ms ease,
+    box-shadow 450ms ease;
+}
+
+.lumora-brand-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.98;
+  transform: scale(1.7) translateY(8%);
+  transition:
+    transform 600ms var(--landing-ease),
+    filter 450ms ease;
+}
+
+.lumora-brand:hover .lumora-brand-mark {
+  border-color: rgba(125, 211, 252, 0.72);
+  box-shadow:
+    inset 0 0 18px rgba(14, 165, 233, 0.12),
+    0 0 25px rgba(14, 165, 233, 0.2);
+  transform: translateY(-1px) rotate(1.5deg) scale(1.025);
+}
+
+.lumora-brand:hover .lumora-brand-image {
+  filter: saturate(1.12) brightness(1.08);
+  transform: scale(1.76) translateY(8%);
+}
+
+.landing-aurora {
+  animation: landing-aurora-drift 14s ease-in-out infinite alternate;
+}
+
+.landing-stream-bridge::before,
+.landing-stream-bridge::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+}
+
+.landing-stream-bridge::before {
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(56, 189, 248, 0.2), transparent 42%),
+    repeating-radial-gradient(
+      ellipse at 50% 112%,
+      transparent 0 23px,
+      rgba(14, 165, 233, 0.07) 24px,
+      transparent 26px 48px
+    );
+  opacity: 0.72;
+  animation: landing-river-breathe 5.8s ease-in-out infinite;
+}
+
+.landing-stream-bridge::after {
+  left: 50%;
+  width: min(78vw, 960px);
+  transform: translateX(-50%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(14, 165, 233, 0.04) 28%,
+    rgba(125, 211, 252, 0.16) 50%,
+    rgba(14, 165, 233, 0.04) 72%,
+    transparent
+  );
+  clip-path: polygon(0 0, 100% 0, 55% 100%, 45% 100%);
+  filter: blur(8px);
+}
+
+.landing-stream-bridge span {
+  position: absolute;
+  bottom: -18%;
+  left: var(--stream-left, 50%);
+  width: 17%;
+  height: 118%;
+  opacity: 0.32;
+  border-left: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 50%;
+  transform: translateX(-50%) perspective(240px)
+    rotateX(58deg) rotateZ(var(--stream-rotation, 0deg));
+  box-shadow: -7px 0 28px rgba(14, 165, 233, 0.06);
+}
+
+.landing-stream-bridge span::after {
+  position: absolute;
+  top: -8px;
+  left: -2px;
+  width: 4px;
+  height: 4px;
+  content: '';
+  border-radius: 999px;
+  background: #7dd3fc;
+  box-shadow: 0 0 12px #38bdf8;
+  animation: landing-stream-drop var(--stream-duration, 3s)
+    var(--stream-delay, 0s) ease-in infinite;
+}
+
+.landing-source-card {
+  translate:
+    calc(var(--magnetic-x, 0px) + var(--scene-x, 0px))
+    calc(var(--magnetic-y, 0px) + var(--scene-y, 0px));
+  transform-origin: center;
+  animation: landing-float var(--float-duration, 8s) var(--float-delay, 0s)
+    ease-in-out infinite alternate;
+  transition:
+    translate 260ms var(--landing-ease),
+    transform 450ms var(--landing-ease),
+    border-color 300ms ease,
+    box-shadow 350ms ease,
+    background-color 300ms ease;
+}
+
+.hero-connection-line,
+.hero-connection-pulse {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.hero-connection-line {
+  stroke: rgba(56, 189, 248, 0.32);
+  stroke-width: 0.85;
+  filter: drop-shadow(0 0 3px rgba(14, 165, 233, 0.32));
+  transition:
+    stroke 320ms ease,
+    stroke-width 320ms ease,
+    filter 320ms ease;
+}
+
+.hero-connection-pulse {
+  stroke: rgba(125, 211, 252, 0.7);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 0.055 0.945;
+  stroke-dashoffset: 1;
+  opacity: 0.66;
+  animation: hero-connection-pulse 5.2s var(--connection-delay, 0s) linear infinite;
+}
+
+.hero-connection-particle {
+  fill: #bae6fd;
+  opacity: 0.78;
+  transition:
+    r 300ms ease,
+    opacity 300ms ease;
+}
+
+.hero-connection.is-active .hero-connection-line {
+  stroke: rgba(125, 211, 252, 0.82);
+  stroke-width: 1.25;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.72));
+}
+
+.hero-connection.is-active .hero-connection-pulse {
+  opacity: 1;
+  animation-duration: 2.8s;
+}
+
+.hero-connection.is-active .hero-connection-particle {
+  opacity: 1;
+}
+
+.landing-source-card:hover,
+.landing-source-card:focus-within {
+  transform: translate3d(0, -4px, 20px) rotate(0deg);
+  border-color: rgba(56, 189, 248, 0.62);
+  background-color: rgba(15, 23, 42, 0.96);
+  box-shadow:
+    0 18px 50px rgba(2, 132, 199, 0.18),
+    inset 0 0 24px rgba(56, 189, 248, 0.04);
+}
+
+.landing-source-card::after {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(125, 211, 252, 0.14), transparent 70%);
+  transform: translateX(-45%);
+  transition: opacity 250ms ease;
+}
+
+.landing-source-card:hover::after {
+  opacity: 1;
+  animation: landing-sheen 1.3s var(--landing-ease) both;
+}
+
+.landing-primary-cta {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+  transition:
+    transform 400ms var(--landing-ease),
+    box-shadow 400ms ease,
+    background-color 250ms ease;
+}
+
+.landing-primary-cta::before {
+  position: absolute;
+  inset: -70%;
+  content: '';
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.34), transparent 38%);
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity 400ms ease,
+    transform 650ms var(--landing-ease);
+}
+
+.landing-primary-cta:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 18px 50px rgba(14, 165, 233, 0.25),
+    0 0 0 1px rgba(125, 211, 252, 0.3);
+}
+
+.landing-primary-cta:hover::before {
+  opacity: 0.75;
+  transform: scale(1);
+}
+
+.landing-primary-cta svg {
+  transition: transform 350ms var(--landing-ease);
+}
+
+.landing-primary-cta:hover svg {
+  transform: translateX(4px);
+}
+
+.landing-primary-cta:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 4px;
+}
+
+.landing-card {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 450ms var(--landing-ease),
+    border-color 350ms ease,
+    box-shadow 450ms ease,
+    background-color 350ms ease;
+}
+
+.landing-card::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.1), transparent 62%);
+  transition: opacity 350ms ease;
+}
+
+.landing-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(56, 189, 248, 0.46);
+  box-shadow: 0 22px 60px rgba(2, 8, 23, 0.45);
+}
+
+.landing-card:hover::before {
+  opacity: 1;
+}
+
+.landing-card:hover .landing-icon {
+  transform: translateY(-2px) rotate(-3deg);
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 24px rgba(14, 165, 233, 0.14);
+}
+
+.landing-icon {
+  transition:
+    transform 450ms var(--landing-ease),
+    border-color 300ms ease,
+    box-shadow 350ms ease;
+}
+
+.landing-signal {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.landing-signal::after {
+  position: absolute;
+  inset-block: 0;
+  width: 28%;
+  content: '';
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+  animation: landing-signal 3.4s var(--signal-delay, 0s) ease-in-out infinite;
+}
+
+.workflow-runner {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #bae6fd;
+  box-shadow:
+    0 0 10px #38bdf8,
+    0 0 22px rgba(14, 165, 233, 0.7);
+  animation: workflow-runner 4.8s ease-in-out infinite;
+}
+
+.workflow-item {
+  transition:
+    transform 350ms var(--landing-ease),
+    border-color 300ms ease,
+    background-color 300ms ease;
+}
+
+.landing-card:hover .workflow-item {
+  transform: translateX(2px);
+  border-color: rgba(56, 189, 248, 0.24);
+  background-color: rgba(30, 41, 59, 0.94);
+}
+
+.living-input,
+.living-output {
+  position: relative;
+  overflow: hidden;
+}
+
+.living-input::after {
+  position: absolute;
+  top: 50%;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  content: '';
+  border-radius: 999px;
+  background: #7dd3fc;
+  box-shadow: 0 0 14px #38bdf8;
+  transform: translateY(-50%);
+  animation: landing-input-transmit 5.4s ease-in-out infinite;
+}
+
+.living-input:nth-child(2)::after {
+  animation-delay: -1.8s;
+}
+
+.living-input:nth-child(3)::after {
+  animation-delay: -3.6s;
+}
+
+.living-output {
+  transition:
+    border-color 420ms ease,
+    box-shadow 420ms ease,
+    background-color 420ms ease;
+  animation: landing-output-settle 7.2s ease-in-out infinite;
+}
+
+.living-output::after {
+  position: absolute;
+  inset-block: 0;
+  left: -45%;
+  width: 42%;
+  content: '';
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.11), transparent);
+  transform: skewX(-16deg);
+  animation: landing-output-arrival 7.2s ease-in-out infinite;
+}
+
+.living-output:nth-child(2),
+.living-output:nth-child(2)::after {
+  animation-delay: -2.4s;
+}
+
+.living-output:nth-child(3),
+.living-output:nth-child(3)::after {
+  animation-delay: -4.8s;
+}
+
+.landing-roadmap-card::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 25%, rgba(56, 189, 248, 0.055), transparent 65%);
+  transform: translateX(-100%);
+  animation: landing-roadmap-shimmer 7s ease-in-out infinite;
+}
+
+.landing-typing-dot {
+  animation: landing-typing 1.25s ease-in-out infinite;
+}
+
+.landing-stream-copy {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: nowrap;
+  animation: landing-stream-copy 6s steps(32, end) infinite;
+}
+
+.landing-stream-cursor {
+  display: inline-block;
+  width: 1px;
+  height: 0.8rem;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: #7dd3fc;
+  animation: landing-cursor 850ms steps(1, end) infinite;
+}
+
+.landing-lock {
+  animation: landing-lock-breathe 4s ease-in-out infinite;
+}
+
+.landing-horizon {
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(14, 165, 233, 0.28), transparent 48%),
+    linear-gradient(180deg, transparent 70%, rgba(2, 132, 199, 0.08));
+}
+
+.cta-particle {
+  opacity: 0.22;
+  animation: cta-particle var(--particle-duration, 7s)
+    var(--particle-delay, 0s) ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.65);
+}
+
+.auth-entry {
+  --landing-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background:
+    radial-gradient(circle at 50% 22%, rgba(14, 165, 233, 0.12), transparent 27rem),
+    #040813;
+}
+
+.auth-entry-horizon {
+  z-index: 1;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(2, 132, 199, 0.28), transparent 48%),
+    repeating-radial-gradient(
+      ellipse at 50% 118%,
+      transparent 0 28px,
+      rgba(14, 165, 233, 0.05) 29px,
+      transparent 31px 58px
+    );
+  opacity: 0.7;
+}
+
+.auth-board {
+  animation: auth-board-enter 800ms var(--landing-ease) both;
+}
+
+.auth-board::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background:
+    linear-gradient(120deg, rgba(56, 189, 248, 0.035), transparent 34%),
+    radial-gradient(circle at 50% 8%, rgba(14, 165, 233, 0.09), transparent 32%);
+}
+
+.auth-hero-mark .lumora-brand-mark {
+  width: 7rem;
+  height: 7rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: 0 0 40px rgba(14, 165, 233, 0.12);
+}
+
+.auth-hero-mark .lumora-brand-image {
+  transform: scale(1.42) translateY(8%);
+}
+
+.auth-hero-mark:hover .lumora-brand-image {
+  transform: scale(1.47) translateY(8%);
+}
+
+.auth-secondary-button,
+.auth-provider-button {
+  transition:
+    transform 350ms var(--landing-ease),
+    border-color 300ms ease,
+    background-color 300ms ease,
+    box-shadow 350ms ease;
+}
+
+.auth-secondary-button:hover,
+.auth-provider-button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.58);
+  background-color: rgba(15, 23, 42, 0.72);
+  box-shadow: 0 14px 30px rgba(2, 8, 23, 0.4);
+}
+
+.auth-primary-button:focus-visible,
+.auth-secondary-button:focus-visible,
+.auth-provider-button:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 3px;
+}
+
+@keyframes landing-float {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--float-rotate, -0.4deg));
+  }
+  55% {
+    transform: translate3d(var(--float-x, 3px), -7px, 12px)
+      rotate(calc(var(--float-rotate, -0.4deg) * -0.7));
+  }
+  100% {
+    transform: translate3d(calc(var(--float-x, 3px) * -0.5), 4px, 0)
+      rotate(var(--float-rotate, -0.4deg));
+  }
+}
+
+@keyframes hero-connection-pulse {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes landing-river-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scaleX(0.96);
+  }
+  50% {
+    opacity: 0.82;
+    transform: scaleX(1.03);
+  }
+}
+
+@keyframes landing-aurora-drift {
+  from {
+    transform: translateX(-52%) translateY(-2%) scale(0.96);
+    opacity: 0.56;
+  }
+  to {
+    transform: translateX(-48%) translateY(3%) scale(1.06);
+    opacity: 0.76;
+  }
+}
+
+@keyframes landing-stream-drop {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  to {
+    transform: translateY(150px);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-sheen {
+  from {
+    transform: translateX(-55%);
+  }
+  to {
+    transform: translateX(55%);
+  }
+}
+
+@keyframes landing-signal {
+  from {
+    transform: translateX(-120%);
+  }
+  55%,
+  100% {
+    transform: translateX(430%);
+  }
+}
+
+@keyframes workflow-runner {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes landing-roadmap-shimmer {
+  0%,
+  68% {
+    transform: translateX(-100%);
+  }
+  86%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes landing-typing {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  35% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes landing-stream-copy {
+  0%,
+  10% {
+    width: 0;
+  }
+  48%,
+  82% {
+    width: 100%;
+  }
+  92%,
+  100% {
+    width: 0;
+  }
+}
+
+@keyframes landing-cursor {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  49%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes landing-lock-breathe {
+  0%,
+  100% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 0 rgba(56, 189, 248, 0));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.34));
+  }
+}
+
+@keyframes landing-input-transmit {
+  0%,
+  66%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(-50%) scale(0.55);
+  }
+  76% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.15);
+  }
+}
+
+@keyframes landing-output-arrival {
+  0%,
+  54% {
+    transform: translateX(0) skewX(-16deg);
+  }
+  72%,
+  100% {
+    transform: translateX(360%) skewX(-16deg);
+  }
+}
+
+@keyframes landing-output-settle {
+  0%,
+  52%,
+  100% {
+    border-color: rgba(30, 41, 59, 1);
+    box-shadow: 0 0 0 rgba(14, 165, 233, 0);
+  }
+  72% {
+    border-color: rgba(56, 189, 248, 0.4);
+    box-shadow: inset 0 0 22px rgba(14, 165, 233, 0.055);
+  }
+}
+
+@keyframes cta-particle {
+  0%,
+  100% {
+    transform: translateY(5px) scale(0.7);
+    opacity: 0.15;
+  }
+  45% {
+    transform: translateY(-10px) scale(1);
+    opacity: 0.72;
+  }
+}
+
+@keyframes auth-board-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 767px) {
+  .landing-source-card {
+    animation: none;
+  }
+
+  .landing-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .auth-hero-mark .lumora-brand-mark {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-connection-particle {
+    display: none;
+  }
+
+  .landing-experience *,
+  .landing-experience *::before,
+  .landing-experience *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .auth-entry *,
+  .auth-entry *::before,
+  .auth-entry *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

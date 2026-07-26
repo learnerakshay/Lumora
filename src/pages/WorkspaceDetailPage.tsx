@@ -4,6 +4,7 @@ import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
 import {
   ConversationOperationGate,
+  parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
   replaceCompletedAssistant,
@@ -45,6 +46,7 @@ export function WorkspaceDetailPage() {
   const [loadingSources, setLoadingSources] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Streaming State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -115,34 +117,39 @@ export function WorkspaceDetailPage() {
   }, [workspaceId]);
 
   // Fetch Workspace Chat Messages
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (): Promise<void> => {
     if (!workspaceId) return;
     const requestedAtRevision = conversationRevisionRef.current;
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/messages`);
-      if (!res.ok) throw new Error('Failed to refresh conversation history.');
-      const payload = await res.json();
-      if (payload.success && Array.isArray(payload.data)) {
-        if (
-          shouldApplyMessageSnapshot(
-            requestedAtRevision,
-            conversationRevisionRef.current,
-          )
-        ) {
-          setMessages(payload.data);
-        }
+      const payload =
+        res.status === 204 ? null : await res.json().catch(() => null);
+      const nextMessages = parseConversationHistoryResponse(res, payload);
+      if (
+        shouldApplyMessageSnapshot(
+          requestedAtRevision,
+          conversationRevisionRef.current,
+        )
+      ) {
+        setMessages(nextMessages);
+        setHistoryError(null);
       }
     } catch (err: any) {
-      setActivityError(err.message || 'Unable to refresh conversation history.');
+      if (requestedAtRevision === conversationRevisionRef.current) {
+        setHistoryError(
+          err.message || 'Unable to refresh conversation history.',
+        );
+      }
     }
   }, [workspaceId]);
 
   useEffect(() => {
     conversationRevisionRef.current += 1;
     setMessages([]);
+    setHistoryError(null);
     fetchWorkspace();
     fetchSources();
-    fetchMessages();
+    void fetchMessages();
   }, [fetchWorkspace, fetchSources, fetchMessages]);
 
   // Polling loop when any source is currently PROCESSING or PENDING
@@ -357,6 +364,9 @@ export function WorkspaceDetailPage() {
       }
       if (terminalEventReceived && !completedResponse) {
         throw new Error('The AI response did not reach a persisted completed state.');
+      }
+      if (completedResponse) {
+        void fetchMessages();
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -634,7 +644,7 @@ export function WorkspaceDetailPage() {
         />
 
         {/* Center View: Shows Onboarding or Chat Thread */}
-        {messages.length > 0 || isGenerating || hasIndexedSources ? (
+        {sources.length > 0 ? (
           <WorkspaceChatArea
             messages={messages}
             isGenerating={isGenerating}
@@ -644,8 +654,7 @@ export function WorkspaceDetailPage() {
             streamingWebSources={streamingWebSources}
             activeActionLabel={activeActionLabel}
             regeneratingMessageId={regeneratingMessageId}
-            error={activityError}
-            hasIndexedSources={hasIndexedSources}
+            error={activityError || historyError}
             sourceCount={sources.length}
             processingSourceCount={sources.filter(
               (source) => source.status === 'PENDING' || source.status === 'PROCESSING'
