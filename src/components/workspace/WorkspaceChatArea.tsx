@@ -188,6 +188,7 @@ export function WorkspaceChatArea({
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const assistantMessages = messages.filter((message) => message.role === 'ASSISTANT').length;
   const latestActivity = messages.at(-1)?.createdAt;
 
@@ -228,6 +229,18 @@ export function WorkspaceChatArea({
       }
     } finally {
       setDeletingMessageId(null);
+    }
+  };
+
+  const handleCopyMessage = async (message: StoredMessage) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? null : current));
+      }, 1600);
+    } catch {
+      setCopiedMessageId(null);
     }
   };
 
@@ -311,7 +324,20 @@ export function WorkspaceChatArea({
                   {isUser ? (
                     <div>
                       <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
-                      <div className="mt-2 flex justify-end border-t border-sky-500/30 pt-2">
+                      <div className="mt-2 flex justify-end gap-1 border-t border-sky-500/30 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyMessage(message)}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-sky-100/75 transition hover:bg-sky-700 hover:text-white"
+                          aria-label="Copy user message"
+                        >
+                          {copiedMessageId === message.id ? (
+                            <Check className="h-3 w-3" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                          {copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteQuery(message.id)}
@@ -364,8 +390,21 @@ export function WorkspaceChatArea({
                         </div>
                       )}
 
-                      {message.parentMessageId && (
-                        <div className="mt-3 flex justify-end border-t border-slate-800/80 pt-2.5">
+                      <div className="mt-3 flex justify-end gap-1 border-t border-slate-800/80 pt-2.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyMessage(message)}
+                          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[10px] font-medium text-slate-400 transition hover:bg-slate-900 hover:text-sky-300"
+                          aria-label="Copy assistant response"
+                        >
+                          {copiedMessageId === message.id ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          {copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                        </button>
+                        {message.parentMessageId && (
                           <button
                             type="button"
                             onClick={() => onRegenerateResponse(message)}
@@ -384,8 +423,8 @@ export function WorkspaceChatArea({
                               ? 'Regenerating…'
                               : 'Regenerate'}
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

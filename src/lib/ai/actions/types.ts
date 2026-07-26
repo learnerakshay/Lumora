@@ -39,6 +39,11 @@ export interface AIActionExecutionPlan {
   modelPrompt: string;
   additionalInstructions: string;
   sourceIds: string[];
+  sourceRetrievals?: Array<{
+    sourceId: string;
+    sourceTitle: string;
+    query: string;
+  }>;
   allowWithoutWorkspaceContext: boolean;
 }
 

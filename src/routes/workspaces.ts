@@ -770,12 +770,49 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
 
     let retrievedChunks;
     try {
-      retrievedChunks = await searchWorkspaceChunks(
-        workspaceId,
-        res.locals.userId,
-        retrievalQuery,
-        { topK: 5, threshold: 0.15 },
-      );
+      if (actionPlan?.sourceRetrievals?.length) {
+        const scopedResults = await Promise.all(
+          actionPlan.sourceRetrievals.map(async (scope) => {
+            const candidates = await searchWorkspaceChunks(
+              workspaceId,
+              res.locals.userId,
+              scope.query,
+              { topK: 20, threshold: 0.15 },
+            );
+            return {
+              scope,
+              chunks: candidates
+                .filter(({ sourceId }) => sourceId === scope.sourceId)
+                .slice(0, 5),
+            };
+          }),
+        );
+        const missingScope = scopedResults.find(({ chunks }) => chunks.length === 0);
+        if (missingScope) {
+          sendEvent({
+            type: 'error',
+            code: 'ACTION_SOURCE_CONTEXT_MISSING',
+            error: `No usable indexed context was found for "${missingScope.scope.sourceTitle}". Reprocess that source and try again.`,
+          });
+          return;
+        }
+        retrievedChunks = [];
+        const largestScope = Math.max(
+          ...scopedResults.map(({ chunks }) => chunks.length),
+        );
+        for (let index = 0; index < largestScope; index += 1) {
+          for (const { chunks } of scopedResults) {
+            if (chunks[index]) retrievedChunks.push(chunks[index]);
+          }
+        }
+      } else {
+        retrievedChunks = await searchWorkspaceChunks(
+          workspaceId,
+          res.locals.userId,
+          retrievalQuery,
+          { topK: 5, threshold: 0.15 },
+        );
+      }
     } catch (retrievalError: any) {
       logger.error('Validated Workspace retrieval failed', retrievalError);
       sendEvent({
@@ -785,7 +822,11 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       });
       return;
     }
-    if (actionPlan?.target === 'source' && actionPlan.sourceIds.length > 0) {
+    if (
+      actionPlan?.target === 'source' &&
+      actionPlan.sourceIds.length > 0 &&
+      !actionPlan.sourceRetrievals?.length
+    ) {
       const allowedSourceIds = new Set(actionPlan.sourceIds);
       retrievedChunks = retrievedChunks.filter(({ sourceId }) =>
         allowedSourceIds.has(sourceId),

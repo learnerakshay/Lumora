@@ -108,6 +108,24 @@ test('explain supports selected text and beginner-friendly output', async () => 
   assert.match(plan.additionalInstructions, /const value/);
 });
 
+test('explain scopes retrieval to the explicitly selected source', async () => {
+  const plan = await executeAIAction(
+    {
+      actionId: 'explain',
+      input: { target: 'source', sourceId: 'source_pdf' },
+    },
+    context(),
+  );
+
+  assert.deepEqual(plan.sourceIds, ['source_pdf']);
+  assert.deepEqual(
+    plan.sourceRetrievals?.map(({ sourceId }) => sourceId),
+    ['source_pdf'],
+  );
+  assert.match(plan.sourceRetrievals?.[0].query || '', /Architecture Guide/);
+  assert.equal(plan.allowWithoutWorkspaceContext, false);
+});
+
 test('compare requires two distinct completed Workspace sources', async () => {
   const plan = await executeAIAction(
     {
@@ -120,6 +138,12 @@ test('compare requires two distinct completed Workspace sources', async () => {
   assert.match(plan.modelPrompt, /Architecture Guide/);
   assert.match(plan.modelPrompt, /Release Notes/);
   assert.match(plan.additionalInstructions, /Missing Topics/);
+  assert.deepEqual(
+    plan.sourceRetrievals?.map(({ sourceId }) => sourceId),
+    ['source_pdf', 'source_web'],
+  );
+  assert.match(plan.sourceRetrievals?.[0].query || '', /Architecture Guide/);
+  assert.match(plan.sourceRetrievals?.[1].query || '', /Release Notes/);
 
   await assert.rejects(
     executeAIAction(
