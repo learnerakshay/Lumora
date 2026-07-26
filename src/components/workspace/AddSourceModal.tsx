@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   FileText,
@@ -83,6 +83,12 @@ export function AddSourceModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedType(initialType);
+    setError(null);
+  }, [initialType, isOpen]);
 
   if (!isOpen) return null;
 
@@ -222,18 +228,20 @@ export function AddSourceModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="add-source-title" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/60">
           <div>
-            <h2 className="text-base font-bold text-white">Add Knowledge Source</h2>
+            <h2 id="add-source-title" className="text-base font-bold text-white">Add Knowledge Source</h2>
             <p className="text-xs text-slate-400">
               Ingest, chunk, and generate vector embeddings for your workspace.
             </p>
           </div>
           <button
+            type="button"
             onClick={handleClose}
+            aria-label="Close add source dialog"
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -241,7 +249,7 @@ export function AddSourceModal({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+        <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
           {/* Source Type Grid */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-300">
@@ -259,6 +267,7 @@ export function AddSourceModal({
                       setSelectedType(opt.type);
                       setError(null);
                     }}
+                    aria-pressed={isSelected}
                     className={`flex flex-col p-3 rounded-xl border text-left transition-all relative ${
                       isSelected
                         ? 'bg-sky-950/50 border-sky-500/80 ring-1 ring-sky-500/50'
@@ -290,7 +299,7 @@ export function AddSourceModal({
             </div>
 
             {error && (
-              <div className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">
+              <div role="alert" className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span>{error}</span>
               </div>
@@ -320,18 +329,21 @@ export function AddSourceModal({
                       type="file"
                       accept=".pdf,application/pdf"
                       onChange={handleFileChange}
+                      aria-label="Choose PDF document"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                     <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
                     <p className="text-xs text-slate-300 font-medium">
-                      {selectedFile ? selectedFile.name : 'Click or drop PDF document here'}
+                      {selectedFile ? selectedFile.name : 'Choose a PDF document'}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Supports PDF documents up to 20MB</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {selectedFile ? 'Ready to upload' : 'PDF only · Maximum size 20 MB'}
+                    </p>
                   </div>
                 </div>
 
                 <div className="text-center text-[10px] text-slate-500 uppercase font-mono tracking-wider">
-                  — or enter PDF web URL —
+                  — or use a PDF URL —
                 </div>
 
                 <input
@@ -379,6 +391,7 @@ export function AddSourceModal({
                       type="file"
                       accept=".vtt,text/vtt"
                       onChange={handleFileChange}
+                      aria-label="Choose VTT caption file"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                     <Subtitles className="w-5 h-5 text-amber-400 mx-auto mb-1" />

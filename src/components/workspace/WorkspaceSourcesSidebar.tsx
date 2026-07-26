@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -6,11 +6,6 @@ import {
   Search,
   MoreVertical,
   Layers,
-  FileText,
-  Globe,
-  AlignLeft,
-  Youtube,
-  Subtitles,
   X,
   Edit2,
   Trash2,
@@ -50,6 +45,20 @@ export function WorkspaceSourcesSidebar({
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<SourceType | 'ALL'>('ALL');
   const [activeMenuSourceId, setActiveMenuSourceId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!activeMenuSourceId) return;
+    const closeMenu = () => setActiveMenuSourceId(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    document.addEventListener('click', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeMenuSourceId]);
+
   const handleRemoveSource = async (e: React.MouseEvent, source: SourceRecord) => {
     e.stopPropagation();
     setActiveMenuSourceId(null);
@@ -87,16 +96,35 @@ export function WorkspaceSourcesSidebar({
     { type: 'VTT', label: 'VTT' },
   ];
 
-  const filteredSources = sources.filter((s) => {
-    const matchesSearch =
-      s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (s.url && s.url.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesFilter = selectedTypeFilter === 'ALL' || s.type === selectedTypeFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredSources = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return sources.filter((source) => {
+      const matchesSearch =
+        source.title.toLowerCase().includes(normalizedSearch) ||
+        Boolean(source.url?.toLowerCase().includes(normalizedSearch));
+      const matchesFilter = selectedTypeFilter === 'ALL' || source.type === selectedTypeFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [searchTerm, selectedTypeFilter, sources]);
+
+  const sourceAccent: Record<SourceType, string> = {
+    PDF: 'border-l-rose-500/70',
+    WEBSITE: 'border-l-sky-500/70',
+    TEXT: 'border-l-emerald-500/70',
+    YOUTUBE: 'border-l-red-500/70',
+    VTT: 'border-l-amber-500/70',
+  };
+
+  const sourceSurface: Record<SourceType, string> = {
+    PDF: 'bg-rose-950/35 border-rose-900/50',
+    WEBSITE: 'bg-sky-950/35 border-sky-900/50',
+    TEXT: 'bg-emerald-950/35 border-emerald-900/50',
+    YOUTUBE: 'bg-red-950/35 border-red-900/50',
+    VTT: 'bg-amber-950/35 border-amber-900/50',
+  };
 
   return (
-    <aside className="w-full lg:w-80 bg-[#121824] border-r border-slate-800/80 flex flex-col h-full shrink-0 select-none">
+    <aside aria-label="Workspace sources" className="w-full lg:w-80 bg-[#121824] border-r border-slate-800/80 flex flex-col h-full shrink-0">
       {/* Top Navigation & Workspace Header */}
       <div className="p-4 border-b border-slate-800/80 space-y-3 bg-slate-900/40">
         <Link
@@ -129,6 +157,7 @@ export function WorkspaceSourcesSidebar({
               onClick={onRefreshSources}
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
               title="Refresh Sources"
+              aria-label="Refresh sources"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -156,12 +185,15 @@ export function WorkspaceSourcesSidebar({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search sources..."
-            className="w-full pl-8 pr-7 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors"
+            aria-label="Search sources"
+            className="w-full pl-8 pr-7 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors"
           />
           {searchTerm && (
             <button
+              type="button"
               onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              aria-label="Clear source search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-500 hover:text-slate-300"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -177,6 +209,7 @@ export function WorkspaceSourcesSidebar({
                 key={ft.type}
                 type="button"
                 onClick={() => setSelectedTypeFilter(ft.type)}
+                aria-pressed={isSelected}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
                   isSelected
                     ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
@@ -207,20 +240,20 @@ export function WorkspaceSourcesSidebar({
           </div>
         ) : filteredSources.length === 0 ? (
           /* Empty State */
-          <div className="p-6 text-center space-y-3 bg-slate-900/20 border border-dashed border-slate-800/80 rounded-2xl my-4">
+          <div className="p-6 text-center space-y-3 bg-slate-900/30 border border-dashed border-slate-700/80 rounded-2xl my-4 animate-fade-in">
             <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 text-slate-500 flex items-center justify-center mx-auto">
               <Layers className="w-5 h-5" />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-white">
                 {searchTerm || selectedTypeFilter !== 'ALL'
-                  ? 'No matching sources found'
-                  : 'No Sources Ingested Yet'}
+                  ? 'No matching sources'
+                  : 'Your source library is empty'}
               </p>
               <p className="text-[11px] text-slate-400 leading-relaxed max-w-[200px] mx-auto">
                 {searchTerm || selectedTypeFilter !== 'ALL'
-                  ? 'Try clearing filters or search keywords.'
-                  : 'Add PDF, Web, YouTube, VTT, or Text sources to power workspace context.'}
+                  ? 'Adjust your search or choose a different source type.'
+                  : 'Add a document, webpage, video, transcript, or note to ground your Workspace.'}
               </p>
             </div>
             {!searchTerm && selectedTypeFilter === 'ALL' && (
@@ -237,30 +270,32 @@ export function WorkspaceSourcesSidebar({
         ) : (
           /* Source Cards List */
           filteredSources.map((source) => (
-            <div
+            <article
               key={source.id}
-              className="group relative p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-xl transition-all space-y-2"
+              className={`group relative rounded-2xl border border-l-2 bg-slate-900/55 p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-black/15 ${sourceAccent[source.type]}`}
             >
-              <div className="flex items-start justify-between space-x-2">
-                <div
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
                   onClick={() => onSelectSourceDetails(source)}
-                  className="flex items-start space-x-2.5 cursor-pointer min-w-0 flex-1"
+                  className="flex min-w-0 flex-1 items-start gap-3 rounded-xl text-left"
+                  aria-label={`View details for ${source.title}`}
                 >
-                  <div className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 shrink-0 mt-0.5">
-                    <SourceTypeIcon type={source.type} className="w-4 h-4" />
+                  <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${sourceSurface[source.type]}`}>
+                    <SourceTypeIcon type={source.type} className="w-[18px] h-[18px]" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3
-                      className="text-xs font-semibold text-slate-200 group-hover:text-sky-300 transition-colors truncate"
+                      className="truncate text-xs font-semibold leading-5 text-slate-100 transition-colors group-hover:text-white"
                       title={source.title}
                     >
                       {source.title}
                     </h3>
-                    <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
-                      {source.fileSize || source.metadata?.fileSize || source.url || source.metadata?.url || 'Document Source'}
+                    <p className="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                      {source.type === 'WEBSITE' ? 'Website' : source.type === 'TEXT' ? 'Plain text' : source.type}
                     </p>
                   </div>
-                </div>
+                </button>
 
                 {/* Options Menu Button */}
                 <div className="relative shrink-0">
@@ -270,7 +305,10 @@ export function WorkspaceSourcesSidebar({
                       e.stopPropagation();
                       setActiveMenuSourceId(activeMenuSourceId === source.id ? null : source.id);
                     }}
-                    className="p-1 text-slate-500 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                    aria-label={`Actions for ${source.title}`}
+                    aria-haspopup="menu"
+                    aria-expanded={activeMenuSourceId === source.id}
+                    className="rounded-lg p-1.5 text-slate-500 opacity-70 transition hover:bg-slate-800 hover:text-white group-hover:opacity-100"
                   >
                     <MoreVertical className="w-3.5 h-3.5" />
                   </button>
@@ -278,11 +316,13 @@ export function WorkspaceSourcesSidebar({
                   {/* Context Dropdown Menu */}
                   {activeMenuSourceId === source.id && (
                     <div
-                      onMouseLeave={() => setActiveMenuSourceId(null)}
-                      className="absolute right-0 top-6 w-36 bg-[#161c2b] border border-slate-800 rounded-xl shadow-2xl py-1 z-30 animate-fade-in text-xs space-y-0.5"
+                      role="menu"
+                      onClick={(event) => event.stopPropagation()}
+                      className="absolute right-0 top-8 z-30 w-48 space-y-0.5 rounded-xl border border-slate-700 bg-[#161c2b] p-1.5 text-xs shadow-2xl animate-fade-in"
                     >
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveMenuSourceId(null);
@@ -296,6 +336,7 @@ export function WorkspaceSourcesSidebar({
 
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveMenuSourceId(null);
@@ -304,13 +345,14 @@ export function WorkspaceSourcesSidebar({
                         className="w-full text-left px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center space-x-2"
                       >
                         <Edit2 className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Rename</span>
+                        <span>Rename or reprocess</span>
                       </button>
 
                       <div className="border-t border-slate-800 my-0.5" />
 
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={(e) => handleRemoveSource(e, source)}
                         className="w-full text-left px-3 py-1.5 text-rose-400 hover:bg-rose-950/50 flex items-center space-x-2"
                       >
@@ -323,16 +365,17 @@ export function WorkspaceSourcesSidebar({
               </div>
 
               {/* Status Indicator & Last Updated */}
-              <div className="flex items-center justify-between pt-1 border-t border-slate-800/40 text-[10px]">
-                <SourceStatusBadge status={source.status} metadata={source.metadata} />
-                <span className="text-slate-500 font-mono">
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5 text-[10px]">
+                <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} />
+                <span className="shrink-0 text-slate-500" title={`Uploaded ${new Date(source.createdAt).toLocaleString()}`}>
                   {new Date(source.createdAt).toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
+                    year: new Date(source.createdAt).getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
                   })}
                 </span>
               </div>
-            </div>
+            </article>
           ))
         )}
       </div>

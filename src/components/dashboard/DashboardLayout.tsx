@@ -4,12 +4,10 @@ import { useAuth } from '../AuthProvider';
 import { SettingsModal } from './SettingsModal';
 import {
   LayoutDashboard,
-  FolderKanban,
   Settings,
   LogOut,
   Plus,
   Search,
-  Bell,
   Menu,
   X,
   Sparkles,
@@ -37,7 +35,6 @@ export function DashboardLayout({
 
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
 
   const isWorkspacesActive = location.pathname.startsWith('/workspaces');
 
@@ -68,14 +65,19 @@ export function DashboardLayout({
         <div className="flex items-center space-x-2">
           {onCreateWorkspaceClick && (
             <button
+              type="button"
               onClick={onCreateWorkspaceClick}
-              className="p-1.5 bg-sky-500 text-slate-950 font-medium rounded-lg text-xs"
+              aria-label="Create Workspace"
+              className="rounded-lg bg-sky-500 p-2 text-xs font-medium text-slate-950 transition hover:bg-sky-400 active:scale-95"
             >
               <Plus className="w-4 h-4" />
             </button>
           )}
           <button
+            type="button"
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            aria-label={isMobileSidebarOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={isMobileSidebarOpen}
             className="p-2 text-slate-400 hover:text-white rounded-lg bg-slate-900 border border-slate-800"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -88,12 +90,14 @@ export function DashboardLayout({
         <div
           className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm md:hidden"
           onClick={() => setIsMobileSidebarOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       {/* Left Sidebar */}
       <aside
-        className={`fixed md:sticky top-0 left-0 z-50 h-screen w-64 bg-[#121824] border-r border-slate-800/80 flex flex-col justify-between p-4 transition-transform duration-300 ease-in-out md:translate-x-0 ${
+        aria-label="Dashboard navigation"
+        className={`fixed left-0 top-0 z-50 flex h-[100dvh] w-64 flex-col justify-between overflow-y-auto border-r border-slate-800/80 bg-[#121824] p-4 shadow-2xl shadow-black/20 transition-transform duration-300 ease-out md:sticky md:h-screen md:translate-x-0 md:shadow-none ${
           isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -189,6 +193,7 @@ export function DashboardLayout({
           </div>
 
           <button
+            type="button"
             onClick={handleLogout}
             className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-rose-950/40 text-slate-400 hover:text-rose-300 border border-slate-800 hover:border-rose-900/50 text-xs font-medium transition-colors"
           >
@@ -210,39 +215,13 @@ export function DashboardLayout({
               value={searchTerm}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Search workspaces..."
+              aria-label="Search Workspaces"
               className="w-full pl-9 pr-4 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors"
             />
           </div>
 
           {/* Action Area */}
           <div className="flex items-center space-x-3">
-            {/* Notification Indicator */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors relative"
-                title="Notifications"
-              >
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-              </button>
-
-              {showNotifications && (
-                <div className="absolute right-0 mt-2 w-72 bg-[#121824] border border-slate-800 rounded-2xl shadow-xl p-3 text-xs space-y-2 z-50 animate-fade-in">
-                  <div className="flex items-center justify-between text-slate-300 font-semibold border-b border-slate-800/80 pb-2">
-                    <span>System Status</span>
-                    <span className="text-[10px] text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded font-mono">
-                      OPERATIONAL
-                    </span>
-                  </div>
-                  <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Lumora Workspace Engine ready. Vector database connections active and scoped.
-                  </p>
-                </div>
-              )}
-            </div>
-
             {/* Create Workspace CTA Button */}
             {onCreateWorkspaceClick && (
               <button
@@ -265,7 +244,7 @@ export function DashboardLayout({
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">{children}</main>
+        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 md:p-8">{children}</main>
       </div>
 
       {/* Settings Modal */}

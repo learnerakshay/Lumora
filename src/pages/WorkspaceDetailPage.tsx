@@ -292,10 +292,27 @@ export function WorkspaceDetailPage() {
 
   if (loadingWorkspace && !workspace) {
     return (
-      <div className="min-h-screen bg-[#0b0f17] text-white flex items-center justify-center p-6">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-10 h-10 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs text-slate-400 font-mono">Initializing Lumora Workspace Shell...</p>
+      <div aria-busy="true" aria-label="Loading Workspace" className="flex h-screen overflow-hidden bg-[#0b0f17] text-white">
+        <div className="hidden w-80 shrink-0 border-r border-slate-800 bg-[#121824] p-4 lg:block">
+          <div className="h-4 w-28 animate-pulse rounded bg-slate-800" />
+          <div className="mt-7 h-10 animate-pulse rounded-xl bg-slate-800/80" />
+          <div className="mt-5 h-9 animate-pulse rounded-xl bg-slate-800/60" />
+          <div className="mt-5 space-y-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="h-24 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60" />
+            ))}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="h-16 border-b border-slate-800 bg-[#121824]/80" />
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="w-full max-w-3xl space-y-5 text-center">
+              <div className="mx-auto h-7 w-40 animate-pulse rounded bg-slate-800" />
+              <div className="mx-auto h-4 w-72 max-w-full animate-pulse rounded bg-slate-800/70" />
+              <div className="h-36 animate-pulse rounded-2xl border border-slate-800 bg-[#121824]" />
+            </div>
+          </div>
+          <div className="h-36 border-t border-slate-800 bg-[#121824]/80" />
         </div>
       </div>
     );
@@ -322,7 +339,7 @@ export function WorkspaceDetailPage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#0b0f17] text-slate-100 overflow-hidden">
+    <div className="flex h-[100dvh] bg-[#0b0f17] text-slate-100 overflow-hidden">
       {/* Left Sidebar — Desktop */}
       <div className="hidden lg:block">
         <WorkspaceSourcesSidebar
@@ -338,14 +355,17 @@ export function WorkspaceDetailPage() {
 
       {/* Mobile Sidebar Slide-over Drawer */}
       {isMobileSidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
+        <div role="dialog" aria-modal="true" aria-label="Workspace source library" className="fixed inset-0 z-50 flex lg:hidden">
           <div
             className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm"
             onClick={() => setIsMobileSidebarOpen(false)}
+            aria-hidden="true"
           />
-          <div className="relative w-80 max-w-[85vw] bg-[#121824] h-full shadow-2xl z-10">
+          <div className="relative z-10 h-full w-80 max-w-[88vw] bg-[#121824] shadow-2xl animate-fade-in">
             <button
+              type="button"
               onClick={() => setIsMobileSidebarOpen(false)}
+              aria-label="Close source library"
               className="absolute top-3 right-3 p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white"
             >
               <X className="w-4 h-4" />
@@ -370,7 +390,7 @@ export function WorkspaceDetailPage() {
       )}
 
       {/* Right Main Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0b0f17]">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0b0f17]">
         {/* Workspace Header */}
         <WorkspaceHeader
           workspace={workspace}
@@ -380,7 +400,7 @@ export function WorkspaceDetailPage() {
         />
 
         {/* Center View: Shows Onboarding or Chat Thread */}
-        {messages.length > 0 || isGenerating ? (
+        {messages.length > 0 || isGenerating || hasIndexedSources ? (
           <WorkspaceChatArea
             messages={messages}
             isGenerating={isGenerating}
@@ -388,6 +408,10 @@ export function WorkspaceDetailPage() {
             streamingCitations={streamingCitations}
             error={activityError}
             hasIndexedSources={hasIndexedSources}
+            sourceCount={sources.length}
+            processingSourceCount={sources.filter(
+              (source) => source.status === 'PENDING' || source.status === 'PROCESSING'
+            ).length}
             onSelectCitation={handleSelectCitation}
             onSubmitMessage={handleSubmitMessage}
             onClearHistory={handleClearHistory}
@@ -408,7 +432,7 @@ export function WorkspaceDetailPage() {
           onSubmitMessage={handleSubmitMessage}
           onCancelGeneration={handleCancelGeneration}
         />
-      </div>
+      </main>
 
       {/* Modals */}
       <AddSourceModal

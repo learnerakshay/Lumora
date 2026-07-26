@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
 import {
-  Bell,
   Settings,
   Edit3,
   Check,
   X,
   Shield,
   Menu,
-  Layers,
-  Sparkles,
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
@@ -39,7 +36,6 @@ export function WorkspaceHeader({
   const [nameInput, setNameInput] = useState(workspace.name);
   const [descInput, setDescInput] = useState(workspace.description || '');
   const [saving, setSaving] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
 
   const handleSave = async () => {
     if (!nameInput.trim()) return;
@@ -58,7 +54,7 @@ export function WorkspaceHeader({
   };
 
   return (
-    <header className="h-16 px-4 md:px-6 bg-[#121824]/90 backdrop-blur-md border-b border-slate-800/80 sticky top-0 z-20 flex items-center justify-between shrink-0 select-none">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 bg-[#121824]/90 px-3 backdrop-blur-md sm:px-4 md:px-6">
       {/* Left: Mobile Menu Trigger + Workspace Title / Rename */}
       <div className="flex items-center space-x-3 min-w-0">
         <button
@@ -66,12 +62,13 @@ export function WorkspaceHeader({
           onClick={onToggleMobileSidebar}
           className="lg:hidden p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800"
           title="Toggle Sources"
+          aria-label="Open source library"
         >
           <Menu className="w-4 h-4" />
         </button>
 
         <div className="flex items-center space-x-3 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400 shrink-0">
+          <div className="hidden w-8 h-8 rounded-xl bg-sky-950/80 border border-sky-800/60 sm:flex items-center justify-center text-sky-400 shrink-0">
             <WorkspaceIcon name={workspace.icon || 'brain'} className="w-4 h-4" />
           </div>
 
@@ -89,6 +86,7 @@ export function WorkspaceHeader({
                 onClick={handleSave}
                 disabled={saving}
                 className="p-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-lg text-xs font-bold transition-colors"
+                aria-label="Save Workspace name"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />}
               </button>
@@ -96,6 +94,7 @@ export function WorkspaceHeader({
                 type="button"
                 onClick={() => setIsEditing(false)}
                 className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs"
+                aria-label="Cancel renaming Workspace"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -112,6 +111,7 @@ export function WorkspaceHeader({
                 }}
                 className="p-1 text-slate-500 hover:text-sky-300 transition-colors"
                 title="Rename Workspace"
+                aria-label="Rename Workspace"
               >
                 <Edit3 className="w-3.5 h-3.5" />
               </button>
@@ -121,38 +121,11 @@ export function WorkspaceHeader({
       </div>
 
       {/* Right Actions & User Profile */}
-      <div className="flex items-center space-x-3 shrink-0">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {/* Verification Badge */}
         <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-800/60 rounded-xl text-[11px] text-emerald-300 font-medium">
           <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>pgvector Scope</span>
-        </div>
-
-        {/* Notifications Popover Placeholder */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowNotifications(!showNotifications)}
-            className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors relative"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-          </button>
-
-          {showNotifications && (
-            <div className="absolute right-0 mt-2 w-72 bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl p-3.5 text-xs space-y-2 z-50 animate-fade-in">
-              <div className="flex items-center justify-between text-slate-200 font-semibold border-b border-slate-800/80 pb-2">
-                <span>Workspace Activity</span>
-                <span className="text-[10px] text-sky-400 bg-sky-950 px-1.5 py-0.5 rounded font-mono">
-                  ACTIVE
-                </span>
-              </div>
-              <p className="text-slate-400 text-[11px] leading-relaxed">
-                Knowledge workspace ready for source ingestion and vector indexing.
-              </p>
-            </div>
-          )}
+          <span>Private Workspace</span>
         </div>
 
         {/* Workspace Settings Button */}
@@ -161,12 +134,13 @@ export function WorkspaceHeader({
           onClick={onOpenSettings}
           className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors"
           title="Workspace Settings"
+          aria-label="Open Workspace settings"
         >
           <Settings className="w-4 h-4" />
         </button>
 
         {/* User Profile Badge */}
-        <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-800/80">
+        <div className="hidden items-center space-x-2.5 border-l border-slate-800/80 pl-2 sm:flex">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-sky-500/20 shrink-0">
             {user?.fullName ? user.fullName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
           </div>

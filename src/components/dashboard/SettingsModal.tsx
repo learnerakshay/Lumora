@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Settings, Shield, Server, Database, Key } from 'lucide-react';
+import { X, Settings, Shield, Database, Key } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 
 interface SettingsModalProps {
@@ -13,9 +13,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
       <div
-        className="w-full max-w-lg bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl shadow-black/80 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -25,13 +28,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Lumora System Settings</h2>
+              <h2 id="settings-title" className="text-base font-semibold text-white">Lumora System Settings</h2>
               <p className="text-xs text-slate-400">Workspace environment & account configuration</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close settings dialog"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -39,14 +43,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-4 text-xs text-slate-300">
+        <div className="space-y-4 overflow-y-auto p-4 text-xs text-slate-300 sm:p-5">
           {/* User Section */}
           <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
             <div className="flex items-center space-x-2 text-sky-400 font-semibold">
               <Key className="w-3.5 h-3.5" />
               <span>User Credentials</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+            <div className="grid grid-cols-1 gap-2 text-[11px] font-mono sm:grid-cols-2">
               <div>
                 <span className="text-slate-500 block">ACCOUNT EMAIL</span>
                 <span className="text-slate-200">{user?.email || 'N/A'}</span>
@@ -55,9 +59,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <span className="text-slate-500 block">PROVIDER</span>
                 <span className="text-emerald-400 capitalize">{user?.provider || 'Clerk / OAuth'}</span>
               </div>
-              <div className="col-span-2">
+              <div className="min-w-0 sm:col-span-2">
                 <span className="text-slate-500 block">USER ID</span>
-                <span className="text-sky-300">{user?.id || 'N/A'}</span>
+                <span className="block truncate text-sky-300" title={user?.id || undefined}>{user?.id || 'N/A'}</span>
               </div>
             </div>
           </div>

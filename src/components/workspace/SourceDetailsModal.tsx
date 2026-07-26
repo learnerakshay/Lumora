@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Edit2,
@@ -30,25 +30,28 @@ export function SourceDetailsModal({
   onUpdate,
   onDelete,
 }: SourceDetailsModalProps) {
-  if (!isOpen || !source) return null;
-
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [newTitle, setNewTitle] = useState(source.title);
+  const [newTitle, setNewTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!source) return;
+    setNewTitle(source.title);
+    setIsEditingTitle(false);
+    setError(null);
+  }, [source]);
+
+  if (!isOpen || !source) return null;
 
   const isCompleted = source.status === 'COMPLETED';
   const isFailed = source.status === 'FAILED';
   const isProcessing = source.status === 'PROCESSING' || source.status === 'PENDING';
 
   // Ensure pipeline stage is always strictly aligned with status
-  const stage = isCompleted
-    ? 'INDEXED'
-    : isFailed
-    ? 'FAILED'
-    : source.metadata?.stage || 'PROCESSING';
+  const stage = source.stage;
 
   const stageProgress = isCompleted
     ? 100
@@ -163,8 +166,8 @@ export function SourceDetailsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-lg bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="source-details-title" className="flex max-h-[96dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/60">
           <div className="flex items-center space-x-2.5">
@@ -172,12 +175,14 @@ export function SourceDetailsModal({
               <SourceTypeIcon type={source.type} className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Source Specifications & Pipeline</h2>
+              <h2 id="source-details-title" className="text-sm font-bold text-white">Source details</h2>
               <span className="text-[10px] text-slate-400 font-mono">ID: {source.id}</span>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close source details dialog"
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -185,9 +190,9 @@ export function SourceDetailsModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="space-y-5 overflow-y-auto p-4 sm:p-6">
           {error && (
-            <div className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">
+            <div role="alert" className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
               <span>{error}</span>
             </div>
@@ -249,7 +254,7 @@ export function SourceDetailsModal({
                   Pipeline Stage: {stage}
                 </span>
               </div>
-              <SourceStatusBadge status={source.status} metadata={source.metadata} />
+              <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} />
             </div>
 
             {/* Progress Bar */}
@@ -333,8 +338,8 @@ export function SourceDetailsModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-900/60 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-900/60 px-4 py-4 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleReprocess}

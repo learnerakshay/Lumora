@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Layers, MessageSquareText, Layers3, FileText, Globe, Video, FileCode, Clock, Zap, Bookmark, Sparkles, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Bookmark, Clock, Crown, FileCode, FileText, Globe, Layers3, Lock, MessageSquareText, Video, Zap } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -164,27 +165,51 @@ export function FeaturesSection() {
           })}
         </div>
 
-        {/* Future Roadmap Section */}
-        <div className="pt-8 border-t border-slate-800/80 max-w-4xl mx-auto text-center space-y-6">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-slate-400 text-[11px] font-mono">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Future Expansion Roadmap</span>
+        {/* Intentional locked roadmap presentation; no unavailable action is exposed. */}
+        <div className="mx-auto max-w-4xl space-y-6 border-t border-slate-800/80 pt-10 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-amber-800/50 bg-amber-950/30 px-3 py-1 text-[11px] font-semibold text-amber-300">
+            <Crown className="h-3.5 w-3.5" />
+            <span>Lumora Pro · Product Roadmap</span>
+          </div>
+          <div className="mx-auto max-w-xl space-y-2">
+            <h3 className="text-xl font-bold text-white">Advanced experiences, intentionally gated</h3>
+            <p className="text-xs leading-6 text-slate-400">
+              These capabilities are not part of the current release. Core Workspace functionality remains fully available.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {FUTURE_ROADMAP.map((item, i) => (
-              <div
+              <article
                 key={i}
-                className="p-4 bg-[#0d131f]/60 border border-slate-800/60 rounded-xl text-left space-y-1 opacity-70 hover:opacity-100 transition-opacity"
+                aria-disabled="true"
+                className="group relative overflow-hidden rounded-2xl border border-slate-800/80 bg-[#0d131f]/80 p-4 text-left shadow-sm"
               >
-                <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400">
-                  Upcoming
-                </span>
-                <p className="text-xs font-semibold text-slate-300">{item.title}</p>
-                <p className="text-[11px] text-slate-400">{item.desc}</p>
-              </div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-400">
+                    <Lock className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="rounded-full border border-amber-800/40 bg-amber-950/30 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+                    Planned
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-slate-200">{item.title}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">{item.desc}</p>
+                <div className="mt-4 flex items-center gap-1.5 text-[10px] font-medium text-slate-500">
+                  <Lock className="h-3 w-3" />
+                  <span>Not available in Version 1</span>
+                </div>
+              </article>
             ))}
           </div>
+
+          <Link
+            to="/sign-in"
+            className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:bg-sky-400 active:scale-[0.98]"
+          >
+            <span>Continue with Lumora Core</span>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </div>
     </section>

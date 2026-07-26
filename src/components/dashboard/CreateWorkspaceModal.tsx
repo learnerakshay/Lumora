@@ -52,9 +52,12 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
       <div
-        className="w-full max-w-md bg-[#121824] border border-slate-800 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-workspace-title"
+        className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl shadow-black/80 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -64,13 +67,14 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Create Workspace</h2>
+              <h2 id="create-workspace-title" className="text-base font-semibold text-white">Create Workspace</h2>
               <p className="text-xs text-slate-400">Setup an isolated knowledge workspace</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close create Workspace dialog"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -78,9 +82,9 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
         </div>
 
         {/* Body Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto p-4 sm:p-5">
           {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300">
+            <div role="alert" className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300">
               {error}
             </div>
           )}
@@ -129,6 +133,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
                     type="button"
                     onClick={() => setSelectedIcon(id)}
                     title={label}
+                    aria-label={`${label} Workspace icon`}
+                    aria-pressed={isSelected}
                     className={`flex items-center justify-center p-2.5 rounded-xl border transition-all ${
                       isSelected
                         ? 'bg-sky-950/80 border-sky-500 text-sky-400 shadow-sm shadow-sky-500/20'

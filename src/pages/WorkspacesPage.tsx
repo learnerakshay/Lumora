@@ -232,7 +232,7 @@ export function WorkspacesPage() {
         )}
 
         {/* Hero Section */}
-        <div className="p-6 md:p-8 bg-gradient-to-br from-[#121824] via-[#161e2e] to-[#0f1420] border border-slate-800 rounded-2xl shadow-xl shadow-sky-950/10 space-y-6">
+        <div className="space-y-6 rounded-2xl border border-slate-800 bg-gradient-to-br from-[#121824] via-[#161e2e] to-[#0f1420] p-5 shadow-xl shadow-sky-950/10 sm:p-6 md:p-8">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
@@ -348,6 +348,7 @@ export function WorkspacesPage() {
                 onClick={fetchWorkspaces}
                 className="p-2 bg-[#121824] hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs transition-colors"
                 title="Refresh Workspaces"
+                aria-label="Refresh Workspaces"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
               </button>
@@ -362,13 +363,14 @@ export function WorkspacesPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search workspaces by name or description..."
+              aria-label="Search Workspaces"
               className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
             />
           </div>
 
           {/* Error Banner */}
           {error && (
-            <div className="p-4 bg-rose-950/60 border border-rose-800/80 rounded-2xl text-xs text-rose-300 flex items-center justify-between">
+            <div role="alert" className="p-4 bg-rose-950/60 border border-rose-800/80 rounded-2xl text-xs text-rose-300 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
                 <span>{error}</span>
@@ -384,7 +386,7 @@ export function WorkspacesPage() {
 
           {/* Loading Skeleton State */}
           {loading && workspaces.length === 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div aria-busy="true" aria-label="Loading Workspaces" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {[1, 2, 3].map((n) => (
                 <div
                   key={n}
@@ -418,18 +420,34 @@ export function WorkspacesPage() {
                 <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
                   {searchTerm
                     ? `No workspaces matched "${searchTerm}". Try clearing your search term or create a new workspace.`
-                    : 'Create your first isolated workspace to start ingesting documentation, uploading pdfs, and running AI queries.'}
+                    : 'Create your first private Workspace, add trusted sources, and begin a grounded conversation.'}
                 </p>
               </div>
+
+              {!searchTerm && (
+                <div className="mx-auto grid max-w-lg grid-cols-1 gap-2 text-left sm:grid-cols-3">
+                  {[
+                    ['1', 'Create', 'Name your Workspace'],
+                    ['2', 'Add sources', 'Upload or import knowledge'],
+                    ['3', 'Ask', 'Start a grounded chat'],
+                  ].map(([step, title, description]) => (
+                    <div key={step} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                      <span className="text-[10px] font-bold text-sky-400">STEP {step}</span>
+                      <p className="mt-1 text-xs font-semibold text-slate-200">{title}</p>
+                      <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{description}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsCreateOpen(true)}
+                  onClick={() => searchTerm ? setSearchTerm('') : setIsCreateOpen(true)}
                   className="px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold rounded-xl text-xs transition-colors inline-flex items-center space-x-2 shadow-lg shadow-sky-500/20"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Create Workspace</span>
+                  <span>{searchTerm ? 'Clear Search' : 'Create Workspace'}</span>
                 </button>
               </div>
             </div>
@@ -437,9 +455,9 @@ export function WorkspacesPage() {
             /* Workspaces Cards Grid */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredWorkspaces.map((workspace) => (
-                <div
+                <article
                   key={workspace.id}
-                  className="group relative p-5 bg-[#121824] hover:bg-[#161f30] border border-slate-800/90 hover:border-sky-500/50 rounded-2xl transition-all duration-200 shadow-md hover:shadow-xl hover:shadow-sky-950/20 flex flex-col justify-between space-y-4"
+                  className="group relative flex flex-col justify-between space-y-4 rounded-2xl border border-slate-800/90 bg-[#121824] p-5 shadow-md transition duration-200 hover:-translate-y-0.5 hover:border-sky-500/50 hover:bg-[#161f30] hover:shadow-xl hover:shadow-sky-950/20"
                 >
                   <div className="space-y-3">
                     {/* Header bar of Card */}
@@ -458,6 +476,7 @@ export function WorkspacesPage() {
                           }}
                           className="p-1.5 text-slate-400 hover:text-sky-300 hover:bg-slate-800 rounded-lg transition-colors"
                           title="Rename / Edit Workspace"
+                          aria-label={`Edit ${workspace.name}`}
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -471,6 +490,7 @@ export function WorkspacesPage() {
                           }}
                           className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
                           title="Delete Workspace"
+                          aria-label={`Delete ${workspace.name}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -511,7 +531,7 @@ export function WorkspacesPage() {
                       <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           )}

@@ -36,9 +36,12 @@ export function DeleteWorkspaceModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
       <div
-        className="w-full max-w-md bg-[#121824] border border-rose-900/50 rounded-2xl shadow-2xl shadow-rose-950/20 overflow-hidden flex flex-col"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-workspace-title"
+        className="flex w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-rose-900/50 bg-[#121824] shadow-2xl shadow-rose-950/20 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -48,13 +51,14 @@ export function DeleteWorkspaceModal({
               <AlertTriangle className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Delete Workspace</h2>
+              <h2 id="delete-workspace-title" className="text-base font-semibold text-white">Delete Workspace</h2>
               <p className="text-xs text-rose-300/80">Confirm destructive action</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close delete Workspace dialog"
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -64,7 +68,7 @@ export function DeleteWorkspaceModal({
         {/* Content */}
         <div className="p-5 space-y-4">
           {error && (
-            <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300">
+            <div role="alert" className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300">
               {error}
             </div>
           )}

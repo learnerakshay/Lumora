@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Send, Paperclip, AlertCircle, Sparkles, StopCircle } from 'lucide-react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { AlertCircle, Paperclip, Send, StopCircle } from 'lucide-react';
 
 export type AnswerMode = 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
 
@@ -11,6 +11,13 @@ interface WorkspacePromptComposerProps {
   onCancelGeneration?: () => void;
 }
 
+const ANSWER_MODES: { id: AnswerMode; label: string }[] = [
+  { id: 'CONCISE', label: 'Concise' },
+  { id: 'DETAILED', label: 'Detailed' },
+  { id: 'CRITICAL', label: 'Deep Critical' },
+  { id: 'CREATIVE', label: 'Creative' },
+];
+
 export function WorkspacePromptComposer({
   hasIndexedSources,
   isGenerating = false,
@@ -20,16 +27,18 @@ export function WorkspacePromptComposer({
 }: WorkspacePromptComposerProps) {
   const [promptText, setPromptText] = useState('');
   const [selectedMode, setSelectedMode] = useState<AnswerMode>('DETAILED');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const maxLength = 4000;
+  const maxTextareaHeight = 176;
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (hasIndexedSources && promptText.trim() && !isGenerating) {
-        handleSubmit();
-      }
-    }
-  };
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, maxTextareaHeight);
+    textarea.style.height = `${Math.max(nextHeight, 48)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxTextareaHeight ? 'auto' : 'hidden';
+  }, [promptText]);
 
   const handleSubmit = () => {
     if (!promptText.trim() || !hasIndexedSources || isGenerating) return;
@@ -37,135 +46,126 @@ export function WorkspacePromptComposer({
     setPromptText('');
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
+  };
+
   return (
-    <div className="p-4 md:p-5 bg-[#121824]/95 border-t border-slate-800/80 shrink-0 sticky bottom-0 z-10 select-none">
-      <div className="max-w-4xl mx-auto space-y-2.5">
-        {/* Helper Banner when no indexed sources exist */}
+    <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800/80 bg-[#0f1520]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-4 sm:pt-4 md:px-5">
+      <div className="mx-auto max-w-4xl space-y-3">
         {!hasIndexedSources && (
-          <div className="flex items-center justify-between p-3 bg-amber-950/40 border border-amber-800/50 rounded-xl text-xs text-amber-300 animate-fade-in">
-            <div className="flex items-center space-x-2 min-w-0">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span className="truncate">
-                Add and process at least one knowledge source to enable grounded AI research & conversation.
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-800/50 bg-amber-950/40 px-3 py-2.5 text-xs text-amber-200 animate-fade-in sm:items-center">
+            <div className="flex min-w-0 items-start gap-2 sm:items-center">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400 sm:mt-0" />
+              <span className="leading-5">
+                Add and process a knowledge source to enable grounded conversation.
               </span>
             </div>
             <button
               type="button"
               onClick={onOpenAddSource}
-              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-[11px] shrink-0 transition-colors"
+              className="shrink-0 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-bold text-slate-950 transition hover:bg-amber-400"
             >
-              + Add Source
+              Add Source
             </button>
           </div>
         )}
 
-        {/* Mode Selector Header Bar */}
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-            <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono hidden sm:inline">
-              Synthesis Mode:
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div aria-label="Synthesis mode" className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto">
+            <span className="hidden shrink-0 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:inline">
+              Mode
             </span>
-            {(
-              [
-                { id: 'CONCISE', label: 'Concise' },
-                { id: 'DETAILED', label: 'Detailed' },
-                { id: 'CRITICAL', label: 'Deep Critical' },
-                { id: 'CREATIVE', label: 'Creative' },
-              ] as const
-            ).map((m) => (
+            {ANSWER_MODES.map((mode) => (
               <button
-                key={m.id}
+                key={mode.id}
                 type="button"
-                onClick={() => setSelectedMode(m.id)}
-                className={`px-2.5 py-0.5 rounded-lg text-[10px] font-semibold transition-all ${
-                  selectedMode === m.id
-                    ? 'bg-sky-500 text-slate-950 font-bold shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                onClick={() => setSelectedMode(mode.id)}
+                aria-pressed={selectedMode === mode.id}
+                className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-semibold transition ${
+                  selectedMode === mode.id
+                    ? 'bg-sky-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
-                {m.label}
+                {mode.label}
               </button>
             ))}
           </div>
-
-          <span className="text-[10px] font-mono text-slate-500 hidden md:inline">
-            {promptText.length} / {maxLength}
+          <span className="hidden shrink-0 text-[10px] tabular-nums text-slate-500 sm:inline">
+            {promptText.length}/{maxLength}
           </span>
         </div>
 
-        {/* Textarea Composer Container */}
         <div
-          className={`relative rounded-2xl border transition-all ${
+          className={`overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition ${
             hasIndexedSources
-              ? 'bg-slate-900/90 border-slate-800 focus-within:border-sky-500/80 focus-within:ring-1 focus-within:ring-sky-500/50'
-              : 'bg-slate-900/40 border-slate-800/60 opacity-75'
+              ? 'border-slate-700/90 bg-slate-900/90 focus-within:border-sky-500/80 focus-within:ring-1 focus-within:ring-sky-500/40'
+              : 'border-slate-800/60 bg-slate-900/40'
           }`}
         >
           <textarea
+            ref={textareaRef}
             value={promptText}
-            onChange={(e) => {
-              if (e.target.value.length <= maxLength) {
-                setPromptText(e.target.value);
-              }
+            onChange={(event) => {
+              if (event.target.value.length <= maxLength) setPromptText(event.target.value);
             }}
             onKeyDown={handleKeyDown}
             disabled={!hasIndexedSources || isGenerating}
-            rows={2}
+            rows={1}
+            aria-label="Ask a question about Workspace sources"
             placeholder={
               hasIndexedSources
-                ? 'Ask anything about your workspace sources... (e.g., Summarize key findings or compare architectural trade-offs)'
-                : 'Knowledge composer locked — Ingest a source to start asking questions...'
+                ? 'Ask anything about your Workspace sources…'
+                : 'Knowledge composer locked — add a source to start asking questions…'
             }
-            className="w-full px-4 pt-3 pb-10 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none resize-none disabled:cursor-not-allowed leading-relaxed"
+            className="block min-h-12 max-h-44 w-full resize-none overflow-x-hidden bg-transparent px-4 pb-2 pt-3.5 text-sm leading-6 text-white placeholder-slate-500 transition-[height] duration-150 focus:outline-none disabled:cursor-not-allowed sm:px-5"
           />
 
-          {/* Bottom Controls inside composer */}
-          <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between pointer-events-none">
-            {/* Attachment shortcut */}
-            <div className="flex items-center space-x-2 pointer-events-auto">
+          <div className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800/70 px-2.5 py-2 sm:px-3">
+            <div className="flex min-w-0 items-center gap-2">
               <button
                 type="button"
                 onClick={onOpenAddSource}
-                className="p-1.5 text-slate-400 hover:text-sky-300 rounded-lg hover:bg-slate-800/80 transition-colors flex items-center space-x-1 text-[11px]"
-                title="Attach Source"
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-400 transition hover:bg-slate-800 hover:text-sky-300"
+                aria-label="Add a source"
               >
-                <Paperclip className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline font-medium">Attach Source</span>
+                <Paperclip className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Attach source</span>
               </button>
-
-              <span className="text-[10px] text-slate-600 font-mono hidden md:inline">
-                <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400">Enter</kbd> send, <kbd className="px-1 py-0.5 bg-slate-800 rounded text-slate-400">Shift+Enter</kbd> newline
+              <span className="hidden text-[10px] text-slate-500 lg:inline">
+                Enter to send · Shift + Enter for a new line
               </span>
             </div>
 
-            {/* Right: Submit or Cancel */}
-            <div className="flex items-center space-x-2 pointer-events-auto">
-              {isGenerating ? (
-                <button
-                  type="button"
-                  onClick={onCancelGeneration}
-                  className="px-3 py-1.5 bg-rose-950 text-rose-300 hover:bg-rose-900 border border-rose-800 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5"
-                  title="Cancel Generation"
-                >
-                  <StopCircle className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Stop</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={!hasIndexedSources || !promptText.trim()}
-                  className={`p-2 rounded-xl transition-all flex items-center justify-center ${
-                    hasIndexedSources && promptText.trim()
-                      ? 'bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold shadow-md shadow-sky-500/20'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }`}
-                  title="Send Research Prompt"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            {isGenerating ? (
+              <button
+                type="button"
+                onClick={onCancelGeneration}
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-800 bg-rose-950 px-3 text-xs font-bold text-rose-300 transition hover:bg-rose-900"
+                aria-label="Stop response generation"
+              >
+                <StopCircle className="h-3.5 w-3.5" />
+                <span>Stop</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!hasIndexedSources || !promptText.trim()}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
+                  hasIndexedSources && promptText.trim()
+                    ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20 hover:bg-sky-400 active:scale-95'
+                    : 'cursor-not-allowed bg-slate-800 text-slate-500'
+                }`}
+                aria-label="Send research prompt"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
