@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
+import type { ToolStatusUpdate, WebSource } from '../lib/ai/types';
+import type { AIActionRequest } from '../lib/ai/actions/types';
+import { getAIActionMetadata } from '../lib/ai/actions/catalog';
 import { WorkspaceSourcesSidebar } from '../components/workspace/WorkspaceSourcesSidebar';
 import { WorkspaceHeader } from '../components/workspace/WorkspaceHeader';
 import { WorkspaceCenter } from '../components/workspace/WorkspaceCenter';
@@ -40,6 +43,9 @@ export function WorkspaceDetailPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<StoredCitation[]>([]);
+  const [toolExecutions, setToolExecutions] = useState<ToolStatusUpdate[]>([]);
+  const [streamingWebSources, setStreamingWebSources] = useState<WebSource[]>([]);
+  const [activeActionLabel, setActiveActionLabel] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Modal States
@@ -135,7 +141,11 @@ export function WorkspaceDetailPage() {
   }, [sources, fetchSources]);
 
   // Chat Streaming Submission Handler
-  const handleSubmitMessage = async (promptText: string, mode: AnswerMode = 'DETAILED') => {
+  const handleSubmitMessage = async (
+    promptText: string,
+    mode: AnswerMode = 'DETAILED',
+    action?: AIActionRequest,
+  ) => {
     if (!workspaceId || isGenerating || !promptText.trim()) return;
 
     // Optimistically add user message
@@ -154,6 +164,11 @@ export function WorkspaceDetailPage() {
     setActivityError(null);
     setStreamingText('');
     setStreamingCitations([]);
+    setToolExecutions([]);
+    setStreamingWebSources([]);
+    setActiveActionLabel(
+      action ? getAIActionMetadata(action.actionId)?.label || 'AI Action' : null,
+    );
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -162,12 +177,28 @@ export function WorkspaceDetailPage() {
       const res = await fetch(`/api/workspaces/${workspaceId}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: promptText.trim(), mode }),
+        body: JSON.stringify({
+          message: promptText.trim(),
+          mode,
+          ...(action ? { action } : {}),
+        }),
         signal: abortController.signal,
       });
 
-      if (!res.ok || !res.body) {
-        throw new Error('Failed to start chat streaming session.');
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const responseError =
+          typeof payload?.error?.message === 'string'
+            ? payload.error.message
+            : typeof payload?.error === 'string'
+              ? payload.error
+              : null;
+        throw new Error(
+          responseError || 'Failed to start chat streaming session.',
+        );
+      }
+      if (!res.body) {
+        throw new Error('The chat streaming response was unavailable.');
       }
 
       const reader = res.body.getReader();
@@ -188,6 +219,45 @@ export function WorkspaceDetailPage() {
             const data = JSON.parse(line.substring(6));
             if (data.type === 'chunk' && data.text) {
               setStreamingText((prev) => prev + data.text);
+            } else if (
+              data.type === 'tool_status' &&
+              typeof data.requestId === 'string' &&
+              typeof data.toolName === 'string' &&
+              typeof data.status === 'string'
+            ) {
+              setToolExecutions((current) => {
+                const update = data as ToolStatusUpdate;
+                const existing = current.findIndex(
+                  (execution) => execution.requestId === update.requestId,
+                );
+                if (existing === -1) return [...current, update];
+                return current.map((execution, index) =>
+                  index === existing ? update : execution,
+                );
+              });
+            } else if (data.type === 'web_sources' && Array.isArray(data.sources)) {
+              const validSources = data.sources.filter(
+                (source: unknown): source is WebSource => {
+                  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+                    return false;
+                  }
+                  const candidate = source as Record<string, unknown>;
+                  if (
+                    typeof candidate.title !== 'string' ||
+                    typeof candidate.url !== 'string' ||
+                    typeof candidate.snippet !== 'string' ||
+                    typeof candidate.score !== 'number'
+                  ) {
+                    return false;
+                  }
+                  try {
+                    return new URL(candidate.url).protocol === 'https:';
+                  } catch {
+                    return false;
+                  }
+                },
+              );
+              setStreamingWebSources(validSources);
             } else if (data.type === 'done') {
               terminalEventReceived = true;
             } else if (data.type === 'error') {
@@ -208,9 +278,20 @@ export function WorkspaceDetailPage() {
       setIsGenerating(false);
       setStreamingText('');
       setStreamingCitations([]);
+      setToolExecutions([]);
+      setStreamingWebSources([]);
+      setActiveActionLabel(null);
       abortControllerRef.current = null;
       await fetchMessages();
     }
+  };
+
+  const handleSubmitAction = (
+    request: AIActionRequest,
+    displayMessage: string,
+    mode: AnswerMode,
+  ) => {
+    void handleSubmitMessage(displayMessage, mode, request);
   };
 
   const handleCancelGeneration = () => {
@@ -218,6 +299,7 @@ export function WorkspaceDetailPage() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
       setIsGenerating(false);
+      setActiveActionLabel(null);
     }
   };
 
@@ -406,6 +488,9 @@ export function WorkspaceDetailPage() {
             isGenerating={isGenerating}
             streamingText={streamingText}
             streamingCitations={streamingCitations}
+            toolExecutions={toolExecutions}
+            streamingWebSources={streamingWebSources}
+            activeActionLabel={activeActionLabel}
             error={activityError}
             hasIndexedSources={hasIndexedSources}
             sourceCount={sources.length}
@@ -428,8 +513,12 @@ export function WorkspaceDetailPage() {
         <WorkspacePromptComposer
           hasIndexedSources={hasIndexedSources}
           isGenerating={isGenerating}
+          sources={sources}
+          selectedSourceId={selectedSourceDetails?.id}
+          hasConversation={messages.length > 0}
           onOpenAddSource={() => handleOpenAddSource()}
           onSubmitMessage={handleSubmitMessage}
+          onSubmitAction={handleSubmitAction}
           onCancelGeneration={handleCancelGeneration}
         />
       </main>

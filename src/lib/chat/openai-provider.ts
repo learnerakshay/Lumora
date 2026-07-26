@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 import { getServerEnv } from '../env';
+import type {
+  ModelToolDefinition,
+  ToolExecutionRecord,
+  ToolRequest,
+} from '../ai/types';
 import { ChatHistoryItem } from './conversation-context';
 
 export class ChatProviderError extends Error {
@@ -29,8 +34,17 @@ interface OpenAIStreamEvent {
     status?: string;
     error?: { message?: string };
     incomplete_details?: { reason?: string };
+    output?: OpenAIFunctionCallItem[];
   };
+  item?: OpenAIFunctionCallItem;
   error?: { message?: string };
+}
+
+interface OpenAIFunctionCallItem {
+  type?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
 }
 
 export interface GenerateChatInput {
@@ -41,6 +55,8 @@ export interface GenerateChatInput {
   mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
   signal: AbortSignal;
   onTextDelta: (delta: string) => void;
+  tools?: ModelToolDefinition[];
+  toolExecutions?: ToolExecutionRecord[];
 }
 
 export interface GenerateChatResult {
@@ -48,6 +64,7 @@ export interface GenerateChatResult {
   provider: 'openai';
   model: string;
   responseId: string;
+  toolRequests: ToolRequest[];
 }
 
 function safeUserIdentifier(userId: string): string {
@@ -156,10 +173,31 @@ export async function generateGroundedResponse(
   }, env.CHAT_REQUEST_TIMEOUT_MS);
 
   const verbosity = input.mode === 'CONCISE' ? 'low' : input.mode === 'DETAILED' ? 'high' : 'medium';
-  const requestBody = {
+  const continuationInput = (input.toolExecutions || []).flatMap(({ request, response }) => [
+    {
+      type: 'function_call',
+      call_id: request.id,
+      name: request.name,
+      arguments: request.rawArguments,
+    },
+    {
+      type: 'function_call_output',
+      call_id: request.id,
+      output: JSON.stringify(
+        response.status === 'completed'
+          ? { ok: true, data: response.output }
+          : { ok: false, error: response.error },
+      ),
+    },
+  ]);
+  const requestBody: Record<string, unknown> = {
     model: env.CHAT_MODEL,
     instructions: input.instructions,
-    input: [...input.history, { role: 'user', content: input.query }],
+    input: [
+      ...input.history,
+      { role: 'user', content: input.query },
+      ...continuationInput,
+    ],
     stream: true,
     store: false,
     max_output_tokens: env.CHAT_MAX_OUTPUT_TOKENS,
@@ -167,6 +205,14 @@ export async function generateGroundedResponse(
     text: { verbosity },
     safety_identifier: safeUserIdentifier(input.userId),
   };
+  if (input.tools?.length) {
+    requestBody.tools = input.tools.map((tool) => ({
+      type: 'function',
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+  }
 
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
@@ -182,6 +228,34 @@ export async function generateGroundedResponse(
     let text = '';
     let completed = false;
     let responseId = '';
+    const toolRequests = new Map<string, ToolRequest>();
+
+    const captureToolRequest = (item?: OpenAIFunctionCallItem) => {
+      if (
+        item?.type !== 'function_call' ||
+        !item.call_id ||
+        !item.name ||
+        toolRequests.has(item.call_id)
+      ) {
+        return;
+      }
+      const rawArguments = item.arguments || '{}';
+      let parsedArguments: unknown;
+      let argumentParseError: string | undefined;
+      try {
+        parsedArguments = JSON.parse(rawArguments);
+      } catch {
+        parsedArguments = null;
+        argumentParseError = 'Tool arguments were not valid JSON.';
+      }
+      toolRequests.set(item.call_id, {
+        id: item.call_id,
+        name: item.name,
+        arguments: parsedArguments,
+        rawArguments,
+        ...(argumentParseError ? { argumentParseError } : {}),
+      });
+    };
 
     const handleEvent = (event: OpenAIStreamEvent) => {
       if (
@@ -200,6 +274,10 @@ export async function generateGroundedResponse(
         input.onTextDelta(event.delta);
         return;
       }
+      if (event.type === 'response.output_item.done') {
+        captureToolRequest(event.item);
+        return;
+      }
       if (event.type === 'response.completed') {
         if (event.response?.status !== 'completed' || !event.response.id) {
           throw new ChatProviderError(
@@ -207,6 +285,7 @@ export async function generateGroundedResponse(
             'OPENAI_INVALID_COMPLETION',
           );
         }
+        event.response.output?.forEach(captureToolRequest);
         responseId = event.response.id;
         completed = true;
         return;
@@ -250,13 +329,19 @@ export async function generateGroundedResponse(
       }
     }
 
-    if (!completed || !responseId || !text.trim()) {
+    if (!completed || !responseId || (!text.trim() && toolRequests.size === 0)) {
       throw new ChatProviderError(
         'The AI provider stream ended before completing.',
         'OPENAI_INCOMPLETE_STREAM',
       );
     }
-    return { text, provider: 'openai', model: env.CHAT_MODEL, responseId };
+    return {
+      text,
+      provider: 'openai',
+      model: env.CHAT_MODEL,
+      responseId,
+      toolRequests: [...toolRequests.values()],
+    };
   } catch (error) {
     if (timedOut) {
       throw new ChatProviderError(

@@ -1,5 +1,8 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Paperclip, Send, StopCircle } from 'lucide-react';
+import type { SourceRecord } from '../../lib/source-store';
+import type { AIActionRequest } from '../../lib/ai/actions/types';
+import { AIActionMenu } from './AIActionMenu';
 
 export type AnswerMode = 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
 
@@ -8,6 +11,14 @@ interface WorkspacePromptComposerProps {
   isGenerating?: boolean;
   onOpenAddSource: () => void;
   onSubmitMessage: (prompt: string, mode: AnswerMode) => void;
+  sources?: SourceRecord[];
+  selectedSourceId?: string | null;
+  hasConversation?: boolean;
+  onSubmitAction?: (
+    request: AIActionRequest,
+    displayMessage: string,
+    mode: AnswerMode,
+  ) => void;
   onCancelGeneration?: () => void;
 }
 
@@ -23,6 +34,10 @@ export function WorkspacePromptComposer({
   isGenerating = false,
   onOpenAddSource,
   onSubmitMessage,
+  sources = [],
+  selectedSourceId,
+  hasConversation = false,
+  onSubmitAction,
   onCancelGeneration,
 }: WorkspacePromptComposerProps) {
   const [promptText, setPromptText] = useState('');
@@ -101,7 +116,7 @@ export function WorkspacePromptComposer({
         </div>
 
         <div
-          className={`overflow-hidden rounded-2xl border shadow-lg shadow-black/10 transition ${
+          className={`rounded-2xl border shadow-lg shadow-black/10 transition ${
             hasIndexedSources
               ? 'border-slate-700/90 bg-slate-900/90 focus-within:border-sky-500/80 focus-within:ring-1 focus-within:ring-sky-500/40'
               : 'border-slate-800/60 bg-slate-900/40'
@@ -136,6 +151,19 @@ export function WorkspacePromptComposer({
                 <Paperclip className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Attach source</span>
               </button>
+              {onSubmitAction && (
+                <AIActionMenu
+                  sources={sources}
+                  selectedSourceId={selectedSourceId}
+                  hasConversation={hasConversation}
+                  draftText={promptText}
+                  disabled={isGenerating}
+                  onRun={(request, displayMessage) => {
+                    onSubmitAction(request, displayMessage, selectedMode);
+                    setPromptText('');
+                  }}
+                />
+              )}
               <span className="hidden text-[10px] text-slate-500 lg:inline">
                 Enter to send · Shift + Enter for a new line
               </span>

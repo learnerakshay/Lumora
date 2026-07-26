@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const optionalSecret = z.preprocess(
+  (value) =>
+    typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+  z.string().trim().min(1).optional(),
+);
+
 const serverEnvSchema = z
   .object({
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -15,7 +21,9 @@ const serverEnvSchema = z
       .default('text-embedding-3-small'),
     EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
     EMBEDDING_VERSION: z.string().trim().min(1).default('v1'),
-    TAVILY_API_KEY: z.string().optional(),
+    TAVILY_API_KEY: optionalSecret,
+    TAVILY_MAX_RESULTS: z.coerce.number().int().min(1).max(10).default(5),
+    TAVILY_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(10_000),
     BLOB_READ_WRITE_TOKEN: z.string().optional(),
     CHAT_MODEL: z
       .enum(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])

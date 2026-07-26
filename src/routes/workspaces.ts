@@ -32,8 +32,23 @@ import {
 import {
   ChatGenerationAbortedError,
   ChatProviderError,
-  generateGroundedResponse,
 } from '../lib/chat/openai-provider';
+import {
+  AIOrchestrationError,
+  orchestrateGroundedResponse,
+  webSourcesFromExecution,
+} from '../lib/ai/orchestrator';
+import { isTavilySearchAvailable } from '../lib/ai/production-tools';
+import {
+  externalWebSourcesAppendix,
+  ExternalWebSafeStream,
+} from '../lib/ai/web-attribution';
+import {
+  AIActionError,
+  executeAIAction,
+  type AIActionExecutionPlan,
+  type AIActionRequest,
+} from '../lib/ai/actions';
 import { requireApiAuth } from '../lib/auth';
 import { AppError } from '../lib/errors';
 import { successResponse, errorResponse } from '../lib/api-response';
@@ -500,16 +515,28 @@ workspaceRouter.delete('/:id/messages', async (req: Request, res: Response) => {
 // POST /api/workspaces/:id/chat/stream
 workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => {
   const workspaceId = res.locals.workspace.id;
-  const { message, mode = 'DETAILED' } = req.body || {};
+  const { message, mode = 'DETAILED', action } = req.body || {};
   const validModes = ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const;
 
-  if (!message || typeof message !== 'string' || !message.trim()) {
+  if (
+    action !== undefined &&
+    (!action || typeof action !== 'object' || Array.isArray(action))
+  ) {
+    const response = errorResponse(
+      AppError.badRequest('AI action request is invalid', 'INVALID_AI_ACTION'),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
+  if (
+    action === undefined &&
+    (!message || typeof message !== 'string' || !message.trim())
+  ) {
     const response = errorResponse(
       AppError.badRequest('Message query cannot be empty', 'EMPTY_CHAT_MESSAGE'),
     );
     return res.status(response.statusCode).json(response.payload);
   }
-  if (message.trim().length > 20_000) {
+  if (typeof message === 'string' && message.trim().length > 20_000) {
     const response = errorResponse(
       new AppError(
         'Message query cannot exceed 20,000 characters',
@@ -526,7 +553,57 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     return res.status(response.statusCode).json(response.payload);
   }
 
-  const queryText = message.trim();
+  let actionPlan: AIActionExecutionPlan | undefined;
+  let actionMessageSnapshot:
+    | Awaited<ReturnType<typeof getWorkspaceMessages>>
+    | undefined;
+  if (action !== undefined) {
+    try {
+      const [actionSources, actionMessages] = await Promise.all([
+        getWorkspaceSources(workspaceId),
+        getWorkspaceMessages(workspaceId),
+      ]);
+      actionMessageSnapshot = actionMessages;
+      actionPlan = await executeAIAction(action as AIActionRequest, {
+        workspaceId,
+        userId: res.locals.userId,
+        sources: actionSources.map(({ id, title, type, status }) => ({
+          id,
+          title,
+          type,
+          status,
+        })),
+        conversation: actionMessages.flatMap((item) =>
+          item.status === 'SUCCESS' &&
+          (item.role === 'USER' || item.role === 'ASSISTANT')
+            ? [{ role: item.role, content: item.content }]
+            : [],
+        ),
+      });
+    } catch (error) {
+      if (error instanceof AIActionError) {
+        const response = errorResponse(
+          new AppError(error.message, error.statusCode, error.code),
+        );
+        return res.status(response.statusCode).json(response.payload);
+      }
+      logger.error('AI action preparation failed', error, { workspaceId });
+      const response = errorResponse(
+        new AppError(
+          'The AI action could not be prepared.',
+          500,
+          'ACTION_EXECUTION_FAILED',
+        ),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+  }
+
+  const queryText =
+    actionPlan?.displayMessage ||
+    (typeof message === 'string' ? message.trim() : '');
+  const retrievalQuery = actionPlan?.retrievalQuery || queryText;
+  const modelQuery = actionPlan?.modelPrompt || queryText;
   const generationController = new AbortController();
   let responseFinished = false;
 
@@ -560,7 +637,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       mode,
     });
 
-    const recentHistory = await getWorkspaceMessages(workspaceId);
+    const recentHistory =
+      actionMessageSnapshot || (await getWorkspaceMessages(workspaceId));
     const conversationHistory = buildConversationHistory(
       recentHistory,
       savedUserMessage.id,
@@ -571,7 +649,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       retrievedChunks = await searchWorkspaceChunks(
         workspaceId,
         res.locals.userId,
-        queryText,
+        retrievalQuery,
         { topK: 5, threshold: 0.15 },
       );
     } catch (retrievalError: any) {
@@ -583,18 +661,33 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       });
       return;
     }
+    if (actionPlan?.target === 'source' && actionPlan.sourceIds.length > 0) {
+      const allowedSourceIds = new Set(actionPlan.sourceIds);
+      retrievedChunks = retrievedChunks.filter(({ sourceId }) =>
+        allowedSourceIds.has(sourceId),
+      );
+    }
 
-    const ragContext = buildRAGContext(retrievedChunks, queryText, mode);
+    const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
     sendEvent({
       type: 'start',
       hasContext: ragContext.hasContext,
       candidateCitationCount: ragContext.citations.length,
       citations: [],
+      ...(actionPlan
+        ? { action: { id: actionPlan.actionId, label: actionPlan.actionLabel } }
+        : {}),
     });
 
-    if (!ragContext.hasContext) {
+    if (
+      !ragContext.hasContext &&
+      !actionPlan?.allowWithoutWorkspaceContext &&
+      (!isTavilySearchAvailable() || actionPlan?.sourceIds.length)
+    ) {
       const insufficientContext =
-        "I couldn't find sufficient indexed knowledge in this Workspace to answer that question. Add or reprocess a relevant source, then try again.";
+        actionPlan
+          ? `I couldn't retrieve sufficient validated Workspace evidence to complete ${actionPlan.actionLabel}. Check that the selected sources are fully indexed, then try again.`
+          : "I couldn't find sufficient indexed knowledge in this Workspace to answer that question. Add or reprocess a relevant source, then try again.";
       sendEvent({ type: 'chunk', text: insufficientContext });
       const savedMessage = await createWorkspaceMessage({
         workspaceId,
@@ -606,32 +699,72 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       return;
     }
 
-    const citationSafeStream = new CitationSafeStream(
+    const citationSafeStream = ragContext.hasContext
+      ? new CitationSafeStream(
+          ragContext.citations,
+          (text) => {
+            if (!sendEvent({ type: 'chunk', text })) abortGeneration();
+          },
+        )
+      : null;
+    const externalWebSafeStream = new ExternalWebSafeStream(
       ragContext.citations,
       (text) => {
-        if (!sendEvent({ type: 'chunk', text })) abortGeneration();
+        if (citationSafeStream) {
+          citationSafeStream.push(text);
+        } else if (!sendEvent({ type: 'chunk', text })) {
+          abortGeneration();
+        }
       },
     );
-    const generated = await generateGroundedResponse({
-      instructions: ragContext.contextPrompt,
+    const generated = await orchestrateGroundedResponse({
+      workspaceId,
+      hasWorkspaceContext: ragContext.hasContext,
+      hasActionContext: actionPlan?.allowWithoutWorkspaceContext === true,
+      instructions: ragContext.hasContext
+        ? `${ragContext.contextPrompt}${
+            actionPlan
+              ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
+              : ''
+          }`
+        : `You are Lumora AI Knowledge Operating System. No relevant indexed Workspace context is available for this request. Follow the web intelligence policy and never present unsupported factual claims.${
+            actionPlan
+              ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
+              : ''
+          }`,
       history: conversationHistory,
-      query: queryText,
+      query: modelQuery,
       userId: res.locals.userId,
       mode,
       signal: generationController.signal,
-      onTextDelta: (text) => citationSafeStream.push(text),
+      onTextDelta: (text) => externalWebSafeStream.push(text),
+      onToolResult: (record) => {
+        const webSources = webSourcesFromExecution(record);
+        if (webSources.length > 0) {
+          externalWebSafeStream.addSources(webSources);
+          sendEvent({ type: 'web_sources', sources: webSources });
+        }
+      },
+      onToolStatus: (status) => {
+        if (!sendEvent({ type: 'tool_status', ...status })) abortGeneration();
+      },
     });
     if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
-    const usedCitations = citationsUsedByResponse(
-      generated.text,
-      ragContext.citations,
+    const usedCitations = ragContext.hasContext
+      ? citationsUsedByResponse(generated.text, ragContext.citations)
+      : [];
+    const webAppendix = externalWebSourcesAppendix(
+      generated.orchestration.webSources,
     );
-    citationSafeStream.finish(generated.text);
+    const finalResponse = `${generated.text}${webAppendix}`;
+    if (webAppendix) externalWebSafeStream.push(webAppendix);
+    externalWebSafeStream.finish(finalResponse);
+    citationSafeStream?.finish(finalResponse);
     const savedAssistantMessage = await createWorkspaceMessage({
       workspaceId,
       role: 'ASSISTANT',
-      content: generated.text,
+      content: finalResponse,
       mode,
       citations: usedCitations.map((c) => ({
         chunkId: c.chunkId,
@@ -655,12 +788,19 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       model: generated.model,
       providerResponseId: generated.responseId,
       citationCount: usedCitations.length,
+      toolExecutionCount: generated.orchestration.toolExecutions.length,
+      intelligenceMode: generated.orchestration.intelligenceMode,
+      webSourceCount: generated.orchestration.webSources.length,
+      actionId: actionPlan?.actionId,
+      actionTarget: actionPlan?.target,
     });
 
     sendEvent({
       type: 'done',
       messageId: savedAssistantMessage.id,
       citations: usedCitations,
+      intelligenceMode: generated.orchestration.intelligenceMode,
+      webSources: generated.orchestration.webSources,
     });
   } catch (err: any) {
     if (err instanceof ChatGenerationAbortedError || generationController.signal.aborted) {
@@ -670,9 +810,12 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     logger.error('RAG Stream Handler Error', err);
     sendEvent({
       type: 'error',
-      code: err instanceof ChatProviderError ? err.code : 'CHAT_GENERATION_FAILED',
+      code:
+        err instanceof ChatProviderError || err instanceof AIOrchestrationError
+          ? err.code
+          : 'CHAT_GENERATION_FAILED',
       error:
-        err instanceof ChatProviderError
+        err instanceof ChatProviderError || err instanceof AIOrchestrationError
           ? err.message
           : 'Grounded AI response generation failed before completion.',
     });

@@ -18,12 +18,16 @@ import {
   User,
 } from 'lucide-react';
 import { StoredCitation, StoredMessage } from '../../lib/chat/conversation-store';
+import type { ToolStatusUpdate, WebSource } from '../../lib/ai/types';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
   isGenerating: boolean;
   streamingText: string;
   streamingCitations: StoredCitation[];
+  toolExecutions?: ToolStatusUpdate[];
+  streamingWebSources?: WebSource[];
+  activeActionLabel?: string | null;
   error?: string | null;
   hasIndexedSources: boolean;
   sourceCount: number;
@@ -167,6 +171,9 @@ export function WorkspaceChatArea({
   isGenerating,
   streamingText,
   streamingCitations,
+  toolExecutions = [],
+  streamingWebSources = [],
+  activeActionLabel,
   error,
   hasIndexedSources,
   sourceCount,
@@ -323,7 +330,7 @@ export function WorkspaceChatArea({
                         <div className="mt-4 space-y-2.5 border-t border-slate-800/80 pt-3.5">
                           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                            <span>{message.citations.length} grounded {message.citations.length === 1 ? 'source' : 'sources'}</span>
+                            <span>{message.citations.length} Workspace {message.citations.length === 1 ? 'source' : 'sources'}</span>
                           </div>
                           <div className="flex max-w-full flex-wrap gap-2">
                             {message.citations.map((citation, citationIndex) => (
@@ -364,6 +371,57 @@ export function WorkspaceChatArea({
                 <Bot className="h-4 w-4" />
               </div>
               <div className="min-w-0 max-w-[calc(100%-2.625rem)] rounded-2xl rounded-tl-md border border-sky-800/50 bg-[#121824] px-4 py-3.5 text-slate-200 shadow-xl sm:max-w-[88%] sm:px-5 sm:py-4 md:max-w-[82%]">
+                {toolExecutions.length > 0 && (
+                  <div
+                    className="mb-3 flex flex-wrap gap-2"
+                    aria-label="AI tool execution status"
+                  >
+                    {toolExecutions.map((execution) => (
+                      <span
+                        key={execution.requestId}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-violet-800/60 bg-violet-950/30 px-2 py-1 text-[10px] font-medium text-violet-200"
+                      >
+                        <Sparkles
+                          className={`h-3 w-3 ${
+                            execution.status === 'running' ? 'animate-pulse' : ''
+                          }`}
+                        />
+                        {execution.toolName === 'tavily_search'
+                          ? execution.status === 'running'
+                            ? 'Searching the web'
+                            : 'Web search'
+                          : execution.toolName}
+                        <span className="text-violet-400">
+                          {execution.status === 'completed'
+                            ? 'complete'
+                            : execution.status.replace('_', ' ')}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {streamingWebSources.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-sky-900/70 bg-sky-950/20 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                      <Globe className="h-3.5 w-3.5" />
+                      <span>External web sources</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {streamingWebSources.map((source) => (
+                        <a
+                          key={source.url}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-sky-900/70 bg-slate-950/60 px-2 py-1 text-[10px] text-sky-200 transition hover:border-sky-700 hover:text-white"
+                        >
+                          <span className="max-w-[14rem] truncate">{source.title}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {streamingText ? (
                   <div className="min-w-0 break-words text-xs md:text-sm">
                     <Markdown components={markdownComponents}>{streamingText}</Markdown>
@@ -376,7 +434,11 @@ export function WorkspaceChatArea({
                         <span key={dot} className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" style={{ animationDelay: `${dot * 140}ms` }} />
                       ))}
                     </div>
-                    <span>Finding relevant context and preparing a grounded response…</span>
+                    <span>
+                      {activeActionLabel
+                        ? `Running ${activeActionLabel} with validated context…`
+                        : 'Finding relevant context and preparing a grounded response…'}
+                    </span>
                   </div>
                 )}
 

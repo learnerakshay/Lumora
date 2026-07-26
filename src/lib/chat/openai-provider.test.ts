@@ -76,6 +76,60 @@ test('streams a completed response and ignores duplicate sequence events', async
   }
 });
 
+test('advertises registered tools and returns structured function requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: any;
+  globalThis.fetch = async (_url, request) => {
+    requestBody = JSON.parse(String(request?.body));
+    return streamResponse([
+      {
+        type: 'response.output_item.done',
+        sequence_number: 1,
+        item: {
+          type: 'function_call',
+          call_id: 'call_1',
+          name: 'workspace_search',
+          arguments: '{"query":"vectors"}',
+        },
+      },
+      {
+        type: 'response.completed',
+        sequence_number: 2,
+        response: { id: 'resp_tool', status: 'completed' },
+      },
+    ]);
+  };
+  try {
+    const response = await generateGroundedResponse({
+      ...input(),
+      tools: [
+        {
+          name: 'workspace_search',
+          description: 'Search this Workspace.',
+          parameters: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    });
+    assert.equal(requestBody.tools[0].name, 'workspace_search');
+    assert.deepEqual(response.toolRequests, [
+      {
+        id: 'call_1',
+        name: 'workspace_search',
+        arguments: { query: 'vectors' },
+        rawArguments: '{"query":"vectors"}',
+      },
+    ]);
+    assert.equal(response.text, '');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('rejects a stream that closes without a completion event', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
