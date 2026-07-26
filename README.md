@@ -10,7 +10,79 @@
 [![License](https://img.shields.io/badge/License-All_Rights_Reserved-6B7280)](#license)
 
 </div>
+# ⚠️ IMPORTANT LIMITATION
 
+> **Status:** Known Limitation (Production Deployment)
+
+## Overview
+
+The application currently supports:
+
+- ✅ Text
+- ✅ PDF
+- ✅ Website
+- ❌ YouTube (Production Only)
+
+Text, PDF, and Website ingestion work correctly. Only **YouTube transcript ingestion** is unavailable in the hosted deployment.
+
+---
+
+## Root Cause
+
+The project uses the open-source library `youtube-transcript-plus` to fetch public YouTube captions.
+
+On cloud hosting providers (such as Render), YouTube may block or restrict transcript requests from datacenter IPs. Instead of returning caption metadata, YouTube often responds in a way that causes transcript libraries to report:
+
+> **"Transcript is disabled on this video."**
+
+This can occur even when the video has public captions.
+
+---
+
+## Verification
+
+The following steps were completed:
+
+- ✅ Switched to `youtube-transcript-plus`
+- ✅ Updated the ingestion pipeline
+- ✅ Passed type checks and production build
+- ✅ Successfully redeployed the backend
+- ✅ Tested multiple public YouTube videos
+
+The issue persists only during transcript retrieval in the hosted environment.
+
+---
+
+## Impact
+
+This limitation affects **only YouTube ingestion**.
+
+The following features remain fully functional:
+
+- ✅ Text ingestion
+- ✅ PDF ingestion
+- ✅ Website ingestion
+- ✅ Embedding generation
+- ✅ Vector storage
+- ✅ RAG retrieval
+- ✅ AI Workspace Chat
+
+---
+
+## Future Improvements
+
+Possible future solutions include:
+
+- Deploying on an infrastructure where transcript requests are permitted.
+- Using a secure proxy for transcript retrieval.
+- Integrating an official transcript service.
+- Supporting manual transcript/VTT uploads.
+
+---
+
+## Note
+
+This is an external platform limitation rather than an application bug. The application's ingestion, indexing, and RAG pipeline function correctly for all other supported knowledge sources. 
 ## Project Introduction
 
 **Lumora** is a production-oriented AI research and learning Workspace that turns fragmented documents, webpages, transcripts, and notes into a private, queryable knowledge system. Users can create isolated Workspaces, ingest multiple source formats, and receive streaming AI answers grounded in validated vector retrieval with source-level citations.
