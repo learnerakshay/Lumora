@@ -732,17 +732,31 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   const modelQuery = actionPlan?.modelPrompt || queryText;
   const generationController = new AbortController();
   let responseFinished = false;
+  let clientDisconnected = false;
+  let serverAbortObserved = false;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  const abortGeneration = () => generationController.abort();
-  const handleResponseClose = () => {
-    if (!responseFinished) abortGeneration();
+  const abortGeneration = (reason: 'client' | 'server' = 'server') => {
+    if (generationController.signal.aborted) return;
+    if (reason === 'client') {
+      clientDisconnected = true;
+      logger.warn('Chat stream client disconnected', { workspaceId, reason: 'client_disconnect' });
+    } else {
+      serverAbortObserved = true;
+      logger.warn('Chat stream server aborted generation', { workspaceId, reason: 'server_abort' });
+    }
+    generationController.abort();
   };
-  req.once('aborted', abortGeneration);
+  const handleResponseClose = () => {
+    if (!responseFinished) {
+      abortGeneration(req.aborted ? 'client' : 'server');
+    }
+  };
+  req.once('aborted', () => abortGeneration('client'));
   res.once('close', handleResponseClose);
 
   const sendEvent = (eventData: object): boolean => {
@@ -1007,10 +1021,16 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     });
   } catch (err: any) {
     if (err instanceof ChatGenerationAbortedError || generationController.signal.aborted) {
-      logger.info('Grounded response generation cancelled', { workspaceId });
+      if (clientDisconnected) {
+        logger.info('Chat stream interrupted by client disconnect', { workspaceId });
+      } else if (serverAbortObserved) {
+        logger.info('Chat stream aborted by server', { workspaceId });
+      } else {
+        logger.info('Grounded response generation cancelled', { workspaceId });
+      }
       return;
     }
-    logger.error('RAG Stream Handler Error', err);
+    logger.error('RAG Stream Handler Error', err, { workspaceId, phase: 'provider_failure' });
     sendEvent({
       type: 'error',
       code:
