@@ -10,6 +10,7 @@ import {
 } from './safe-fetch';
 import { assertValidProcessingTransition } from '../source-store';
 import { SOURCE_LIMITS, validateSourceInput } from './validators';
+import { extractYouTubeVideoId } from './youtube-url';
 
 function createMinimalPdf(text: string): Uint8Array {
   const stream = `BT /F1 18 Tf 72 100 Td (${text}) Tj ET`;
@@ -223,6 +224,35 @@ test('missing parser fails visibly', async () => {
       title: 'Unsupported',
     }),
     /No parser is registered/,
+  );
+});
+
+test('YouTube URL validation accepts supported video links and rejects unsupported ones', () => {
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/channel/UC123'), null);
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/playlist?list=PL123'), null);
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/'), null);
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch'), null);
+
+  assert.equal(
+    validateSourceInput({
+      workspaceId: 'workspace',
+      title: 'Valid watch URL',
+      type: 'YOUTUBE',
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    }).valid,
+    true,
+  );
+  assert.equal(
+    validateSourceInput({
+      workspaceId: 'workspace',
+      title: 'Invalid channel URL',
+      type: 'YOUTUBE',
+      url: 'https://www.youtube.com/channel/UC123',
+    }).valid,
+    false,
   );
 });
 

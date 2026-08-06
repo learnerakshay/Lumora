@@ -10,6 +10,7 @@ import { generateSemanticChunks } from './chunker';
 import { generateEmbeddingsBatch } from './embedder';
 import { saveSourceIndex } from '../chunk-store';
 import { logger } from '../logger';
+import { classifyIngestionError } from './errors';
 
 const CHUNK_VERSION = 'semantic-1200-200-v1';
 
@@ -228,6 +229,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     return { success: true, chunkCount: committedIndex.chunkCount, tokenCount };
   } catch (error: any) {
     const errorMessage = error?.message || 'Unexpected ingestion failure';
+    const classification = classifyIngestionError(error);
     logger.error(
       `Ingestion failed for source [${options.sourceId}] version ${version}`,
       error,
@@ -239,6 +241,10 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
         version,
         nextStage: 'FAILED',
         errorMessage,
+        details: {
+          errorCode: classification.errorCode,
+          errorCategory: classification.errorCategory,
+        },
       });
     } catch (transitionError) {
       logger.error(

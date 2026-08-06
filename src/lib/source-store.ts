@@ -390,6 +390,29 @@ export async function transitionProcessingStage(data: {
             ? 'PENDING'
             : 'PROCESSING';
     const sourceMetadata = (attempt.source.metadata as Record<string, any>) || {};
+    const metadataWithError = data.nextStage === 'FAILED'
+      ? {
+          ...sourceMetadata,
+          ...(data.details || {}),
+          stage: data.nextStage,
+          stageProgress: stageProgress[data.nextStage],
+          currentVersion: data.version,
+          errorMessage: data.errorMessage || null,
+          errorCode: data.details?.errorCode || null,
+          errorCategory: data.details?.errorCategory || null,
+          failedAt: new Date().toISOString(),
+        }
+      : {
+          ...sourceMetadata,
+          ...(data.details || {}),
+          stage: data.nextStage,
+          stageProgress: stageProgress[data.nextStage],
+          currentVersion: data.version,
+          errorMessage: data.errorMessage || null,
+          ...(data.nextStage === 'COMPLETED'
+            ? { processedAt: new Date().toISOString() }
+            : {}),
+        };
 
     await tx.sourceProcessingAttempt.update({
       where: { id: attempt.id },
@@ -410,20 +433,7 @@ export async function transitionProcessingStage(data: {
       data: {
         stage: data.nextStage as PrismaProcessingStage,
         status,
-        metadata: {
-          ...sourceMetadata,
-          ...(data.details || {}),
-          stage: data.nextStage,
-          stageProgress: stageProgress[data.nextStage],
-          currentVersion: data.version,
-          errorMessage: data.errorMessage || null,
-          ...(data.nextStage === 'COMPLETED'
-            ? { processedAt: new Date().toISOString() }
-            : {}),
-          ...(data.nextStage === 'FAILED'
-            ? { failedAt: new Date().toISOString() }
-            : {}),
-        },
+        metadata: metadataWithError,
       },
     });
 

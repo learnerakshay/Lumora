@@ -17,6 +17,7 @@ import {
 } from '../lib/source-store';
 import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
 import { processSourcePipeline } from '../lib/ingestion/pipeline';
+import { extractYouTubeVideoId } from '../lib/ingestion/youtube-url';
 import { getWorkspaceChunks } from '../lib/chunk-store';
 import { searchWorkspaceChunks, buildRAGContext } from '../lib/retrieval/rag-service';
 import {
@@ -285,6 +286,13 @@ workspaceRouter.post(
           validation.error || 'Invalid source input',
           'INVALID_SOURCE_INPUT',
         ),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+
+    if (sourceType === 'YOUTUBE' && !extractYouTubeVideoId(validation.normalizedUrl || url || '')) {
+      const response = errorResponse(
+        AppError.badRequest('Enter a valid YouTube video URL.', 'INVALID_YOUTUBE_URL'),
       );
       return res.status(response.statusCode).json(response.payload);
     }

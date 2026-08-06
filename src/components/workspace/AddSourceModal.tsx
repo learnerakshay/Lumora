@@ -13,6 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { SourceType, SourceRecord } from '../../lib/source-store';
+import { extractYouTubeVideoId } from '../../lib/ingestion/youtube-url';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -141,8 +142,8 @@ export function AddSourceModal({
       }
       finalSize = 'Auto Ingest';
     } else if (selectedType === 'YOUTUBE') {
-      if (!finalUrl || (!finalUrl.includes('youtube.com') && !finalUrl.includes('youtu.be'))) {
-        setError('Please enter a valid YouTube link (e.g. https://www.youtube.com/watch?v=...)');
+      if (!finalUrl || !extractYouTubeVideoId(finalUrl)) {
+        setError('Enter a valid YouTube video URL.');
         return;
       }
       if (!finalTitle) {

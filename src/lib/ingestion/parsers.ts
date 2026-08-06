@@ -2,6 +2,7 @@ import { load } from 'cheerio';
 import { SourceType } from '../source-store';
 import { cleanExtractedText } from './cleaner';
 import { safeFetch } from './safe-fetch';
+import { extractYouTubeVideoId } from './youtube-url';
 
 const PDF_MAX_BYTES = 20 * 1024 * 1024;
 const WEBSITE_MAX_BYTES = 5 * 1024 * 1024;
@@ -286,25 +287,6 @@ async function parsePlainTextSource(
     },
     parserVersion: PARSER_VERSIONS.TEXT,
   };
-}
-
-export function extractYouTubeVideoId(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'youtu.be') {
-      const id = parsed.pathname.split('/').filter(Boolean)[0];
-      return id?.length === 11 ? id : null;
-    }
-    if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
-      const pathId = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/)?.[1];
-      const id = parsed.searchParams.get('v') || pathId;
-      return id?.length === 11 ? id : null;
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 async function parseYouTubeSource(

@@ -1,5 +1,5 @@
 import { SourceType } from '../source-store';
-import { extractYouTubeVideoId } from './parsers';
+import { extractYouTubeVideoId } from './youtube-url';
 
 export const SOURCE_LIMITS = {
   PDF_BYTES: 20 * 1024 * 1024,
