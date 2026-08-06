@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getServerEnv } from '../env';
+import { logger } from '../logger';
 import type {
   ModelToolDefinition,
   ToolExecutionRecord,
@@ -344,13 +345,19 @@ export async function generateGroundedResponse(
     };
   } catch (error) {
     if (timedOut) {
-      throw new ChatProviderError(
+      const timeoutError = new ChatProviderError(
         'The AI provider timed out before completing.',
         'OPENAI_TIMEOUT',
         504,
       );
+      logger.error('Chat provider timed out', timeoutError, { userId: input.userId });
+      throw timeoutError;
     }
-    if (input.signal.aborted) throw new ChatGenerationAbortedError();
+    if (input.signal.aborted) {
+      logger.warn('Chat provider stream aborted by caller', { userId: input.userId });
+      throw new ChatGenerationAbortedError();
+    }
+    logger.error('Chat provider stream failed', error, { userId: input.userId });
     throw error;
   } finally {
     clearTimeout(timeout);
