@@ -68,7 +68,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
             </div>
             <div>
               <h2 id="create-workspace-title" className="text-base font-semibold text-white">Create Workspace</h2>
-              <p className="text-xs text-slate-400">Setup an isolated knowledge workspace</p>
+              <p className="text-xs text-slate-400">Create a focused space for your learning</p>
             </div>
           </div>
           <button

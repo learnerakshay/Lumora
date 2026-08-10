@@ -41,6 +41,10 @@ export function Navbar() {
     }
   };
 
+  // The Workspace dashboard provides its own authenticated app navigation.
+  // Keep the existing header on the learning Workspace route unchanged.
+  if (location.pathname === '/workspaces') return null;
+
   return (
     <header
       className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-300 border-b ${

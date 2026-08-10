@@ -81,8 +81,8 @@ export function RenameWorkspaceModal({
               <Edit3 className="w-4 h-4" />
             </div>
             <div>
-              <h2 id="edit-workspace-title" className="text-base font-semibold text-white">Edit Workspace Settings</h2>
-              <p className="text-xs text-slate-400">Update workspace metadata</p>
+              <h2 id="edit-workspace-title" className="text-base font-semibold text-white">Edit Workspace</h2>
+              <p className="text-xs text-slate-400">Update its name, description, or icon</p>
             </div>
           </div>
           <button
