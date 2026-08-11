@@ -105,9 +105,12 @@ test('embedding provider failures and invalid vectors fail visibly', async () =>
 test('transient embedding failures are retried', async () => {
   await withEmbeddingEnvironment(async () => {
     let attempts = 0;
+    let reportedAttempts = 0;
     const result = await generateEmbeddingsBatch(
       ['content'],
-      undefined,
+      (_processed, _total, progress) => {
+        reportedAttempts = progress?.attempts || 0;
+      },
       async () => {
         attempts += 1;
         return attempts === 1
@@ -116,6 +119,7 @@ test('transient embedding failures are retried', async () => {
       },
     );
     assert.equal(attempts, 2);
+    assert.equal(reportedAttempts, 2);
     assert.equal(result.vectors.length, 1);
   });
 });

@@ -1,4 +1,5 @@
 import { getServerEnv } from '../env';
+import { IngestionFailure } from './errors';
 
 const EMBEDDING_API_URL = 'https://api.openai.com/v1/embeddings';
 const MAX_BATCH_SIZE = 64;
@@ -15,6 +16,15 @@ export interface EmbeddingContract {
 export interface EmbeddingBatchResult {
   vectors: number[][];
   contract: EmbeddingContract;
+}
+
+export interface EmbeddingProgress {
+  processed: number;
+  total: number;
+  batchIndex: number;
+  batchCount: number;
+  attempts: number;
+  durationMs: number;
 }
 
 interface OpenAIEmbeddingResponse {
@@ -79,7 +89,7 @@ async function requestEmbeddingBatch(
   contract: EmbeddingContract,
   apiKey: string,
   fetchImpl: typeof fetch,
-): Promise<number[][]> {
+): Promise<{ vectors: number[][]; attempts: number }> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -108,7 +118,14 @@ async function requestEmbeddingBatch(
           );
           continue;
         }
-        throw new Error(`Embedding provider failure: ${message}`);
+        throw new IngestionFailure({
+          message: `Embedding provider failure: ${message}`,
+          errorCode: 'EMBEDDING_ERROR',
+          userMessage: 'Lumora could not prepare this source for search. Please retry shortly.',
+          retryable: isRetryableStatus(response.status),
+          provider: 'openai',
+          httpStatus: response.status,
+        });
       }
 
       if (!Array.isArray(payload.data) || payload.data.length !== texts.length) {
@@ -129,7 +146,7 @@ async function requestEmbeddingBatch(
         }
         indexed.set(item.index!, item);
       });
-      return texts.map((_text, index) => {
+      const vectors = texts.map((_text, index) => {
         const item = indexed.get(index);
         if (!item) {
           throw new Error(`Embedding provider omitted vector index ${index}`);
@@ -137,6 +154,7 @@ async function requestEmbeddingBatch(
         validateEmbeddingVector(item.embedding, contract, `embedding ${index}`);
         return item.embedding;
       });
+      return { vectors, attempts: attempt };
     } catch (error) {
       const retryableNetworkFailure =
         error instanceof TypeError ||
@@ -144,6 +162,19 @@ async function requestEmbeddingBatch(
       if (attempt < MAX_ATTEMPTS && retryableNetworkFailure) {
         await new Promise((resolve) => setTimeout(resolve, retryDelay(attempt, null)));
         continue;
+      }
+      if (retryableNetworkFailure) {
+        throw new IngestionFailure({
+          message:
+            error instanceof DOMException && error.name === 'AbortError'
+              ? 'Embedding provider request timed out'
+              : 'Embedding provider network request failed',
+          errorCode: 'EMBEDDING_ERROR',
+          userMessage: 'Lumora could not prepare this source for search. Please retry shortly.',
+          retryable: true,
+          provider: 'openai',
+          cause: error,
+        });
       }
       if (error instanceof Error) throw error;
       throw new Error('Embedding provider failed with an unknown error');
@@ -157,7 +188,11 @@ async function requestEmbeddingBatch(
 
 export async function generateEmbeddingsBatch(
   texts: string[],
-  onProgress?: (processed: number, total: number) => void,
+  onProgress?: (
+    processed: number,
+    total: number,
+    progress?: EmbeddingProgress,
+  ) => void | Promise<void>,
   fetchImpl: typeof fetch = fetch,
 ): Promise<EmbeddingBatchResult> {
   if (texts.length === 0) {
@@ -170,17 +205,26 @@ export async function generateEmbeddingsBatch(
   const env = getServerEnv();
   const contract = getEmbeddingContract();
   const vectors: number[][] = [];
+  const batchCount = Math.ceil(texts.length / MAX_BATCH_SIZE);
 
   for (let offset = 0; offset < texts.length; offset += MAX_BATCH_SIZE) {
     const batch = texts.slice(offset, offset + MAX_BATCH_SIZE);
-    const batchVectors = await requestEmbeddingBatch(
+    const startedAt = Date.now();
+    const result = await requestEmbeddingBatch(
       batch,
       contract,
       env.OPENAI_API_KEY!,
       fetchImpl,
     );
-    vectors.push(...batchVectors);
-    onProgress?.(vectors.length, texts.length);
+    vectors.push(...result.vectors);
+    await onProgress?.(vectors.length, texts.length, {
+      processed: vectors.length,
+      total: texts.length,
+      batchIndex: Math.floor(offset / MAX_BATCH_SIZE) + 1,
+      batchCount,
+      attempts: result.attempts,
+      durationMs: Date.now() - startedAt,
+    });
   }
 
   return { vectors, contract };

@@ -6,8 +6,10 @@ import {
 } from './parsers';
 import {
   isPrivateNetworkAddress,
+  safeFetch,
   validatePublicHttpsUrl,
 } from './safe-fetch';
+import { IngestionFailure } from './errors';
 import { assertValidProcessingTransition } from '../source-store';
 import { SOURCE_LIMITS, validateSourceInput } from './validators';
 import { extractYouTubeVideoId } from './youtube-url';
@@ -107,6 +109,36 @@ test('website parser extracts semantic HTML and rejects empty pages', async () =
   );
 });
 
+test('website parser classifies challenge, login, and insufficient static pages', async () => {
+  const cases: Array<{ html: string; code: string }> = [
+    {
+      html: '<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>',
+      code: 'WEBSITE_CHALLENGE_PAGE',
+    },
+    {
+      html: '<html><head><title>Sign in</title></head><body><form><input type="password"></form></body></html>',
+      code: 'WEBSITE_AUTH_REQUIRED',
+    },
+    {
+      html: '<html><body><script>renderEverything()</script></body></html>',
+      code: 'WEBSITE_INSUFFICIENT_CONTENT',
+    },
+  ];
+
+  for (const item of cases) {
+    await assert.rejects(
+      parseSourceContent({
+        type: 'WEBSITE',
+        title: 'Website',
+        sourceUrl: 'https://example.com',
+        originalContent: item.html,
+      }),
+      (error: unknown) =>
+        error instanceof IngestionFailure && error.errorCode === item.code,
+    );
+  }
+});
+
 test('plain text preserves the original and enforces size/content limits', async () => {
   const original = '  Immutable source text\n\nwith complete content.  ';
   const parsed = await parseSourceContent({
@@ -203,6 +235,48 @@ test('remote URL safety blocks HTTP and private network targets', async () => {
   await assert.rejects(validatePublicHttpsUrl('https://127.0.0.1/file'), /private/);
   assert.equal(isPrivateNetworkAddress('10.0.0.1'), true);
   assert.equal(isPrivateNetworkAddress('8.8.8.8'), false);
+});
+
+test('safe fetch classifies unsupported MIME, blocked origins, and redirect failures', async () => {
+  const validateUrl = async (value: string) => new URL(value);
+  const base = {
+    maximumBytes: 1_024,
+    allowedContentTypes: ['text/html'],
+    validateUrl,
+  };
+
+  await assert.rejects(
+    safeFetch('https://example.com', {
+      ...base,
+      fetchImpl: async () => new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'FETCH_UNSUPPORTED_CONTENT_TYPE',
+  );
+  await assert.rejects(
+    safeFetch('https://example.com', {
+      ...base,
+      fetchImpl: async () => new Response('', { status: 403 }),
+    }),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'FETCH_ORIGIN_BLOCKED' &&
+      error.httpStatus === 403,
+  );
+  await assert.rejects(
+    safeFetch('https://example.com', {
+      ...base,
+      fetchImpl: async () => new Response('', {
+        status: 302,
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof IngestionFailure && error.errorCode === 'FETCH_REDIRECT_ERROR',
+  );
 });
 
 test('processing lifecycle only allows explicit transitions', () => {

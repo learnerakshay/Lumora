@@ -3,6 +3,8 @@ import { SourceType } from '../source-store';
 import { cleanExtractedText } from './cleaner';
 import { safeFetch } from './safe-fetch';
 import { extractYouTubeVideoId } from './youtube-url';
+import { IngestionFailure } from './errors';
+import { fetchYouTubeTranscript } from './youtube-transcript-provider';
 
 const PDF_MAX_BYTES = 20 * 1024 * 1024;
 const WEBSITE_MAX_BYTES = 5 * 1024 * 1024;
@@ -41,6 +43,7 @@ export interface ParseSourceInput {
   artifactMimeType?: string | null;
   parserMetadata?: Record<string, any> | null;
   onParsing?: () => Promise<void>;
+  onHeartbeat?: () => Promise<void>;
 }
 
 function assertTextSize(text: string, maximumBytes: number, label: string): void {
@@ -146,6 +149,9 @@ async function parsePdfSource(
       });
       pageBlocks.push(block);
       characterOffset += block.length + 2;
+      if (pageNumber % 10 === 0 || pageNumber === document.numPages) {
+        await input.onHeartbeat?.();
+      }
     }
 
     const cleanText = cleanExtractedText(pageBlocks.join('\n\n'));
@@ -211,6 +217,40 @@ function extractHtmlContent(html: string): {
   };
 }
 
+function assertWebsiteIsReadableStaticContent(html: string): void {
+  const $ = load(html);
+  const title = $('title').first().text().toLowerCase();
+  const visibleText = cleanExtractedText($('body').text()).toLowerCase();
+  const challengeMarkers = [
+    'verify you are human',
+    'checking your browser',
+    'just a moment',
+    'enable javascript and cookies',
+    'captcha',
+    'access denied',
+  ];
+  if (
+    challengeMarkers.some((marker) => title.includes(marker) || visibleText.includes(marker))
+  ) {
+    throw new IngestionFailure({
+      message: 'Website returned a bot or browser challenge page',
+      errorCode: 'WEBSITE_CHALLENGE_PAGE',
+      userMessage: 'This website blocked automated access with a browser challenge.',
+      retryable: true,
+    });
+  }
+
+  const hasPasswordField = $('input[type="password"]').length > 0;
+  const loginTitle = /(^|\s)(log[ -]?in|sign[ -]?in)(\s|$)/i.test(title);
+  if (hasPasswordField || (loginTitle && visibleText.length < 5_000)) {
+    throw new IngestionFailure({
+      message: 'Website returned a login or authentication page',
+      errorCode: 'WEBSITE_AUTH_REQUIRED',
+      userMessage: 'This webpage requires authentication and cannot be ingested.',
+    });
+  }
+}
+
 async function parseWebsiteSource(
   input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
@@ -233,10 +273,16 @@ async function parseWebsiteSource(
   }
   assertTextSize(html, WEBSITE_MAX_BYTES, 'Website HTML');
   await input.onParsing?.();
+  assertWebsiteIsReadableStaticContent(html);
 
   const extracted = extractHtmlContent(html);
   if (extracted.text.length < 20) {
-    throw new Error('Website extraction produced no meaningful readable content');
+    throw new IngestionFailure({
+      message: 'Website extraction produced no meaningful readable static content',
+      errorCode: 'WEBSITE_INSUFFICIENT_CONTENT',
+      userMessage:
+        'The webpage did not contain enough readable static content. JavaScript-only pages are not supported.',
+    });
   }
 
   const url = new URL(sourceUrl!);
@@ -299,6 +345,7 @@ async function parseYouTubeSource(
   let storedTranscript: {
     kind: string;
     language: string | null;
+    provider?: 'direct' | 'proxy';
     cues: Array<{ text: string; offset: number; duration: number; lang?: string }>;
   } | null = null;
   if (input.originalContent?.startsWith('{"kind":"youtube-transcript-v1"')) {
@@ -309,47 +356,26 @@ async function parseYouTubeSource(
     }
   }
 
-let cues = storedTranscript?.cues || [];
+  let cues = storedTranscript?.cues || [];
+  let provider: 'persisted' | 'direct' | 'proxy' = 'persisted';
+  let providerLanguage: string | null = storedTranscript?.language || null;
 
-if (cues.length === 0) {
-  const { fetchTranscript } = await import('youtube-transcript-plus');
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
-
-  try {
-    cues = await fetchTranscript(videoId, {
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-        'Chrome/124.0.0.0 Safari/537.36',
-      retries: 2,
-      retryDelay: 1000,
-      signal: controller.signal,
-    });
-  } catch (error: any) {
-    if (error?.name === 'AbortError' || controller.signal.aborted) {
-      throw new Error('YouTube transcript retrieval timed out');
-    }
-
-    throw new Error(
-      `YouTube transcript retrieval failed: ${
-        error?.message || 'transcript unavailable'
-      }`,
-    );
-  } finally {
-    clearTimeout(timeout);
+  if (cues.length === 0) {
+    const transcript = await fetchYouTubeTranscript(videoId);
+    cues = transcript.cues;
+    provider = transcript.provider;
+    providerLanguage = transcript.language;
   }
-}
   await input.onParsing?.();
   if (!Array.isArray(cues) || cues.length === 0) {
     throw new Error('YouTube transcript is unavailable or empty');
   }
 
-  const language = storedTranscript?.language || cues.find((cue) => cue.lang)?.lang || null;
+  const language = providerLanguage || cues.find((cue) => cue.lang)?.lang || null;
   const preserved = {
     kind: 'youtube-transcript-v1',
     language,
+    provider: provider === 'persisted' ? storedTranscript?.provider || null : provider,
     cues: cues.map((cue) => ({
       text: cue.text,
       offset: cue.offset,
@@ -381,6 +407,7 @@ if (cues.length === 0) {
       videoId,
       url: sourceUrl,
       language,
+      transcriptProvider: provider,
       cueCount: preserved.cues.length,
       cues: preserved.cues,
       parsedAt: new Date().toISOString(),

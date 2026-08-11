@@ -1,5 +1,6 @@
 import { promises as dns } from 'node:dns';
 import { isIP } from 'node:net';
+import { IngestionFailure } from './errors';
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_REDIRECTS = 4;
@@ -59,29 +60,60 @@ export async function validatePublicHttpsUrl(input: string): Promise<URL> {
   try {
     url = new URL(input);
   } catch {
-    throw new Error('URL is malformed');
+    throw new IngestionFailure({
+      message: 'Remote source URL is malformed',
+      errorCode: 'FETCH_INVALID_URL',
+      userMessage: 'Enter a valid HTTPS URL.',
+    });
   }
 
   if (url.protocol !== 'https:') {
-    throw new Error('Only HTTPS URLs are allowed');
+    throw new IngestionFailure({
+      message: 'Remote source URL does not use HTTPS',
+      errorCode: 'FETCH_INVALID_URL',
+      userMessage: 'Only HTTPS source URLs are supported.',
+    });
   }
   if (url.username || url.password) {
-    throw new Error('URLs containing credentials are not allowed');
+    throw new IngestionFailure({
+      message: 'Remote source URL contains credentials',
+      errorCode: 'FETCH_INVALID_URL',
+      userMessage: 'Source URLs cannot contain embedded credentials.',
+    });
   }
   if (!url.hostname) {
-    throw new Error('URL hostname is required');
+    throw new IngestionFailure({
+      message: 'Remote source URL has no hostname',
+      errorCode: 'FETCH_INVALID_URL',
+      userMessage: 'Enter a source URL with a valid hostname.',
+    });
   }
 
   const directIpVersion = isIP(url.hostname);
-  const addresses = directIpVersion
-    ? [{ address: url.hostname }]
-    : await dns.lookup(url.hostname, { all: true, verbatim: true });
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = directIpVersion
+      ? [{ address: url.hostname }]
+      : await dns.lookup(url.hostname, { all: true, verbatim: true });
+  } catch (error) {
+    throw new IngestionFailure({
+      message: 'Remote source hostname could not be resolved',
+      errorCode: 'FETCH_ORIGIN_UNREACHABLE',
+      userMessage: 'The website hostname could not be reached. Check the URL and retry.',
+      retryable: true,
+      cause: error,
+    });
+  }
 
   if (
     addresses.length === 0 ||
     addresses.some(({ address }) => isPrivateNetworkAddress(address))
   ) {
-    throw new Error('URL resolves to a private or restricted network address');
+    throw new IngestionFailure({
+      message: 'Remote source resolves to a private or restricted address',
+      errorCode: 'FETCH_ORIGIN_BLOCKED',
+      userMessage: 'This source address is not allowed for security reasons.',
+    });
   }
 
   return url;
@@ -93,10 +125,19 @@ async function readBoundedBody(
 ): Promise<Uint8Array> {
   const declaredLength = Number(response.headers.get('content-length') || '0');
   if (declaredLength > maximumBytes) {
-    throw new Error(`Remote response exceeds the ${maximumBytes}-byte size limit`);
+    throw new IngestionFailure({
+      message: `Remote response exceeds the ${maximumBytes}-byte size limit`,
+      errorCode: 'FETCH_RESPONSE_TOO_LARGE',
+      userMessage: 'The remote source is too large to ingest.',
+    });
   }
   if (!response.body) {
-    throw new Error('Remote response contained no body');
+    throw new IngestionFailure({
+      message: 'Remote response contained no body',
+      errorCode: 'FETCH_ORIGIN_UNREACHABLE',
+      userMessage: 'The remote source returned no content. Please retry shortly.',
+      retryable: true,
+    });
   }
 
   const reader = response.body.getReader();
@@ -108,7 +149,11 @@ async function readBoundedBody(
     total += value.byteLength;
     if (total > maximumBytes) {
       await reader.cancel();
-      throw new Error(`Remote response exceeds the ${maximumBytes}-byte size limit`);
+      throw new IngestionFailure({
+        message: `Remote response exceeds the ${maximumBytes}-byte size limit`,
+        errorCode: 'FETCH_RESPONSE_TOO_LARGE',
+        userMessage: 'The remote source is too large to ingest.',
+      });
     }
     chunks.push(value);
   }
@@ -129,9 +174,13 @@ export async function safeFetch(
     allowedContentTypes: string[];
     timeoutMs?: number;
     maximumRedirects?: number;
+    fetchImpl?: typeof fetch;
+    validateUrl?: typeof validatePublicHttpsUrl;
   },
 ): Promise<SafeFetchResult> {
-  let currentUrl = await validatePublicHttpsUrl(input);
+  const validateUrl = options.validateUrl || validatePublicHttpsUrl;
+  const fetchImpl = options.fetchImpl || fetch;
+  let currentUrl = await validateUrl(input);
   const maximumRedirects = options.maximumRedirects ?? DEFAULT_MAX_REDIRECTS;
 
   for (let redirectCount = 0; redirectCount <= maximumRedirects; redirectCount++) {
@@ -143,7 +192,7 @@ export async function safeFetch(
 
     let response: Response;
     try {
-      response = await fetch(currentUrl, {
+      response = await fetchImpl(currentUrl, {
         redirect: 'manual',
         signal: controller.signal,
         headers: {
@@ -154,24 +203,43 @@ export async function safeFetch(
     } catch (error: any) {
       clearTimeout(timeout);
       if (error?.name === 'AbortError') {
-        throw new Error('Remote source request timed out');
+        throw new IngestionFailure({
+          message: 'Remote source request timed out',
+          errorCode: 'FETCH_TIMEOUT',
+          userMessage: 'The remote source took too long to respond. Please retry shortly.',
+          retryable: true,
+        });
       }
-      throw new Error(`Remote source request failed: ${error?.message || 'network error'}`);
+      throw new IngestionFailure({
+        message: `Remote source request failed: ${error?.message || 'network error'}`,
+        errorCode: 'FETCH_ORIGIN_UNREACHABLE',
+        userMessage: 'The remote source could not be reached. Please retry shortly.',
+        retryable: true,
+        cause: error,
+      });
     }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) {
         clearTimeout(timeout);
-        throw new Error('Remote source returned a redirect without a destination');
+        throw new IngestionFailure({
+          message: 'Remote source returned a redirect without a destination',
+          errorCode: 'FETCH_REDIRECT_ERROR',
+          userMessage: 'The source redirected to an invalid destination.',
+        });
       }
       if (redirectCount === maximumRedirects) {
         clearTimeout(timeout);
-        throw new Error('Remote source exceeded the redirect limit');
+        throw new IngestionFailure({
+          message: 'Remote source exceeded the redirect limit',
+          errorCode: 'FETCH_REDIRECT_ERROR',
+          userMessage: 'The source redirected too many times.',
+        });
       }
       await response.body?.cancel();
       clearTimeout(timeout);
-      currentUrl = await validatePublicHttpsUrl(
+      currentUrl = await validateUrl(
         new URL(location, currentUrl).toString(),
       );
       continue;
@@ -179,7 +247,19 @@ export async function safeFetch(
 
     if (!response.ok) {
       clearTimeout(timeout);
-      throw new Error(`Remote source returned HTTP ${response.status}`);
+      throw new IngestionFailure({
+        message: `Remote source returned HTTP ${response.status}`,
+        errorCode:
+          response.status === 401 || response.status === 403
+            ? 'FETCH_ORIGIN_BLOCKED'
+            : 'FETCH_ORIGIN_UNREACHABLE',
+        userMessage:
+          response.status === 401 || response.status === 403
+            ? 'The website blocked access or requires authentication.'
+            : 'The remote source returned an error. Please retry shortly.',
+        retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+        httpStatus: response.status,
+      });
     }
 
     const contentType = (response.headers.get('content-type') || '')
@@ -193,9 +273,11 @@ export async function safeFetch(
       )
     ) {
       clearTimeout(timeout);
-      throw new Error(
-        `Remote source returned unsupported Content-Type "${contentType || 'missing'}"`,
-      );
+      throw new IngestionFailure({
+        message: `Remote source returned unsupported Content-Type "${contentType || 'missing'}"`,
+        errorCode: 'FETCH_UNSUPPORTED_CONTENT_TYPE',
+        userMessage: 'The URL did not return a supported webpage or document type.',
+      });
     }
 
     try {
@@ -206,7 +288,12 @@ export async function safeFetch(
       };
     } catch (error: any) {
       if (error?.name === 'AbortError') {
-        throw new Error('Remote source request timed out');
+        throw new IngestionFailure({
+          message: 'Remote source request timed out while reading the response',
+          errorCode: 'FETCH_TIMEOUT',
+          userMessage: 'The remote source took too long to respond. Please retry shortly.',
+          retryable: true,
+        });
       }
       throw error;
     } finally {
@@ -214,5 +301,10 @@ export async function safeFetch(
     }
   }
 
-  throw new Error('Remote source could not be fetched');
+  throw new IngestionFailure({
+    message: 'Remote source could not be fetched',
+    errorCode: 'FETCH_ORIGIN_UNREACHABLE',
+    userMessage: 'The remote source could not be reached. Please retry shortly.',
+    retryable: true,
+  });
 }
