@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   fetchTranscript,
   YoutubeTranscriptDisabledError,
@@ -58,6 +59,62 @@ interface NormalizedCue {
   offset: number;
   duration: number;
   lang: string;
+}
+
+type VercelRequest = IncomingMessage & { body?: unknown };
+
+function requestHeader(request: IncomingMessage, name: string): string | undefined {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function readNodeRequestBody(request: VercelRequest): Promise<BodyInit | undefined> {
+  if (request.body !== undefined) {
+    if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
+      return request.body;
+    }
+    return JSON.stringify(request.body);
+  }
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const remaining = MAX_REQUEST_BYTES + 1 - received;
+    if (remaining > 0) chunks.push(buffer.subarray(0, remaining));
+    received += buffer.byteLength;
+    if (received > MAX_REQUEST_BYTES) break;
+  }
+  return chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+}
+
+async function toWebRequest(request: VercelRequest): Promise<Request> {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item);
+    } else if (value !== undefined) {
+      headers.set(name, value);
+    }
+  }
+
+  const protocol = requestHeader(request, 'x-forwarded-proto') || 'https';
+  const host = requestHeader(request, 'x-forwarded-host') || requestHeader(request, 'host') || 'localhost';
+  const method = request.method || 'GET';
+  const body = method === 'GET' || method === 'HEAD'
+    ? undefined
+    : await readNodeRequestBody(request);
+  return new Request(new URL(request.url || '/api/youtube-transcript', `${protocol}://${host}`), {
+    method,
+    headers,
+    body,
+  });
+}
+
+async function sendWebResponse(response: Response, destination: ServerResponse): Promise<void> {
+  destination.statusCode = response.status;
+  response.headers.forEach((value, name) => destination.setHeader(name, value));
+  destination.end(Buffer.from(await response.arrayBuffer()));
 }
 
 function jsonResponse(status: number, body: unknown, headers?: HeadersInit): Response {
@@ -303,4 +360,35 @@ export function createYouTubeTranscriptRelay(dependencies: RelayDependencies = {
   };
 }
 
-export default createYouTubeTranscriptRelay();
+export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependencies = {}) {
+  const relay = createYouTubeTranscriptRelay(dependencies);
+  const logger = dependencies.logger || console;
+
+  return async function vercelYouTubeTranscriptHandler(
+    request: VercelRequest,
+    response: ServerResponse,
+  ): Promise<void> {
+    try {
+      await sendWebResponse(await relay(await toWebRequest(request)), response);
+    } catch (error) {
+      logger.error('youtube_transcript_relay_adapter_failed', {
+        errorName: error instanceof Error ? error.name : undefined,
+      });
+      if (!response.headersSent) {
+        await sendWebResponse(
+          jsonResponse(500, {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Transcript relay failed unexpectedly.',
+            },
+          }),
+          response,
+        );
+      } else if (!response.writableEnded) {
+        response.end();
+      }
+    }
+  };
+}
+
+export default createVercelYouTubeTranscriptHandler();

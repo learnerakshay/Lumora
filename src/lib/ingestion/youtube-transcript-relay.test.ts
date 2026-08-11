@@ -1,16 +1,79 @@
 import assert from 'node:assert/strict';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
+import { Readable } from 'node:stream';
 import {
   YoutubeTranscriptNotAvailableError,
   YoutubeTranscriptTooManyRequestError,
   type TranscriptSegment,
 } from 'youtube-transcript-plus';
-import { createYouTubeTranscriptRelay } from '../../../api/youtube-transcript';
+import {
+  createVercelYouTubeTranscriptHandler,
+  createYouTubeTranscriptRelay,
+} from '../../../api/youtube-transcript';
 import { fetchYouTubeTranscript } from './youtube-transcript-provider';
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const TOKEN = 'relay-test-secret';
 const silentLogger = { info() {}, error() {} };
+
+function nodeRequest(body: string, token?: string): IncomingMessage {
+  const request = Readable.from([Buffer.from(body)]) as IncomingMessage;
+  request.method = 'POST';
+  request.url = '/api/youtube-transcript';
+  request.headers = {
+    host: 'lumora.example',
+    'content-type': 'application/json',
+    'content-length': String(Buffer.byteLength(body)),
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+  return request;
+}
+
+function nodeResponse() {
+  const headers = new Map<string, string | number | readonly string[]>();
+  const chunks: Buffer[] = [];
+  let finish!: () => void;
+  const completed = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const response = {
+    statusCode: 200,
+    headersSent: false,
+    writableEnded: false,
+    setHeader(name: string, value: string | number | readonly string[]) {
+      headers.set(name.toLowerCase(), value);
+      return this;
+    },
+    end(chunk?: string | Uint8Array) {
+      if (chunk) chunks.push(Buffer.from(chunk));
+      this.headersSent = true;
+      this.writableEnded = true;
+      finish();
+      return this;
+    },
+  } as unknown as ServerResponse;
+  return {
+    response,
+    completed,
+    body: () => Buffer.concat(chunks).toString('utf8'),
+    headers,
+  };
+}
+
+async function withoutHanging<T>(operation: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Vercel handler did not complete')), 250);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 function relayRequest(
   handler: (request: Request) => Promise<Response>,
@@ -37,6 +100,74 @@ function testRelay(
     logger: silentLogger,
   });
 }
+
+test('Vercel Node handler reaches extraction with the parsed videoId and ends the response', async () => {
+  let receivedVideoId = '';
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async (videoId) => {
+      receivedVideoId = videoId;
+      return [{ text: 'Node response', offset: 0, duration: 1, lang: 'en' }];
+    },
+    timeoutMs: 1_000,
+    logger: silentLogger,
+  });
+  const result = nodeResponse();
+  const request = nodeRequest('', TOKEN) as IncomingMessage & { body?: unknown };
+  request.body = { videoId: VIDEO_ID };
+
+  assert.equal(handler.length, 2);
+  await withoutHanging(handler(request, result.response));
+  await withoutHanging(result.completed);
+
+  assert.equal(receivedVideoId, VIDEO_ID);
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(result.response.writableEnded, true);
+  assert.deepEqual(JSON.parse(result.body()), {
+    language: 'en',
+    cues: [{ text: 'Node response', offset: 0, duration: 1, lang: 'en' }],
+  });
+});
+
+test('Vercel Node handler returns unauthorized immediately without extraction', async () => {
+  let called = false;
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async () => {
+      called = true;
+      return [];
+    },
+    logger: silentLogger,
+  });
+  const result = nodeResponse();
+
+  await withoutHanging(handler(nodeRequest(JSON.stringify({ videoId: VIDEO_ID })), result.response));
+
+  assert.equal(result.response.statusCode, 401);
+  assert.equal(result.response.writableEnded, true);
+  assert.equal(called, false);
+  assert.equal(JSON.parse(result.body()).error.code, 'UNAUTHORIZED');
+});
+
+test('Vercel Node handler returns malformed body immediately without extraction', async () => {
+  let called = false;
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async () => {
+      called = true;
+      return [];
+    },
+    logger: silentLogger,
+  });
+  const result = nodeResponse();
+
+  await withoutHanging(handler(nodeRequest('{not-json', TOKEN), result.response));
+
+  assert.equal(result.response.statusCode, 400);
+  assert.equal(result.response.writableEnded, true);
+  assert.equal(called, false);
+  assert.equal(JSON.parse(result.body()).error.code, 'MALFORMED_REQUEST');
+});
 
 test('relay accepts an authenticated valid request and normalizes complete cues', async () => {
   let receivedVideoId = '';
