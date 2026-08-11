@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { YoutubeTranscriptDisabledError } from 'youtube-transcript';
 import { IngestionFailure } from './errors';
 import { fetchYouTubeTranscript } from './youtube-transcript-provider';
 
@@ -30,7 +31,7 @@ test('direct YouTube provider distinguishes unavailable transcripts from provide
       { provider: 'direct', timeoutMs: 5_000 },
       {
         directFetch: async () => {
-          throw new Error('Transcript is disabled on this video');
+          throw new YoutubeTranscriptDisabledError('dQw4w9WgXcQ');
         },
       },
     ),
@@ -56,6 +57,47 @@ test('direct YouTube provider distinguishes unavailable transcripts from provide
       error.errorCode === 'TRANSCRIPT_PROVIDER_ERROR' &&
       error.provider === 'direct' &&
       error.retryable === true,
+  );
+});
+
+test('reference YouTube provider times out and rejects empty or malformed segments', async () => {
+  await assert.rejects(
+    fetchYouTubeTranscript(
+      'dQw4w9WgXcQ',
+      { provider: 'direct', timeoutMs: 10 },
+      { directFetch: async () => new Promise(() => undefined) },
+    ),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'TRANSCRIPT_PROVIDER_ERROR' &&
+      error.retryable === true &&
+      /timed out/i.test(error.userMessage),
+  );
+
+  await assert.rejects(
+    fetchYouTubeTranscript(
+      'dQw4w9WgXcQ',
+      { provider: 'direct', timeoutMs: 5_000 },
+      { directFetch: async () => [] },
+    ),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'TRANSCRIPT_UNAVAILABLE',
+  );
+
+  await assert.rejects(
+    fetchYouTubeTranscript(
+      'dQw4w9WgXcQ',
+      { provider: 'direct', timeoutMs: 5_000 },
+      {
+        directFetch: async () => [
+          { text: '', offset: 0, duration: 1_000, lang: 'en' },
+        ],
+      },
+    ),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'TRANSCRIPT_PROVIDER_ERROR',
   );
 });
 

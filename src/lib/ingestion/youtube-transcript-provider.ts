@@ -1,4 +1,12 @@
 import { getServerEnv } from '../env';
+import {
+  YoutubeTranscript,
+  YoutubeTranscriptDisabledError,
+  YoutubeTranscriptNotAvailableError,
+  YoutubeTranscriptNotAvailableLanguageError,
+  YoutubeTranscriptTooManyRequestError,
+  YoutubeTranscriptVideoUnavailableError,
+} from 'youtube-transcript';
 import { IngestionFailure } from './errors';
 import { validatePublicHttpsUrl } from './safe-fetch';
 
@@ -28,10 +36,7 @@ export interface YouTubeTranscriptProviderConfig {
 export interface YouTubeTranscriptProviderDependencies {
   fetchImpl?: typeof fetch;
   validateEndpoint?: typeof validatePublicHttpsUrl;
-  directFetch?: (
-    videoId: string,
-    options: Record<string, unknown>,
-  ) => Promise<YouTubeTranscriptCue[]>;
+  directFetch?: (videoId: string) => Promise<YouTubeTranscriptCue[]>;
 }
 
 function validateCues(value: unknown, provider: 'direct' | 'proxy'): YouTubeTranscriptCue[] {
@@ -79,21 +84,18 @@ async function fetchDirectTranscript(
   config: YouTubeTranscriptProviderConfig,
   dependencies: YouTubeTranscriptProviderDependencies,
 ): Promise<YouTubeTranscriptResult> {
-  const directFetch = dependencies.directFetch ||
-    (await import('youtube-transcript-plus')).fetchTranscript;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const directFetch = dependencies.directFetch || YoutubeTranscript.fetchTranscript.bind(YoutubeTranscript);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const cues = await directFetch(videoId, {
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-        'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-        'Chrome/124.0.0.0 Safari/537.36',
-      retries: 2,
-      retryDelay: 1_000,
-      signal: controller.signal,
+    const timeoutFailure = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        const error = new Error('Reference YouTube transcript extraction timed out');
+        error.name = 'AbortError';
+        reject(error);
+      }, config.timeoutMs);
     });
+    const cues = await Promise.race([directFetch(videoId), timeoutFailure]);
     const validated = validateCues(cues, 'direct');
     return {
       provider: 'direct',
@@ -102,7 +104,7 @@ async function fetchDirectTranscript(
     };
   } catch (error: any) {
     if (error instanceof IngestionFailure) throw error;
-    if (error?.name === 'AbortError' || controller.signal.aborted) {
+    if (error?.name === 'AbortError') {
       throw new IngestionFailure({
         message: 'Direct YouTube transcript provider timed out',
         errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
@@ -112,11 +114,27 @@ async function fetchDirectTranscript(
         cause: error,
       });
     }
-    if (/disabled|unavailable|no transcript|not available/i.test(error?.message || '')) {
+    if (
+      error instanceof YoutubeTranscriptDisabledError ||
+      error instanceof YoutubeTranscriptNotAvailableError ||
+      error instanceof YoutubeTranscriptNotAvailableLanguageError ||
+      error instanceof YoutubeTranscriptVideoUnavailableError ||
+      /disabled|unavailable|no transcript|not available/i.test(error?.message || '')
+    ) {
       throw new IngestionFailure({
         message: `Direct YouTube transcript is unavailable: ${error?.message || 'unavailable'}`,
         errorCode: 'TRANSCRIPT_UNAVAILABLE',
         userMessage: 'A transcript is not available for this YouTube video.',
+        provider: 'direct',
+        cause: error,
+      });
+    }
+    if (error instanceof YoutubeTranscriptTooManyRequestError) {
+      throw new IngestionFailure({
+        message: 'Direct YouTube transcript provider was rate limited',
+        errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+        userMessage: 'YouTube temporarily blocked transcript requests. Please retry shortly.',
+        retryable: true,
         provider: 'direct',
         cause: error,
       });
@@ -130,7 +148,7 @@ async function fetchDirectTranscript(
       cause: error,
     });
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -286,10 +304,8 @@ export async function fetchYouTubeTranscript(
   const resolved = config || (() => {
     const env = getServerEnv();
     return {
-      provider: env.YOUTUBE_TRANSCRIPT_PROVIDER,
+      provider: 'direct' as const,
       timeoutMs: env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
-      proxyUrl: env.YOUTUBE_TRANSCRIPT_PROXY_URL,
-      proxyToken: env.YOUTUBE_TRANSCRIPT_PROXY_TOKEN,
     };
   })();
 
