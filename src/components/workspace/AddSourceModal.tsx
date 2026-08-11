@@ -5,7 +5,6 @@ import {
   Globe,
   AlignLeft,
   Youtube,
-  Subtitles,
   Upload,
   Info,
   Check,
@@ -51,7 +50,7 @@ const SOURCE_OPTIONS: SourceOption[] = [
     title: 'Plain Text',
     description: 'Paste raw markdown notes, unstructured text snippets, or code documentation.',
     icon: AlignLeft,
-    badgeColor: 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60',
+    badgeColor: 'text-violet-400 bg-violet-950/60 border-violet-800/60',
   },
   {
     type: 'YOUTUBE',
@@ -59,13 +58,6 @@ const SOURCE_OPTIONS: SourceOption[] = [
     description: 'Extract video transcripts, timestamps, and spoken audio knowledge.',
     icon: Youtube,
     badgeColor: 'text-red-400 bg-red-950/60 border-red-800/60',
-  },
-  {
-    type: 'VTT',
-    title: 'VTT Captions',
-    description: 'Upload WebVTT subtitle tracks, video captions, or meeting transcript files.',
-    icon: Subtitles,
-    badgeColor: 'text-amber-400 bg-amber-950/60 border-amber-800/60',
   },
 ];
 
@@ -87,7 +79,7 @@ export function AddSourceModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedType(initialType);
+    setSelectedType(initialType === 'VTT' ? 'PDF' : initialType);
     setError(null);
   }, [initialType, isOpen]);
 
@@ -150,22 +142,6 @@ export function AddSourceModal({
         finalTitle = `YouTube Video (${finalUrl.substring(finalUrl.length - 11)})`;
       }
       finalSize = 'Auto Transcript';
-    } else if (selectedType === 'VTT') {
-      if (!selectedFile && !textContent && !finalUrl) {
-        setError('Please upload a .vtt subtitle file, enter a URL, or paste caption text.');
-        return;
-      }
-      if (!finalTitle) {
-        finalTitle = selectedFile ? selectedFile.name : 'Subtitle_Captions.vtt';
-      }
-      if (selectedFile) {
-        if (selectedFile.size > 2 * 1024 * 1024) {
-          setError('VTT files cannot exceed 2 MB.');
-          return;
-        }
-        finalSize = `${(selectedFile.size / 1024).toFixed(1)} KB`;
-        payloadRawContent = undefined;
-      }
     } else if (selectedType === 'TEXT') {
       if (!textContent.trim()) {
         setError('Please paste or type text content for this source.');
@@ -236,7 +212,7 @@ export function AddSourceModal({
           <div>
             <h2 id="add-source-title" className="text-base font-bold text-white">Add Knowledge Source</h2>
             <p className="text-xs text-slate-400">
-              Ingest, chunk, and generate vector embeddings for your workspace.
+              Add material Lumora can process and use in grounded answers.
             </p>
           </div>
           <button
@@ -254,9 +230,9 @@ export function AddSourceModal({
           {/* Source Type Grid */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-slate-300">
-              1. Choose Source Type
+              Choose a source type
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               {SOURCE_OPTIONS.map((opt) => {
                 const Icon = opt.icon;
                 const isSelected = selectedType === opt.type;
@@ -296,7 +272,7 @@ export function AddSourceModal({
           {/* Source Configuration Form */}
           <form onSubmit={handleSubmit} className="space-y-4 pt-2 border-t border-slate-800/80">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300">2. Configure Ingestion</label>
+              <label className="text-xs font-semibold text-slate-300">Source details</label>
             </div>
 
             {error && (
@@ -309,7 +285,7 @@ export function AddSourceModal({
             {/* Custom Title Input */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-slate-400">
-                Source Title <span className="text-slate-500">(Optional - auto-generated if blank)</span>
+                Source title <span className="text-slate-500">(optional)</span>
               </label>
               <input
                 type="text"
@@ -383,35 +359,6 @@ export function AddSourceModal({
               </div>
             )}
 
-            {selectedType === 'VTT' && (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-slate-400">WebVTT Subtitle File</label>
-                  <div className="relative border-2 border-dashed border-slate-800 hover:border-amber-500/50 rounded-xl p-3 text-center bg-slate-900/40 transition-colors">
-                    <input
-                      type="file"
-                      accept=".vtt,text/vtt"
-                      onChange={handleFileChange}
-                      aria-label="Choose VTT caption file"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <Subtitles className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                    <p className="text-xs text-slate-300 font-medium">
-                      {selectedFile ? selectedFile.name : 'Upload .vtt caption file'}
-                    </p>
-                  </div>
-                </div>
-
-                <textarea
-                  value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
-                  rows={3}
-                  placeholder="WEBVTT&#10;00:00:00.000 --> 00:00:05.000&#10;Welcome to Lumora AI Knowledge Operating System."
-                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-            )}
-
             {selectedType === 'TEXT' && (
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-slate-400">Plain Text / Markdown Snippet</label>
@@ -420,7 +367,7 @@ export function AddSourceModal({
                   onChange={(e) => setTextContent(e.target.value)}
                   rows={5}
                   placeholder="Paste documentation notes, specs, meeting transcripts, or text snippets here..."
-                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 leading-relaxed font-mono"
+                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 leading-relaxed"
                 />
               </div>
             )}
@@ -443,10 +390,10 @@ export function AddSourceModal({
                 {submitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Processing Ingestion...</span>
+                    <span>Adding source...</span>
                   </>
                 ) : (
-                  <span>Add Knowledge Source</span>
+                  <span>Add Source</span>
                 )}
               </button>
             </div>

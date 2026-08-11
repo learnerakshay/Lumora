@@ -32,6 +32,38 @@ interface Workspace {
   sourcesCount: number;
 }
 
+const WORKSPACE_CARD_ACCENTS = [
+  {
+    card: 'hover:border-sky-500/55 hover:shadow-sky-950/25',
+    glow: 'bg-sky-500/10',
+    icon: 'border-sky-700/60 bg-sky-950/55 text-sky-300',
+    title: 'group-hover:text-sky-300',
+    source: 'text-sky-400',
+    action: 'hover:border-sky-500/70 hover:bg-sky-500/10 hover:text-sky-200',
+  },
+  {
+    card: 'hover:border-cyan-500/55 hover:shadow-cyan-950/25',
+    glow: 'bg-cyan-500/10',
+    icon: 'border-cyan-700/60 bg-cyan-950/55 text-cyan-300',
+    title: 'group-hover:text-cyan-300',
+    source: 'text-cyan-400',
+    action: 'hover:border-cyan-500/70 hover:bg-cyan-500/10 hover:text-cyan-200',
+  },
+  {
+    card: 'hover:border-violet-500/50 hover:shadow-violet-950/25',
+    glow: 'bg-violet-500/10',
+    icon: 'border-violet-700/60 bg-violet-950/55 text-violet-300',
+    title: 'group-hover:text-violet-300',
+    source: 'text-violet-400',
+    action: 'hover:border-violet-500/70 hover:bg-violet-500/10 hover:text-violet-200',
+  },
+] as const;
+
+function getWorkspaceAccent(workspaceId: string) {
+  const hash = [...workspaceId].reduce((total, character) => total + character.charCodeAt(0), 0);
+  return WORKSPACE_CARD_ACCENTS[hash % WORKSPACE_CARD_ACCENTS.length];
+}
+
 function formatRelativeTime(dateString: string): string {
   try {
     const date = new Date(dateString);
@@ -225,8 +257,9 @@ export function WorkspacesPage() {
         )}
 
         {/* Compact welcome and real overview */}
-        <section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-[#111824] px-5 py-5 shadow-xl shadow-black/10 sm:px-6">
-          <div className="pointer-events-none absolute -right-20 -top-28 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
+        <section className="relative overflow-hidden rounded-2xl border border-sky-900/35 bg-[#111824] px-5 py-5 shadow-xl shadow-black/10 sm:px-6">
+          <div className="pointer-events-none absolute -right-20 -top-28 h-64 w-64 rounded-full bg-sky-500/12 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-32 left-1/3 h-48 w-64 rounded-full bg-violet-500/[0.06] blur-3xl" />
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-medium text-sky-400">Welcome back, {user?.fullName?.split(' ')[0] || 'learner'}</p>
@@ -234,8 +267,8 @@ export function WorkspacesPage() {
               <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-400">Open a Workspace and pick up where you left off.</p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:w-[290px]">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/35 p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><Folder className="h-4 w-4 text-sky-400" />Workspaces</div><p className="mt-1 text-xl font-semibold text-white">{totalWorkspaces}</p></div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/35 p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><FileText className="h-4 w-4 text-cyan-400" />Sources</div><p className="mt-1 text-xl font-semibold text-white">{totalSources}</p></div>
+              <div className="rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 shadow-inner shadow-sky-950/20"><div className="flex items-center gap-2 text-xs text-slate-300"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/10"><Folder className="h-4 w-4 text-sky-400" /></span>Workspaces</div><p className="mt-1 text-xl font-semibold text-white">{totalWorkspaces}</p></div>
+              <div className="rounded-xl border border-violet-800/35 bg-violet-950/15 p-3 shadow-inner shadow-violet-950/20"><div className="flex items-center gap-2 text-xs text-slate-300"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10"><FileText className="h-4 w-4 text-violet-400" /></span>Sources</div><p className="mt-1 text-xl font-semibold text-white">{totalSources}</p></div>
             </div>
           </div>
         </section>
@@ -379,15 +412,18 @@ export function WorkspacesPage() {
           ) : (
             /* Workspaces Cards Grid */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredWorkspaces.map((workspace) => (
+              {filteredWorkspaces.map((workspace) => {
+                const accent = getWorkspaceAccent(workspace.id);
+                return (
                 <article
                   key={workspace.id}
-                  className="group relative flex flex-col justify-between space-y-4 rounded-2xl border border-slate-800/90 bg-[#121824] p-5 shadow-md transition duration-200 hover:-translate-y-0.5 hover:border-sky-500/50 hover:bg-[#161f30] hover:shadow-xl hover:shadow-sky-950/20"
+                  className={`group relative flex flex-col justify-between space-y-4 overflow-hidden rounded-2xl border border-slate-800/90 bg-[#121824] p-5 shadow-md transition duration-200 hover:-translate-y-1 hover:bg-[#151e2c] hover:shadow-xl ${accent.card}`}
                 >
+                  <div className={`pointer-events-none absolute -right-10 -top-14 h-28 w-28 rounded-full opacity-60 blur-2xl transition-opacity group-hover:opacity-100 ${accent.glow}`} />
                   <div className="space-y-3">
                     {/* Header bar of Card */}
                     <div className="flex items-center justify-between">
-                      <div className="w-10 h-10 rounded-xl bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400 group-hover:scale-105 transition-transform">
+                      <div className={`relative flex h-10 w-10 items-center justify-center rounded-xl border shadow-inner transition-transform group-hover:scale-105 ${accent.icon}`}>
                         <WorkspaceIcon name={workspace.icon} className="w-5 h-5" />
                       </div>
 
@@ -424,7 +460,7 @@ export function WorkspacesPage() {
 
                     {/* Title & Description */}
                     <div>
-                      <h3 className="text-base font-semibold text-white group-hover:text-sky-300 transition-colors line-clamp-1">
+                      <h3 className={`text-base font-semibold text-white transition-colors line-clamp-1 ${accent.title}`}>
                         {workspace.name}
                       </h3>
                       <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
@@ -437,7 +473,7 @@ export function WorkspacesPage() {
                   <div className="pt-3 border-t border-slate-800/80 space-y-3">
                     <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
                       <span className="flex items-center space-x-1">
-                        <FileText className="w-3 h-3 text-sky-400" />
+                        <FileText className={`w-3 h-3 ${accent.source}`} />
                         <span>{workspace.sourcesCount} {workspace.sourcesCount === 1 ? 'source' : 'sources'}</span>
                       </span>
 
@@ -450,14 +486,15 @@ export function WorkspacesPage() {
                     <button
                       type="button"
                       onClick={() => navigate(`/workspaces/${workspace.id}`)}
-                      className="w-full py-2 px-3 bg-slate-900 hover:bg-sky-500 hover:text-slate-950 text-slate-300 border border-slate-800 hover:border-sky-400 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center justify-center space-x-2 group/btn cursor-pointer"
+                      className={`flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 transition-all duration-200 group/btn ${accent.action}`}
                     >
                       <span>Continue learning</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
                     </button>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

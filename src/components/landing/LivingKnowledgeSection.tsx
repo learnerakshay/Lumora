@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { LivingKnowledgeCanvas } from './LivingKnowledgeCanvas';
 import { ShieldCheck, Zap, Users, Sparkles, FileText, Globe, Video, MessageCircle, Lightbulb, Compass } from 'lucide-react';
 import gsap from 'gsap';
@@ -11,7 +11,6 @@ export function LivingKnowledgeSection() {
   const headingRef = useRef<HTMLDivElement>(null);
   const diagramRef = useRef<HTMLDivElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
-  const [activeInput, setActiveInput] = useState<number | null>(null);
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -98,49 +97,64 @@ export function LivingKnowledgeSection() {
             Dynamic Knowledge Orchestration
           </h2>
           <p className="text-slate-400 text-sm sm:text-base">
-            Watch Lumora continuously synthesize raw information streams into structured, queryable contextual intelligence.
+            Bring your sources together and turn them into grounded answers you can trace back to the original material.
           </p>
         </div>
 
         {/* Center Canvas Showcase Layout */}
-        <div ref={diagramRef} className="landing-card relative grid grid-cols-1 items-center gap-8 rounded-2xl border border-slate-800/80 bg-[#0d1522]/86 p-6 shadow-2xl backdrop-blur-sm sm:p-10 lg:grid-cols-12">
+        <div ref={diagramRef} className="living-diagram relative grid grid-cols-1 items-center gap-8 overflow-hidden rounded-2xl border border-sky-900/25 bg-[#0b1320]/60 p-6 backdrop-blur-sm sm:p-10 lg:grid-cols-12">
+          <div aria-hidden="true" className="living-diagram-atmosphere">
+            {Array.from({ length: 12 }, (_, index) => (
+              <span
+                key={index}
+                style={{
+                  '--star-index': index,
+                  '--star-x': `${4 + index * 8.1}%`,
+                  '--star-y': `${7 + ((index * 31) % 86)}%`,
+                  '--star-size': `${1 + (index % 2)}px`,
+                  '--star-opacity': 0.2 + (index % 4) * 0.1,
+                  '--star-duration': `${8 + (index % 5) * 1.4}s`,
+                } as React.CSSProperties}
+              />
+            ))}
+          </div>
           {/* Left Column: Input Stream Labels */}
-          <div className="lg:col-span-3 space-y-4">
+          <div className="relative z-10 lg:col-span-3 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-sky-400 font-mono">
               Input Knowledge Sources
             </h3>
             <div className="space-y-3">
-              <div onMouseEnter={() => setActiveInput(0)} onMouseLeave={() => setActiveInput(null)} className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
+              <div className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
                 <FileText className="w-4 h-4 text-red-400" />
                 <div>
                   <p className="font-semibold">PDF Documents</p>
-                  <p className="text-[10px] text-slate-400">OCR & Table Parsing</p>
+                  <p className="text-[10px] text-slate-400">Readable document import</p>
                 </div>
               </div>
-              <div onMouseEnter={() => setActiveInput(1)} onMouseLeave={() => setActiveInput(null)} className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
-                <Globe className="w-4 h-4 text-emerald-400" />
+              <div className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
+                <Globe className="h-4 w-4 text-cyan-300" />
                 <div>
                   <p className="font-semibold">Websites & Docs</p>
-                  <p className="text-[10px] text-slate-400">Live DOM Crawler</p>
+                  <p className="text-[10px] text-slate-400">Articles and documentation</p>
                 </div>
               </div>
-              <div onMouseEnter={() => setActiveInput(2)} onMouseLeave={() => setActiveInput(null)} className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
+              <div className="living-input group/input flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200 transition duration-300 hover:border-sky-500/50 hover:bg-slate-800">
                 <Video className="h-4 w-4 text-cyan-300" />
                 <div>
-                  <p className="font-semibold">YouTube & VTT</p>
-                  <p className="text-[10px] text-slate-400">Transcript Chunking</p>
+                  <p className="font-semibold">YouTube Videos</p>
+                  <p className="text-[10px] text-slate-400">Video transcripts</p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Center Column: Animated Lumora Three.js Core */}
-          <div className="living-core h-[320px] w-full sm:h-[400px] lg:col-span-6">
-            <LivingKnowledgeCanvas activeInput={activeInput} />
+          <div className="living-core relative z-10 h-[320px] w-full sm:h-[400px] lg:col-span-6">
+            <LivingKnowledgeCanvas />
           </div>
 
           {/* Right Column: Output Stream Labels */}
-          <div className="lg:col-span-3 space-y-4">
+          <div className="relative z-10 lg:col-span-3 space-y-4">
             <h3 className="font-mono text-xs font-bold uppercase tracking-widest text-blue-300">
               Output Intelligence
             </h3>
@@ -149,7 +163,7 @@ export function LivingKnowledgeSection() {
                 <MessageCircle className="w-4 h-4 text-sky-400" />
                 <div>
                   <p className="font-semibold">Grounded Answers</p>
-                  <p className="text-[10px] text-slate-400">Zero Hallucinations</p>
+                  <p className="text-[10px] text-slate-400">Answers grounded in your sources</p>
                 </div>
               </div>
               <div className="living-output flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200">
@@ -162,8 +176,8 @@ export function LivingKnowledgeSection() {
               <div className="living-output flex items-center space-x-3 rounded-xl border border-slate-800 bg-[#182030] p-3 text-xs text-slate-200">
                 <Compass className="w-4 h-4 text-teal-400" />
                 <div>
-                  <p className="font-semibold">Synthesized Artifacts</p>
-                  <p className="text-[10px] text-slate-400">Roadmaps & Summaries</p>
+                  <p className="font-semibold">Multi-source Understanding</p>
+                  <p className="text-[10px] text-slate-400">Connected insights across sources</p>
                 </div>
               </div>
             </div>
@@ -180,7 +194,7 @@ export function LivingKnowledgeSection() {
               Private & Secure
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Strict database and API workspace level isolation ensures your sources and queries remain 100% confidential.
+              Workspace-level isolation keeps each Workspace's sources and conversations separate.
             </p>
           </div>
 
@@ -192,7 +206,7 @@ export function LivingKnowledgeSection() {
               Lightning Fast
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Optimized pgvector indexing and streaming RAG delivery deliver sub-second vector search responses.
+              Streaming responses help you stay in the flow while Lumora works through your question.
             </p>
           </div>
 
@@ -204,7 +218,7 @@ export function LivingKnowledgeSection() {
               Built For Everyone
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Engineered for researchers, developers, students, and product teams handling high-volume knowledge.
+              Designed for students, researchers, and teams learning from complex source material.
             </p>
           </div>
 
@@ -213,10 +227,10 @@ export function LivingKnowledgeSection() {
               <Sparkles className="w-5 h-5" />
             </div>
             <h4 className="text-base font-bold text-white transition-colors group-hover:text-sky-300">
-              Limitless Potential
+              Grounded by Design
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Seamlessly scale your workspaces across thousands of sources without losing retrieval precision.
+              Follow citations back to the source material behind each supported answer.
             </p>
           </div>
         </div>

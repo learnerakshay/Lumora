@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../AuthProvider';
 import { HeroCoreCanvas } from './HeroCoreCanvas';
-import { FileText, Globe, Video, FileCode, MessageSquare, ArrowRight, Sparkles } from 'lucide-react';
+import { FileText, Globe, Video, FileCode, ArrowRight, Sparkles } from 'lucide-react';
 import gsap from 'gsap';
 
 const HERO_CONNECTIONS = [
@@ -10,8 +10,9 @@ const HERO_CONNECTIONS = [
   'M 184 357 C 305 347, 365 290, 462 252',
   'M 820 68 C 696 72, 641 169, 537 218',
   'M 816 350 C 694 344, 636 290, 538 252',
-  'M 500 416 C 500 364, 500 322, 500 286',
 ];
+
+const HERO_SOURCE_COLORS = ['#fb7185', '#22d3ee', '#f87171', '#a78bfa'];
 
 export function HeroSection() {
   const { isSignedIn } = useAuth();
@@ -23,6 +24,7 @@ export function HeroSection() {
   const cardsRef = useRef<HTMLDivElement>(null);
   const coreRef = useRef<HTMLDivElement>(null);
   const [activeConnection, setActiveConnection] = useState<number | null>(null);
+  const [coreHovered, setCoreHovered] = useState(false);
 
   const cardInteractionProps = (connectionIndex: number) => ({
     onPointerEnter: () => setActiveConnection(connectionIndex),
@@ -98,7 +100,7 @@ export function HeroSection() {
     if (!hero || !cards) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    const depths = [1, 0.72, 0.9, 0.78, 0.54];
+    const depths = [1, 0.72, 0.9, 0.78];
     let pointerX = 0;
     let pointerY = 0;
     let frame = 0;
@@ -171,7 +173,7 @@ export function HeroSection() {
           ref={sublineRef}
           className="mx-auto max-w-2xl text-sm font-normal leading-relaxed text-slate-300 sm:text-base lg:text-lg"
         >
-          Consolidate research papers, docs, web pages, media transcripts, and notes into a unified contextual intelligence engine built for high-velocity research.
+          Bring PDFs, web pages, YouTube videos, and notes together, then ask questions and learn from answers grounded in your sources.
         </p>
 
         {/* Primary CTA & Secondary */}
@@ -181,7 +183,7 @@ export function HeroSection() {
               to="/workspaces"
               className="landing-primary-cta group inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-6 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/25 hover:bg-sky-300"
             >
-              <span>Go to Workspaces Dashboard</span>
+              <span>Open Lumora</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           ) : (
@@ -189,13 +191,13 @@ export function HeroSection() {
               to="/sign-in"
               className="landing-primary-cta group inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/25 hover:bg-sky-300"
             >
-              <span>Try Lumora Now</span>
+              <span>Try Lumora</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           )}
 
           <p className="text-xs text-slate-400 tracking-wide">
-            No setup required. Instant workspace initialization.
+            Start with your own sources and learn in one focused Workspace.
           </p>
         </div>
       </div>
@@ -204,7 +206,7 @@ export function HeroSection() {
       <div className="relative z-10 mx-auto mt-2 w-full max-w-6xl sm:mt-4">
         {/* Three.js Lumora Core Canvas */}
         <div ref={coreRef} className="h-[340px] w-full sm:h-[430px] lg:h-[470px]">
-          <HeroCoreCanvas />
+          <HeroCoreCanvas onHoverChange={setCoreHovered} />
         </div>
 
         <svg
@@ -227,7 +229,8 @@ export function HeroSection() {
             return (
               <g
                 key={path}
-                className={`hero-connection ${isActive ? 'is-active' : ''}`}
+                className={`hero-connection ${isActive ? 'is-active' : ''} ${coreHovered ? 'is-core-active' : ''}`}
+                style={{ '--source-energy': HERO_SOURCE_COLORS[index] } as React.CSSProperties}
               >
                 <path className="hero-connection-line" d={path} />
                 <path
@@ -262,59 +265,49 @@ export function HeroSection() {
           className="absolute inset-0 pointer-events-none flex flex-wrap items-center justify-between p-4 sm:p-6"
         >
           {/* Card 1: PDF (Top Left) */}
-          <div {...cardInteractionProps(0)} style={{ '--float-duration': '8.4s', '--float-delay': '-1.7s', '--float-x': '4px', '--float-rotate': '-0.45deg' } as React.CSSProperties} className="landing-source-card absolute left-2 top-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:left-8 sm:flex">
+          <div {...cardInteractionProps(0)} data-source="pdf" style={{ '--float-duration': '8.4s', '--float-delay': '-1.7s', '--float-x': '4px', '--float-rotate': '-0.45deg' } as React.CSSProperties} className="landing-source-card absolute left-2 top-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:left-8 sm:flex">
             <div className="w-9 h-9 rounded-lg bg-red-950/60 border border-red-800/50 flex items-center justify-center text-red-400">
               <FileText className="w-4 h-4" />
             </div>
             <div className="text-left">
               <p className="text-xs font-semibold text-slate-200">Research_Paper.pdf</p>
-              <p className="text-[10px] text-slate-400 font-mono">142 Pages • Vector Indexed</p>
+              <p className="text-[10px] text-slate-400 font-mono">PDF document</p>
             </div>
           </div>
 
           {/* Card 2: Website (Bottom Left) */}
-          <div {...cardInteractionProps(1)} style={{ '--float-duration': '9.6s', '--float-delay': '-4.2s', '--float-x': '-5px', '--float-rotate': '0.35deg' } as React.CSSProperties} className="landing-source-card absolute bottom-8 left-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:left-12 sm:flex">
-            <div className="w-9 h-9 rounded-lg bg-emerald-950/60 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
+          <div {...cardInteractionProps(1)} data-source="website" style={{ '--float-duration': '9.6s', '--float-delay': '-4.2s', '--float-x': '-5px', '--float-rotate': '0.35deg' } as React.CSSProperties} className="landing-source-card absolute bottom-8 left-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:left-12 sm:flex">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-800/50 bg-cyan-950/60 text-cyan-300">
               <Globe className="w-4 h-4" />
             </div>
             <div className="text-left">
               <p className="text-xs font-semibold text-slate-200">https://docs.ai/specs</p>
-              <p className="text-[10px] text-slate-400 font-mono">Live Web Crawler</p>
+              <p className="text-[10px] text-slate-400 font-mono">Web page</p>
             </div>
           </div>
 
           {/* Card 3: YouTube (Top Right) */}
-          <div {...cardInteractionProps(2)} style={{ '--float-duration': '9.1s', '--float-delay': '-3.1s', '--float-x': '5px', '--float-rotate': '0.5deg' } as React.CSSProperties} className="landing-source-card absolute right-2 top-6 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:right-8 sm:flex">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-800/50 bg-cyan-950/60 text-cyan-300">
+          <div {...cardInteractionProps(2)} data-source="youtube" style={{ '--float-duration': '9.1s', '--float-delay': '-3.1s', '--float-x': '5px', '--float-rotate': '0.5deg' } as React.CSSProperties} className="landing-source-card absolute right-2 top-6 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:right-8 sm:flex">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-800/50 bg-red-950/60 text-red-400">
               <Video className="w-4 h-4" />
             </div>
             <div className="text-left">
-              <p className="text-xs font-semibold text-slate-200">Video Transcript</p>
-              <p className="text-[10px] text-slate-400 font-mono">Auto-Timestamped</p>
+              <p className="text-xs font-semibold text-slate-200">YouTube Video</p>
+              <p className="text-[10px] text-slate-400 font-mono">Video transcript</p>
             </div>
           </div>
 
-          {/* Card 4: Notes (Bottom Right) */}
-          <div {...cardInteractionProps(3)} style={{ '--float-duration': '8.9s', '--float-delay': '-5.4s', '--float-x': '-4px', '--float-rotate': '-0.3deg' } as React.CSSProperties} className="landing-source-card absolute bottom-10 right-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:right-12 sm:flex">
-            <div className="w-9 h-9 rounded-lg bg-sky-950/60 border border-sky-800/50 flex items-center justify-center text-sky-400">
+          {/* Card 4: Plain Text (Bottom Right) */}
+          <div {...cardInteractionProps(3)} data-source="text" style={{ '--float-duration': '8.9s', '--float-delay': '-5.4s', '--float-x': '-4px', '--float-rotate': '-0.3deg' } as React.CSSProperties} className="landing-source-card absolute bottom-10 right-4 hidden items-center space-x-3 rounded-xl border border-slate-800 bg-[#101826]/90 p-3 shadow-xl shadow-sky-950/30 backdrop-blur-md pointer-events-auto sm:right-12 sm:flex">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-violet-800/50 bg-violet-950/60 text-violet-300">
               <FileCode className="w-4 h-4" />
             </div>
             <div className="text-left">
-              <p className="text-xs font-semibold text-slate-200">Architectural Specs</p>
-              <p className="text-[10px] text-slate-400 font-mono">Markdown Format</p>
+              <p className="text-xs font-semibold text-slate-200">Plain Text Notes</p>
+              <p className="text-[10px] text-slate-400 font-mono">Text source</p>
             </div>
           </div>
 
-          {/* Card 5: Text Prompt (Center Bottom) */}
-          <div {...cardInteractionProps(4)} style={{ '--float-duration': '10.2s', '--float-delay': '-2.5s', '--float-x': '2px', '--float-rotate': '0.2deg' } as React.CSSProperties} className="landing-source-card absolute bottom-[-10px] left-1/2 flex -translate-x-1/2 items-center space-x-3 rounded-xl border border-sky-500/30 bg-[#101826]/95 p-3 shadow-2xl shadow-sky-950/50 backdrop-blur-md pointer-events-auto">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-800/60 bg-blue-950/80 text-blue-300">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-slate-200">Raw Context & Prompt</p>
-              <p className="text-[10px] text-sky-400 font-mono">Instant Contextual Ingest</p>
-            </div>
-          </div>
         </div>
       </div>
 

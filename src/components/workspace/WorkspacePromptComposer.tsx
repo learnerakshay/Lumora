@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { AlertCircle, Paperclip, Send, StopCircle } from 'lucide-react';
+import { Send, StopCircle } from 'lucide-react';
 import type { SourceRecord } from '../../lib/source-store';
 import type { AIActionRequest } from '../../lib/ai/actions/types';
 import { AIActionMenu } from './AIActionMenu';
@@ -9,7 +9,6 @@ export type AnswerMode = 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
 interface WorkspacePromptComposerProps {
   hasIndexedSources: boolean;
   isGenerating?: boolean;
-  onOpenAddSource: () => void;
   onSubmitMessage: (prompt: string, mode: AnswerMode) => void;
   sources?: SourceRecord[];
   selectedSourceId?: string | null;
@@ -25,14 +24,13 @@ interface WorkspacePromptComposerProps {
 const ANSWER_MODES: { id: AnswerMode; label: string }[] = [
   { id: 'CONCISE', label: 'Concise' },
   { id: 'DETAILED', label: 'Detailed' },
-  { id: 'CRITICAL', label: 'Deep Critical' },
+  { id: 'CRITICAL', label: 'Critical' },
   { id: 'CREATIVE', label: 'Creative' },
 ];
 
 export function WorkspacePromptComposer({
   hasIndexedSources,
   isGenerating = false,
-  onOpenAddSource,
   onSubmitMessage,
   sources = [],
   selectedSourceId,
@@ -69,26 +67,8 @@ export function WorkspacePromptComposer({
   };
 
   return (
-    <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800/80 bg-[#0f1520]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-4 sm:pt-4 md:px-5">
-      <div className="mx-auto max-w-4xl space-y-3">
-        {!hasIndexedSources && (
-          <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-800/50 bg-amber-950/40 px-3 py-2.5 text-xs text-amber-200 animate-fade-in sm:items-center">
-            <div className="flex min-w-0 items-start gap-2 sm:items-center">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400 sm:mt-0" />
-              <span className="leading-5">
-                Add and process a knowledge source to enable grounded conversation.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenAddSource}
-              className="shrink-0 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-bold text-slate-950 transition hover:bg-amber-400"
-            >
-              Add Source
-            </button>
-          </div>
-        )}
-
+    <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800/80 bg-[#0d131d]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-4 md:px-5">
+      <div className="mx-auto max-w-3xl space-y-2.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div aria-label="Synthesis mode" className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto">
             <span className="hidden shrink-0 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 sm:inline">
@@ -134,23 +114,14 @@ export function WorkspacePromptComposer({
             aria-label="Ask a question about Workspace sources"
             placeholder={
               hasIndexedSources
-                ? 'Ask anything about your Workspace sources…'
-                : 'Knowledge composer locked — add a source to start asking questions…'
+                ? 'Ask a question about your sources…'
+                : 'Add a source to start asking questions…'
             }
             className="block min-h-12 max-h-44 w-full resize-none overflow-x-hidden bg-transparent px-4 pb-2 pt-3.5 text-sm leading-6 text-white placeholder-slate-500 transition-[height] duration-150 focus:outline-none disabled:cursor-not-allowed sm:px-5"
           />
 
           <div className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800/70 px-2.5 py-2 sm:px-3">
             <div className="flex min-w-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenAddSource}
-                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-400 transition hover:bg-slate-800 hover:text-sky-300"
-                aria-label="Add a source"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Attach source</span>
-              </button>
               {onSubmitAction && (
                 <AIActionMenu
                   sources={sources}

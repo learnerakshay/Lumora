@@ -14,7 +14,11 @@ interface TravellingSignal {
   speed: number;
 }
 
-export function HeroCoreCanvas() {
+interface HeroCoreCanvasProps {
+  onHoverChange?: (hovered: boolean) => void;
+}
+
+export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
   const mountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -181,7 +185,7 @@ export function HeroCoreCanvas() {
       },
     );
 
-    const dustCount = mobile ? 70 : 170;
+    const dustCount = mobile ? 64 : 220;
     const dustPositions = new Float32Array(dustCount * 3);
     for (let index = 0; index < dustCount; index += 1) {
       const radius = 2.1 + Math.random() * 2.7;
@@ -207,16 +211,65 @@ export function HeroCoreCanvas() {
     const dust = new THREE.Points(dustGeometry, dustMaterial);
     system.add(dust);
 
+    const accentDustCount = mobile ? 18 : 54;
+    const accentDustPositions = new Float32Array(accentDustCount * 3);
+    for (let index = 0; index < accentDustCount; index += 1) {
+      const radius = 1.75 + Math.random() * 2.2;
+      const angle = Math.random() * Math.PI * 2;
+      accentDustPositions[index * 3] = Math.cos(angle) * radius;
+      accentDustPositions[index * 3 + 1] = (Math.random() - 0.5) * 2.8;
+      accentDustPositions[index * 3 + 2] = Math.sin(angle) * radius;
+    }
+    const accentDustGeometry = new THREE.BufferGeometry();
+    accentDustGeometry.setAttribute('position', new THREE.BufferAttribute(accentDustPositions, 3));
+    const accentDustMaterial = new THREE.PointsMaterial({
+      color: 0xa78bfa,
+      size: mobile ? 0.018 : 0.024,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const accentDust = new THREE.Points(accentDustGeometry, accentDustMaterial);
+    system.add(accentDust);
+
     let targetX = 0;
     let targetY = 0;
+    let hoverTarget = 0;
+    let hoverAmount = 0;
+    let coreIsHovered = false;
     const pointerSurface = container.closest('section') ?? container;
     const onPointerMove = (event: PointerEvent) => {
       if (mobile || reducedMotion) return;
       const rect = pointerSurface.getBoundingClientRect();
-      targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.5;
-      targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 0.36;
+      targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.62;
+      targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 0.44;
+    };
+    const onPointerLeave = () => {
+      targetX = 0;
+      targetY = 0;
     };
     pointerSurface.addEventListener('pointermove', onPointerMove, { passive: true });
+    pointerSurface.addEventListener('pointerleave', onPointerLeave, { passive: true });
+    const setCoreHovered = (hovered: boolean) => {
+      if (coreIsHovered === hovered) return;
+      coreIsHovered = hovered;
+      hoverTarget = hovered ? 1 : 0;
+      onHoverChange?.(hovered);
+    };
+    const onCoreMove = (event: PointerEvent) => {
+      if (mobile || reducedMotion) return;
+      const rect = container.getBoundingClientRect();
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      const hoverRadius = Math.min(rect.width, rect.height) * 0.28;
+      setCoreHovered(Math.hypot(dx, dy) <= hoverRadius);
+    };
+    const onCoreLeave = () => {
+      setCoreHovered(false);
+    };
+    container.addEventListener('pointermove', onCoreMove, { passive: true });
+    container.addEventListener('pointerleave', onCoreLeave, { passive: true });
 
     const updateGeometry = (time: number) => {
       nodes.forEach((node, index) => {
@@ -247,23 +300,32 @@ export function HeroCoreCanvas() {
       updateGeometry(elapsed);
 
       if (!reducedMotion) {
+        hoverAmount += (hoverTarget - hoverAmount) * 0.055;
+        const activity = 1 + hoverAmount * 0.55;
         const entrance = Math.min(1, elapsed / 1.8);
         system.scale.setScalar(0.86 + entrance * 0.14);
-        core.rotation.y = elapsed * 0.11;
-        core.rotation.z = elapsed * 0.047;
-        nodeCloud.rotation.y = elapsed * -0.035;
+        core.rotation.y += 0.00215 * activity;
+        core.rotation.z += 0.0009 * activity;
+        nodeCloud.rotation.y -= 0.00058 * activity;
         edges.rotation.y = nodeCloud.rotation.y;
-        dust.rotation.y = elapsed * 0.018;
+        dust.rotation.y += 0.0003 * activity;
         dust.rotation.x = Math.sin(elapsed * 0.09) * 0.08;
+        accentDust.rotation.y -= 0.00022 * activity;
+        accentDust.rotation.z = Math.sin(elapsed * 0.07) * 0.06;
         const breath = 1 + Math.sin(elapsed * 0.72) * 0.045;
         innerCore.scale.setScalar(breath);
         halo.scale.setScalar(1 + Math.sin(elapsed * 0.41 + 1.2) * 0.07);
-        haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012;
-        system.rotation.y += (targetX - system.rotation.y) * 0.035;
-        system.rotation.x += (-targetY - system.rotation.x) * 0.035;
+        haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012 + hoverAmount * 0.035;
+        nodeMaterial.opacity = 0.9 + hoverAmount * 0.1;
+        dustMaterial.opacity = 0.42 + hoverAmount * 0.16;
+        accentDustMaterial.opacity = 0.28 + hoverAmount * 0.16;
+        system.rotation.y += (targetX - system.rotation.y) * 0.075;
+        system.rotation.x += (-targetY - system.rotation.x) * 0.075;
+        system.position.x += (targetX * 0.16 - system.position.x) * 0.06;
+        system.position.y += (-targetY * 0.12 - system.position.y) * 0.06;
 
         signals.forEach((signal, index) => {
-          signal.progress += signal.speed * (1 + Math.sin(elapsed * 0.3 + index) * 0.15);
+          signal.progress += signal.speed * activity * (1 + Math.sin(elapsed * 0.3 + index) * 0.15);
           if (signal.progress >= 1) {
             signal.progress = 0;
             const pair =
@@ -336,6 +398,9 @@ export function HeroCoreCanvas() {
       intersectionObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
       pointerSurface.removeEventListener('pointermove', onPointerMove);
+      pointerSurface.removeEventListener('pointerleave', onPointerLeave);
+      container.removeEventListener('pointermove', onCoreMove);
+      container.removeEventListener('pointerleave', onCoreLeave);
       renderer.domElement.remove();
       coreGeometry.dispose();
       coreMaterial.dispose();
@@ -353,6 +418,8 @@ export function HeroCoreCanvas() {
       });
       dustGeometry.dispose();
       dustMaterial.dispose();
+      accentDustGeometry.dispose();
+      accentDustMaterial.dispose();
       renderer.dispose();
     };
   }, []);

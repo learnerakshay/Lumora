@@ -19,7 +19,7 @@ const STAGE_LABELS: Partial<Record<ProcessingStage, string>> = {
   READY_FOR_INDEXING: 'Ready to index',
   EMBEDDING: 'Embedding',
   INDEXING: 'Indexing',
-  COMPLETED: 'Completed',
+  COMPLETED: 'Ready',
   FAILED: 'Failed',
 };
 
@@ -36,7 +36,7 @@ export function SourceStatusBadge({
   const label = isFailed
     ? 'Failed'
     : isCompleted
-      ? 'Completed'
+      ? 'Ready'
       : STAGE_LABELS[stage] || 'Processing';
 
   const styles = isFailed
