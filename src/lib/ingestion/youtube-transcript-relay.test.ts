@@ -129,6 +129,27 @@ test('Vercel Node handler reaches extraction with the parsed videoId and ends th
   });
 });
 
+test('Vercel Node handler falls back to a valid raw JSON stream when body is unavailable', async () => {
+  let receivedVideoId = '';
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async (videoId) => {
+      receivedVideoId = videoId;
+      return [{ text: 'Raw response', offset: 0, duration: 1, lang: 'en' }];
+    },
+    logger: silentLogger,
+  });
+  const result = nodeResponse();
+
+  await withoutHanging(
+    handler(nodeRequest(JSON.stringify({ videoId: VIDEO_ID }), TOKEN), result.response),
+  );
+
+  assert.equal(receivedVideoId, VIDEO_ID);
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(result.response.writableEnded, true);
+});
+
 test('Vercel Node handler returns unauthorized immediately without extraction', async () => {
   let called = false;
   const handler = createVercelYouTubeTranscriptHandler({
@@ -167,6 +188,45 @@ test('Vercel Node handler returns malformed body immediately without extraction'
   assert.equal(result.response.writableEnded, true);
   assert.equal(called, false);
   assert.equal(JSON.parse(result.body()).error.code, 'MALFORMED_REQUEST');
+});
+
+test('Vercel Node adapter logs the failure step and terminates after a response write error', async () => {
+  const errors: Array<{ failureStep?: string; errorName?: string; errorMessage?: string }> = [];
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async () => [
+      { text: 'Will fail while writing', offset: 0, duration: 1, lang: 'en' },
+    ],
+    logger: {
+      info() {},
+      error(_event, metadata) {
+        errors.push(metadata as typeof errors[number]);
+      },
+    },
+  });
+  const result = nodeResponse();
+  const originalSetHeader = result.response.setHeader.bind(result.response);
+  let failOnce = true;
+  result.response.setHeader = ((name: string, value: string | number | readonly string[]) => {
+    if (failOnce) {
+      failOnce = false;
+      throw new Error('simulated response header failure');
+    }
+    return originalSetHeader(name, value);
+  }) as ServerResponse['setHeader'];
+
+  await withoutHanging(
+    handler(nodeRequest(JSON.stringify({ videoId: VIDEO_ID }), TOKEN), result.response),
+  );
+  await withoutHanging(result.completed);
+
+  assert.equal(result.response.statusCode, 500);
+  assert.equal(result.response.writableEnded, true);
+  assert.deepEqual(errors[0], {
+    errorName: 'Error',
+    errorMessage: 'simulated response header failure',
+    failureStep: 'WRITE_RESPONSE',
+  });
 });
 
 test('relay accepts an authenticated valid request and normalizes complete cues', async () => {

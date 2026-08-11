@@ -63,17 +63,55 @@ interface NormalizedCue {
 
 type VercelRequest = IncomingMessage & { body?: unknown };
 
+interface RelayRequestInput {
+  method: string;
+  authorization: string;
+  contentType: string | undefined;
+  readPayload: () => Promise<unknown>;
+}
+
 function requestHeader(request: IncomingMessage, name: string): string | undefined {
   const value = request.headers[name];
   return Array.isArray(value) ? value[0] : value;
 }
 
-async function readNodeRequestBody(request: VercelRequest): Promise<BodyInit | undefined> {
+function parseJsonPayload(rawBody: string): unknown {
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    throw new RelayFailure(400, 'MALFORMED_REQUEST', 'Request body must be valid JSON.');
+  }
+}
+
+function assertBodySize(rawBody: string | Buffer): void {
+  if (Buffer.byteLength(rawBody) > MAX_REQUEST_BYTES) {
+    throw new RelayFailure(413, 'REQUEST_TOO_LARGE', 'Request body exceeds the size limit.');
+  }
+}
+
+async function readNodeRequestPayload(request: VercelRequest): Promise<unknown> {
+  const declaredLength = Number(requestHeader(request, 'content-length') || '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    throw new RelayFailure(413, 'REQUEST_TOO_LARGE', 'Request body exceeds the size limit.');
+  }
+
   if (request.body !== undefined) {
-    if (typeof request.body === 'string' || Buffer.isBuffer(request.body)) {
-      return request.body;
+    if (typeof request.body === 'string') {
+      assertBodySize(request.body);
+      return parseJsonPayload(request.body);
     }
-    return JSON.stringify(request.body);
+    if (Buffer.isBuffer(request.body)) {
+      assertBodySize(request.body);
+      return parseJsonPayload(request.body.toString('utf8'));
+    }
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(request.body);
+    } catch {
+      throw new RelayFailure(400, 'MALFORMED_REQUEST', 'Request body must be valid JSON.');
+    }
+    assertBodySize(serialized);
+    return request.body;
   }
 
   const chunks: Buffer[] = [];
@@ -83,32 +121,11 @@ async function readNodeRequestBody(request: VercelRequest): Promise<BodyInit | u
     const remaining = MAX_REQUEST_BYTES + 1 - received;
     if (remaining > 0) chunks.push(buffer.subarray(0, remaining));
     received += buffer.byteLength;
-    if (received > MAX_REQUEST_BYTES) break;
-  }
-  return chunks.length > 0 ? Buffer.concat(chunks) : undefined;
-}
-
-async function toWebRequest(request: VercelRequest): Promise<Request> {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(request.headers)) {
-    if (Array.isArray(value)) {
-      for (const item of value) headers.append(name, item);
-    } else if (value !== undefined) {
-      headers.set(name, value);
+    if (received > MAX_REQUEST_BYTES) {
+      throw new RelayFailure(413, 'REQUEST_TOO_LARGE', 'Request body exceeds the size limit.');
     }
   }
-
-  const protocol = requestHeader(request, 'x-forwarded-proto') || 'https';
-  const host = requestHeader(request, 'x-forwarded-host') || requestHeader(request, 'host') || 'localhost';
-  const method = request.method || 'GET';
-  const body = method === 'GET' || method === 'HEAD'
-    ? undefined
-    : await readNodeRequestBody(request);
-  return new Request(new URL(request.url || '/api/youtube-transcript', `${protocol}://${host}`), {
-    method,
-    headers,
-    body,
-  });
+  return parseJsonPayload(Buffer.concat(chunks).toString('utf8'));
 }
 
 async function sendWebResponse(response: Response, destination: ServerResponse): Promise<void> {
@@ -263,17 +280,17 @@ function classifyExtractionError(error: unknown, timedOut: boolean): RelayFailur
   return new RelayFailure(500, 'INTERNAL_ERROR', 'Transcript extraction failed unexpectedly.', error);
 }
 
-export function createYouTubeTranscriptRelay(dependencies: RelayDependencies = {}) {
+function createYouTubeTranscriptProcessor(dependencies: RelayDependencies = {}) {
   const transcriptFetch = dependencies.transcriptFetch || fetchTranscript;
   const getSecret = dependencies.getSecret || (() => process.env.YOUTUBE_TRANSCRIPT_RELAY_TOKEN);
   const timeoutMs = dependencies.timeoutMs || DEFAULT_EXTRACTION_TIMEOUT_MS;
   const logger = dependencies.logger || console;
 
-  return async function youtubeTranscriptRelay(request: Request): Promise<Response> {
+  return async function processYouTubeTranscript(input: RelayRequestInput): Promise<Response> {
     const startedAt = Date.now();
     let videoId: string | undefined;
     try {
-      if (request.method !== 'POST') {
+      if (input.method !== 'POST') {
         throw new RelayFailure(405, 'METHOD_NOT_ALLOWED', 'Only POST requests are supported.');
       }
 
@@ -281,23 +298,17 @@ export function createYouTubeTranscriptRelay(dependencies: RelayDependencies = {
       if (!secret) {
         throw new RelayFailure(500, 'RELAY_NOT_CONFIGURED', 'Transcript relay is not configured.');
       }
-      const authorization = request.headers.get('authorization') || '';
+      const authorization = input.authorization;
       const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
       if (!token || !secureEqual(token, secret)) {
         throw new RelayFailure(401, 'UNAUTHORIZED', 'A valid bearer token is required.');
       }
 
-      const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+      const contentType = input.contentType?.split(';', 1)[0].trim().toLowerCase();
       if (contentType !== 'application/json') {
         throw new RelayFailure(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json.');
       }
-      const rawBody = await readBoundedBody(request);
-      let payload: unknown;
-      try {
-        payload = JSON.parse(rawBody);
-      } catch {
-        throw new RelayFailure(400, 'MALFORMED_REQUEST', 'Request body must be valid JSON.');
-      }
+      const payload = await input.readPayload();
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new RelayFailure(400, 'MALFORMED_REQUEST', 'Request body must be a JSON object.');
       }
@@ -360,32 +371,76 @@ export function createYouTubeTranscriptRelay(dependencies: RelayDependencies = {
   };
 }
 
+export function createYouTubeTranscriptRelay(dependencies: RelayDependencies = {}) {
+  const processRequest = createYouTubeTranscriptProcessor(dependencies);
+  return async function youtubeTranscriptRelay(request: Request): Promise<Response> {
+    return processRequest({
+      method: request.method,
+      authorization: request.headers.get('authorization') || '',
+      contentType: request.headers.get('content-type') || undefined,
+      readPayload: async () => parseJsonPayload(await readBoundedBody(request)),
+    });
+  };
+}
+
 export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependencies = {}) {
-  const relay = createYouTubeTranscriptRelay(dependencies);
+  const processRequest = createYouTubeTranscriptProcessor(dependencies);
   const logger = dependencies.logger || console;
 
   return async function vercelYouTubeTranscriptHandler(
     request: VercelRequest,
     response: ServerResponse,
   ): Promise<void> {
+    let failureStep = 'READ_REQUEST';
     try {
-      await sendWebResponse(await relay(await toWebRequest(request)), response);
+      const input: RelayRequestInput = {
+        method: request.method || 'GET',
+        authorization: requestHeader(request, 'authorization') || '',
+        contentType: requestHeader(request, 'content-type'),
+        readPayload: () => readNodeRequestPayload(request),
+      };
+      failureStep = 'PROCESS_RELAY';
+      const relayResponse = await processRequest(input);
+      failureStep = 'WRITE_RESPONSE';
+      await sendWebResponse(relayResponse, response);
     } catch (error) {
       logger.error('youtube_transcript_relay_adapter_failed', {
         errorName: error instanceof Error ? error.name : undefined,
+        errorMessage: error instanceof Error ? error.message : 'Unknown adapter failure',
+        failureStep,
       });
-      if (!response.headersSent) {
-        await sendWebResponse(
-          jsonResponse(500, {
-            error: {
-              code: 'INTERNAL_ERROR',
-              message: 'Transcript relay failed unexpectedly.',
-            },
-          }),
-          response,
-        );
-      } else if (!response.writableEnded) {
-        response.end();
+      try {
+        if (!response.headersSent) {
+          await sendWebResponse(
+            jsonResponse(500, {
+              error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Transcript relay failed unexpectedly.',
+              },
+            }),
+            response,
+          );
+        }
+      } catch (fallbackError) {
+        logger.error('youtube_transcript_relay_adapter_failed', {
+          errorName: fallbackError instanceof Error ? fallbackError.name : undefined,
+          errorMessage: fallbackError instanceof Error
+            ? fallbackError.message
+            : 'Unknown adapter failure',
+          failureStep: 'WRITE_ERROR_RESPONSE',
+        });
+      } finally {
+        if (!response.writableEnded) {
+          try {
+            response.end();
+          } catch (endError) {
+            logger.error('youtube_transcript_relay_adapter_failed', {
+              errorName: endError instanceof Error ? endError.name : undefined,
+              errorMessage: endError instanceof Error ? endError.message : 'Unknown adapter failure',
+              failureStep: 'END_RESPONSE',
+            });
+          }
+        }
       }
     }
   };
