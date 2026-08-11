@@ -7,6 +7,7 @@ import {
   YoutubeTranscriptTooManyRequestError,
   YoutubeTranscriptVideoUnavailableError,
 } from 'youtube-transcript';
+import { logger } from '../logger';
 import { IngestionFailure } from './errors';
 import { validatePublicHttpsUrl } from './safe-fetch';
 
@@ -88,6 +89,12 @@ async function fetchDirectTranscript(
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
+    const fetchStartedAt = Date.now();
+    logger.info('YouTube transcript extraction diagnostic', {
+      videoId,
+      stage: 'TRANSCRIPT_FETCH_START',
+      timestamp: new Date(fetchStartedAt).toISOString(),
+    });
     const timeoutFailure = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
         const error = new Error('Reference YouTube transcript extraction timed out');
@@ -95,7 +102,26 @@ async function fetchDirectTranscript(
         reject(error);
       }, config.timeoutMs);
     });
-    const cues = await Promise.race([directFetch(videoId), timeoutFailure]);
+    let cues: YouTubeTranscriptCue[];
+    try {
+      cues = await Promise.race([directFetch(videoId), timeoutFailure]);
+      logger.info('YouTube transcript extraction diagnostic', {
+        videoId,
+        stage: 'TRANSCRIPT_FETCH_SUCCESS',
+        segmentCount: cues.length,
+        durationMs: Date.now() - fetchStartedAt,
+      });
+    } catch (error: any) {
+      logger.error('YouTube transcript extraction diagnostic', undefined, {
+        videoId,
+        stage: 'TRANSCRIPT_FETCH_FAILED',
+        errorConstructorName: error?.constructor?.name || typeof error,
+        errorName: error?.name || null,
+        errorMessage: error?.message || String(error),
+        durationMs: Date.now() - fetchStartedAt,
+      });
+      throw error;
+    }
     const validated = validateCues(cues, 'direct');
     return {
       provider: 'direct',
