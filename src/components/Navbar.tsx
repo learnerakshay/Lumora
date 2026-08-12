@@ -41,6 +41,10 @@ export function Navbar() {
     }
   };
 
+  // The Workspace dashboard provides its own authenticated app navigation.
+  // Keep the existing header on the learning Workspace route unchanged.
+  if (location.pathname.startsWith('/workspaces')) return null;
+
   return (
     <header
       className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-300 border-b ${
@@ -149,7 +153,7 @@ export function Navbar() {
                 to="/sign-in"
                 className="text-xs font-semibold text-slate-950 bg-sky-400 hover:bg-sky-300 transition-all px-4 py-2 rounded-lg shadow-md shadow-sky-500/20 hover:shadow-sky-400/30"
               >
-                Try Lumora Now
+                Try Lumora
               </Link>
             </div>
           )}
@@ -197,7 +201,7 @@ export function Navbar() {
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full text-center py-2 bg-sky-500 text-slate-950 font-semibold text-xs rounded-lg"
                 >
-                  Go to Workspaces
+                  Open Lumora
                 </Link>
                 <button
                   onClick={() => {
@@ -215,7 +219,7 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className="w-full text-center py-2 bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg shadow-sm"
               >
-                Try Lumora Now
+                Try Lumora
               </Link>
             )}
           </div>

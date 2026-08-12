@@ -14,7 +14,7 @@ export function SourceTypeIcon({ type, className = 'w-4 h-4' }: SourceTypeIconPr
     case 'WEBSITE':
       return <Globe className={`${className} text-sky-400`} />;
     case 'TEXT':
-      return <AlignLeft className={`${className} text-emerald-400`} />;
+      return <AlignLeft className={`${className} text-violet-400`} />;
     case 'YOUTUBE':
       return <Youtube className={`${className} text-red-500`} />;
     case 'VTT':

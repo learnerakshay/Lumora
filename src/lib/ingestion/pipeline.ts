@@ -1,8 +1,10 @@
 import {
+  claimProcessingAttempt,
   getSourceArtifact,
   persistParsedSourceArtifact,
   ProcessingStage,
   SourceType,
+  touchProcessingAttempt,
   transitionProcessingStage,
 } from '../source-store';
 import { parseSourceContent } from './parsers';
@@ -42,6 +44,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   success: boolean;
   chunkCount: number;
   tokenCount: number;
+  claimed: boolean;
   error?: string;
 }> {
   const artifact = await getSourceArtifact(options.sourceId, options.version);
@@ -49,37 +52,80 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     throw new Error(`Persisted artifact not found for source ${options.sourceId}`);
   }
   const version = artifact.version;
+  const claimed = await claimProcessingAttempt({ sourceId: options.sourceId, version });
+  if (!claimed) {
+    logger.info('Ingestion claim skipped because the attempt is already claimed or obsolete', {
+      sourceId: options.sourceId,
+      version,
+      sourceType: options.type,
+    });
+    return {
+      success: false,
+      claimed: false,
+      chunkCount: 0,
+      tokenCount: 0,
+      error: 'Processing attempt was already claimed.',
+    };
+  }
 
-  logger.info(
-    `Starting ingestion for source [${options.sourceId}] version ${version} (${options.type})`,
-  );
+  const pipelineStartedAt = Date.now();
+  let currentStage: ProcessingStage = 'QUEUED';
+  let stageStartedAt = Date.now();
+
+  const enterStage = async (
+    nextStage: ProcessingStage,
+    details: Record<string, any> = {},
+  ): Promise<void> => {
+    const previousStage = currentStage;
+    const previousStageDurationMs = Date.now() - stageStartedAt;
+    logger.info('Ingestion stage completed', {
+      sourceId: options.sourceId,
+      version,
+      sourceType: options.type,
+      stage: previousStage,
+      durationMs: previousStageDurationMs,
+      nextStage,
+    });
+    await transitionProcessingStage({
+      sourceId: options.sourceId,
+      version,
+      nextStage,
+      details: {
+        ...details,
+        previousStage,
+        previousStageDurationMs,
+      },
+    });
+    currentStage = nextStage;
+    stageStartedAt = Date.now();
+  };
+
+  const heartbeat = async (): Promise<void> => {
+    const touched = await touchProcessingAttempt({
+      sourceId: options.sourceId,
+      version,
+      stage: currentStage,
+    });
+    if (!touched) {
+      throw new Error('Processing attempt lease was lost');
+    }
+  };
+
+  logger.info('Starting claimed ingestion attempt', {
+    sourceId: options.sourceId,
+    version,
+    sourceType: options.type,
+  });
 
   try {
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'QUEUED',
-    });
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'PROCESSING',
-    });
+    await enterStage('PROCESSING');
 
     const needsFetch = requiresRemoteFetch(options.type, artifact);
     let parsingTransitionCompleted = false;
     if (needsFetch) {
-      await transitionProcessingStage({
-        sourceId: options.sourceId,
-        version,
-        nextStage: 'FETCHING',
-      });
+      await enterStage('FETCHING');
     } else {
-      await transitionProcessingStage({
-        sourceId: options.sourceId,
-        version,
-        nextStage: 'PARSING',
-      });
+      await enterStage('PARSING');
       parsingTransitionCompleted = true;
     }
 
@@ -94,14 +140,11 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       parserMetadata: artifact.parserMetadata,
       onParsing: async () => {
         if (!parsingTransitionCompleted) {
-          await transitionProcessingStage({
-            sourceId: options.sourceId,
-            version,
-            nextStage: 'PARSING',
-          });
+          await enterStage('PARSING');
           parsingTransitionCompleted = true;
         }
       },
+      onHeartbeat: heartbeat,
     });
 
     if (!parsingTransitionCompleted) {
@@ -126,19 +169,11 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       parserVersion: parsed.parserVersion,
     });
 
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'CHUNKING',
-      details: {
-        parserVersion: parsed.parserVersion,
-        parsedTitle: parsed.title,
-        textLength: parsed.cleanText.length,
-        url: parsed.sourceUrl || null,
-        fileSize: parsed.artifactSize
-          ? `${(parsed.artifactSize / 1024).toFixed(1)} KB`
-          : null,
-      },
+    await enterStage('CHUNKING', {
+      parserVersion: parsed.parserVersion,
+      textLength: parsed.cleanText.length,
+      remoteSource: Boolean(parsed.sourceUrl),
+      artifactSize: parsed.artifactSize ?? null,
     });
 
     const chunks = generateSemanticChunks(parsed.cleanText, {
@@ -149,40 +184,40 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       throw new Error('Chunking produced zero valid content segments');
     }
 
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'READY_FOR_INDEXING',
-      details: { chunkCount: chunks.length },
-    });
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'EMBEDDING',
-      details: { chunkCount: chunks.length },
-    });
+    await enterStage('READY_FOR_INDEXING', { chunkCount: chunks.length });
+    await enterStage('EMBEDDING', { chunkCount: chunks.length });
 
     const embeddingBatch = await generateEmbeddingsBatch(
       chunks.map((chunk) => chunk.content),
+      async (_processed, _total, progress) => {
+        await heartbeat();
+        if (progress) {
+          logger.info('Ingestion embedding batch completed', {
+            sourceId: options.sourceId,
+            version,
+            sourceType: options.type,
+            stage: currentStage,
+            processed: progress.processed,
+            total: progress.total,
+            batchIndex: progress.batchIndex,
+            batchCount: progress.batchCount,
+            attempts: progress.attempts,
+            durationMs: progress.durationMs,
+          });
+        }
+      },
     );
-    if (
-      embeddingBatch.vectors.length !== chunks.length
-    ) {
+    if (embeddingBatch.vectors.length !== chunks.length) {
       throw new Error('Embedding generation did not return one vector per chunk');
     }
 
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'INDEXING',
-      details: {
-        chunkCount: chunks.length,
-        embeddingProvider: embeddingBatch.contract.provider,
-        embeddingModel: embeddingBatch.contract.model,
-        embeddingVersion: embeddingBatch.contract.version,
-        vectorDimensions: embeddingBatch.contract.dimensions,
-        chunkVersion: CHUNK_VERSION,
-      },
+    await enterStage('INDEXING', {
+      chunkCount: chunks.length,
+      embeddingProvider: embeddingBatch.contract.provider,
+      embeddingModel: embeddingBatch.contract.model,
+      embeddingVersion: embeddingBatch.contract.version,
+      vectorDimensions: embeddingBatch.contract.dimensions,
+      chunkVersion: CHUNK_VERSION,
     });
     const committedIndex = await saveSourceIndex({
       workspaceId: options.workspaceId,
@@ -203,62 +238,86 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       (total, chunk) => total + chunk.tokenCount,
       0,
     );
-    await transitionProcessingStage({
-      sourceId: options.sourceId,
-      version,
-      nextStage: 'COMPLETED',
-      details: {
-        chunkCount: committedIndex.chunkCount,
-        tokenCount,
-        textLength: parsed.cleanText.length,
-        parserVersion: parsed.parserVersion,
-        indexId: committedIndex.indexId,
-        indexedAt: committedIndex.indexedAt,
-        sourceVersion: committedIndex.sourceVersion,
-        chunkVersion: committedIndex.chunkVersion,
-        embeddingProvider: embeddingBatch.contract.provider,
-        embeddingModel: embeddingBatch.contract.model,
-        embeddingVersion: embeddingBatch.contract.version,
-        vectorDimensions: embeddingBatch.contract.dimensions,
-      },
+    await enterStage('COMPLETED', {
+      chunkCount: committedIndex.chunkCount,
+      tokenCount,
+      textLength: parsed.cleanText.length,
+      parserVersion: parsed.parserVersion,
+      indexId: committedIndex.indexId,
+      indexedAt: committedIndex.indexedAt,
+      sourceVersion: committedIndex.sourceVersion,
+      chunkVersion: committedIndex.chunkVersion,
+      embeddingProvider: embeddingBatch.contract.provider,
+      embeddingModel: embeddingBatch.contract.model,
+      embeddingVersion: embeddingBatch.contract.version,
+      vectorDimensions: embeddingBatch.contract.dimensions,
+      totalDurationMs: Date.now() - pipelineStartedAt,
     });
 
-    logger.info(
-      `Completed ingestion for source [${options.sourceId}] version ${version}`,
-    );
-    return { success: true, chunkCount: committedIndex.chunkCount, tokenCount };
+    logger.info('Completed ingestion attempt', {
+      sourceId: options.sourceId,
+      version,
+      sourceType: options.type,
+      chunkCount: committedIndex.chunkCount,
+      tokenCount,
+      durationMs: Date.now() - pipelineStartedAt,
+    });
+    return {
+      success: true,
+      claimed: true,
+      chunkCount: committedIndex.chunkCount,
+      tokenCount,
+    };
   } catch (error: any) {
-    const errorMessage = error?.message || 'Unexpected ingestion failure';
     const classification = classifyIngestionError(error);
-    logger.error(
-      `Ingestion failed for source [${options.sourceId}] version ${version}`,
-      error,
-    );
+    const failedStageDurationMs = Date.now() - stageStartedAt;
+    logger.error('Ingestion attempt failed', error, {
+      sourceId: options.sourceId,
+      version,
+      sourceType: options.type,
+      stage: currentStage,
+      stageDurationMs: failedStageDurationMs,
+      totalDurationMs: Date.now() - pipelineStartedAt,
+      errorCode: classification.errorCode,
+      errorCategory: classification.errorCategory,
+      retryable: classification.retryable,
+      provider: classification.provider,
+      httpStatus: classification.httpStatus,
+    });
 
     try {
       await transitionProcessingStage({
         sourceId: options.sourceId,
         version,
         nextStage: 'FAILED',
-        errorMessage,
+        errorMessage: classification.userMessage,
         details: {
           errorCode: classification.errorCode,
           errorCategory: classification.errorCategory,
+          retryable: classification.retryable,
+          provider: classification.provider,
+          httpStatus: classification.httpStatus,
+          failedStage: currentStage,
+          failedStageDurationMs,
+          totalDurationMs: Date.now() - pipelineStartedAt,
         },
       });
     } catch (transitionError) {
-      logger.error(
-        `Failed to persist FAILED state for source [${options.sourceId}]`,
-        transitionError,
-      );
+      logger.error('Failed to persist ingestion failure state', transitionError, {
+        sourceId: options.sourceId,
+        version,
+        sourceType: options.type,
+        stage: currentStage,
+      });
       throw transitionError;
     }
 
     return {
       success: false,
+      claimed: true,
       chunkCount: 0,
       tokenCount: 0,
-      error: errorMessage,
+      error: classification.userMessage,
     };
   }
 }

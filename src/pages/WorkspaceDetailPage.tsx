@@ -22,6 +22,7 @@ import { WorkspacePromptComposer, AnswerMode } from '../components/workspace/Wor
 import { AddSourceModal } from '../components/workspace/AddSourceModal';
 import { SourceDetailsModal } from '../components/workspace/SourceDetailsModal';
 import { SettingsModal } from '../components/dashboard/SettingsModal';
+import { WorkspaceContextPanel } from '../components/workspace/WorkspaceContextPanel';
 import { AlertCircle, X } from 'lucide-react';
 
 interface WorkspaceData {
@@ -68,6 +69,7 @@ export function WorkspaceDetailPage() {
   const [selectedSourceDetails, setSelectedSourceDetails] = useState<SourceRecord | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(false);
 
   // Fetch Workspace Detail
   const fetchWorkspace = useCallback(async () => {
@@ -616,7 +618,7 @@ export function WorkspaceDetailPage() {
   };
 
   const hasIndexedSources = sources.some(
-    (source) => source.status === 'COMPLETED' && source.stage === 'COMPLETED'
+    (source) => source.type !== 'VTT' && source.status === 'COMPLETED' && source.stage === 'COMPLETED'
   );
   const hasPersistedGeneration = messages.some(
     (message) => message.status === 'SENDING',
@@ -672,14 +674,13 @@ export function WorkspaceDetailPage() {
   }
 
   return (
-    <div className="flex h-[100dvh] bg-[#0b0f17] text-slate-100 overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden bg-[#090e16] text-slate-100">
       {/* Left Sidebar — Desktop */}
       <div className="hidden lg:block">
         <WorkspaceSourcesSidebar
           workspace={workspace}
-          sources={sources}
+          sources={visibleSources}
           loading={loadingSources}
-          onOpenAddSource={handleOpenAddSource}
           onSelectSourceDetails={setSelectedSourceDetails}
           onDeleteSource={handleSourceDeleted}
           onRefreshSources={fetchSources}
@@ -705,12 +706,8 @@ export function WorkspaceDetailPage() {
             </button>
             <WorkspaceSourcesSidebar
               workspace={workspace}
-              sources={sources}
+              sources={visibleSources}
               loading={loadingSources}
-              onOpenAddSource={(type) => {
-                setIsMobileSidebarOpen(false);
-                handleOpenAddSource(type);
-              }}
               onSelectSourceDetails={(source) => {
                 setIsMobileSidebarOpen(false);
                 setSelectedSourceDetails(source);
@@ -730,10 +727,13 @@ export function WorkspaceDetailPage() {
           onUpdateWorkspace={handleUpdateWorkspace}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenAddSource={() => handleOpenAddSource()}
+          onToggleContext={() => setIsContextOpen(true)}
+          citationCount={latestCitations.length}
         />
 
         {/* Center View: Shows Onboarding or Chat Thread */}
-        {sources.length > 0 ? (
+        {visibleSources.length > 0 ? (
           <WorkspaceChatArea
             messages={messages.filter((message) => message.status !== 'SENDING')}
             isGenerating={chatIsGenerating}
@@ -744,8 +744,10 @@ export function WorkspaceDetailPage() {
             activeActionLabel={activeActionLabel}
             regeneratingMessageId={regeneratingMessageId}
             error={activityError || historyError}
-            sourceCount={sources.length}
-            processingSourceCount={sources.filter(
+            sources={visibleSources}
+            hasIndexedSources={hasIndexedSources}
+            sourceCount={visibleSources.length}
+            processingSourceCount={visibleSources.filter(
               (source) => source.status === 'PENDING' || source.status === 'PROCESSING'
             ).length}
             onSelectCitation={handleSelectCitation}
@@ -757,7 +759,7 @@ export function WorkspaceDetailPage() {
         ) : (
           <WorkspaceCenter
             workspace={workspace}
-            sources={sources}
+            sources={visibleSources}
             onOpenAddSource={handleOpenAddSource}
           />
         )}
@@ -772,12 +774,36 @@ export function WorkspaceDetailPage() {
           sources={sources}
           selectedSourceId={selectedSourceDetails?.id}
           hasConversation={messages.length > 0}
-          onOpenAddSource={() => handleOpenAddSource()}
           onSubmitMessage={handleSubmitMessage}
           onSubmitAction={handleSubmitAction}
           onCancelGeneration={handleCancelGeneration}
         />
       </main>
+
+      <div className="hidden h-full shrink-0 xl:block">
+        <WorkspaceContextPanel
+          citations={latestCitations}
+          sources={visibleSources}
+          onSelectCitation={handleSelectCitation}
+        />
+      </div>
+
+      {isContextOpen && (
+        <div role="dialog" aria-modal="true" aria-label="Response context" className="fixed inset-0 z-50 flex justify-end xl:hidden">
+          <button type="button" aria-label="Close context overlay" className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setIsContextOpen(false)} />
+          <div className="relative z-10 h-full w-[340px] max-w-[90vw] shadow-2xl">
+            <WorkspaceContextPanel
+              citations={latestCitations}
+              sources={visibleSources}
+              onSelectCitation={(citation) => {
+                setIsContextOpen(false);
+                handleSelectCitation(citation);
+              }}
+              onClose={() => setIsContextOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <AddSourceModal

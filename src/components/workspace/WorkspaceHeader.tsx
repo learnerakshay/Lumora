@@ -4,9 +4,10 @@ import {
   Edit3,
   Check,
   X,
-  Shield,
   Menu,
   Loader2,
+  Plus,
+  PanelRight,
 } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { WorkspaceIcon } from '../dashboard/WorkspaceIcon';
@@ -22,6 +23,9 @@ interface WorkspaceHeaderProps {
   onUpdateWorkspace: (updated: { name?: string; description?: string }) => Promise<void>;
   onToggleMobileSidebar: () => void;
   onOpenSettings: () => void;
+  onOpenAddSource: () => void;
+  onToggleContext: () => void;
+  citationCount: number;
 }
 
 export function WorkspaceHeader({
@@ -29,6 +33,9 @@ export function WorkspaceHeader({
   onUpdateWorkspace,
   onToggleMobileSidebar,
   onOpenSettings,
+  onOpenAddSource,
+  onToggleContext,
+  citationCount,
 }: WorkspaceHeaderProps) {
   const { user } = useAuth();
 
@@ -54,7 +61,7 @@ export function WorkspaceHeader({
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 bg-[#121824]/90 px-3 backdrop-blur-md sm:px-4 md:px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 bg-[#101722]/95 px-3 backdrop-blur-md sm:px-4 md:px-5">
       {/* Left: Mobile Menu Trigger + Workspace Title / Rename */}
       <div className="flex items-center space-x-3 min-w-0">
         <button
@@ -122,25 +129,39 @@ export function WorkspaceHeader({
 
       {/* Right Actions & User Profile */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        {/* Verification Badge */}
-        <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-950/60 border border-emerald-800/60 rounded-xl text-[11px] text-emerald-300 font-medium">
-          <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Private Workspace</span>
-        </div>
+        <button
+          type="button"
+          onClick={onOpenAddSource}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Add Source</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleContext}
+          className="relative rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:border-slate-700 hover:text-white xl:hidden"
+          title="Response context"
+          aria-label="Open response context"
+        >
+          <PanelRight className="h-4 w-4" />
+          {citationCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[9px] font-bold text-slate-950">{citationCount}</span>}
+        </button>
 
         {/* Workspace Settings Button */}
         <button
           type="button"
           onClick={onOpenSettings}
           className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors"
-          title="Workspace Settings"
-          aria-label="Open Workspace settings"
+          title="Settings"
+          aria-label="Open settings"
         >
           <Settings className="w-4 h-4" />
         </button>
 
         {/* User Profile Badge */}
-        <div className="hidden items-center space-x-2.5 border-l border-slate-800/80 pl-2 sm:flex">
+        <div className="hidden items-center space-x-2.5 border-l border-slate-800/80 pl-2 lg:flex">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-sky-500/20 shrink-0">
             {user?.fullName ? user.fullName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
           </div>

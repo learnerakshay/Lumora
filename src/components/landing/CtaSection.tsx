@@ -62,7 +62,7 @@ export function CtaSection() {
       <div ref={contentRef} className="max-w-4xl mx-auto space-y-8 relative z-10">
         <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-sky-950/70 border border-sky-800/60 text-sky-300 text-xs font-medium">
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-          <span>Observatory Access</span>
+          <span>Start learning with Lumora</span>
         </div>
 
         <h2 className="text-4xl sm:text-6xl font-bold tracking-tight text-white leading-tight">
@@ -73,7 +73,7 @@ export function CtaSection() {
         </h2>
 
         <p className="text-slate-300 text-base sm:text-lg max-w-xl mx-auto font-normal">
-          Experience the power of a dedicated AI Knowledge Operating System with workspace isolation, vector retrieval, and grounded AI responses.
+          Bring your sources into one focused Workspace and learn through grounded answers with clear citations.
         </p>
 
         <div className="pt-4 flex flex-col items-center space-y-3">
@@ -82,7 +82,7 @@ export function CtaSection() {
               to="/workspaces"
               className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
             >
-              <span>Go to Workspaces</span>
+              <span>Open Lumora</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           ) : (
@@ -90,13 +90,13 @@ export function CtaSection() {
               to="/sign-in"
               className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
             >
-              <span>Try Lumora Now</span>
+              <span>Start Learning</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           )}
 
           <p className="text-xs text-slate-400 font-mono">
-            No credit card required. Free Developer Workspace tier included.
+            No credit card required to get started.
           </p>
         </div>
       </div>

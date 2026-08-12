@@ -1,105 +1,56 @@
-import React from 'react';
-import { X, Settings, Shield, Database, Key } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, LogOut, Settings, Shield, Sparkles, UserRound, X } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSignOut?: () => Promise<void>;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const { user } = useAuth();
+type Section = 'account' | 'learning' | 'plan' | 'privacy';
+
+const sections = [
+  { id: 'account' as const, label: 'Account', icon: UserRound },
+  { id: 'learning' as const, label: 'Learning preferences', icon: Sparkles },
+  { id: 'plan' as const, label: 'Plan & usage', icon: Check },
+  { id: 'privacy' as const, label: 'Data & privacy', icon: Shield },
+];
+
+export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps) {
+  const { user, signOut } = useAuth();
+  const [section, setSection] = useState<Section>('account');
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+  const initials = user?.fullName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl shadow-black/80 sm:rounded-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800/80 bg-slate-900/50">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400">
-              <Settings className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 id="settings-title" className="text-base font-semibold text-white">Lumora System Settings</h2>
-              <p className="text-xs text-slate-400">Workspace environment & account configuration</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close settings dialog"
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="settings-title" className="flex max-h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#101621] shadow-2xl shadow-black/70 sm:rounded-2xl">
+        <header className="flex items-center justify-between border-b border-slate-800/80 px-5 py-4 sm:px-6">
+          <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl border border-sky-500/25 bg-sky-500/10 text-sky-400"><Settings className="h-4 w-4" /></span><div><h2 id="settings-title" className="text-base font-semibold text-white">Settings</h2><p className="text-xs text-slate-400">Manage your Lumora experience</p></div></div>
+          <button type="button" onClick={onClose} aria-label="Close settings" className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"><X className="h-4 w-4" /></button>
+        </header>
 
-        {/* Content */}
-        <div className="space-y-4 overflow-y-auto p-4 text-xs text-slate-300 sm:p-5">
-          {/* User Section */}
-          <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
-            <div className="flex items-center space-x-2 text-sky-400 font-semibold">
-              <Key className="w-3.5 h-3.5" />
-              <span>User Credentials</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-[11px] font-mono sm:grid-cols-2">
-              <div>
-                <span className="text-slate-500 block">ACCOUNT EMAIL</span>
-                <span className="text-slate-200">{user?.email || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">PROVIDER</span>
-                <span className="text-emerald-400 capitalize">{user?.provider || 'Clerk / OAuth'}</span>
-              </div>
-              <div className="min-w-0 sm:col-span-2">
-                <span className="text-slate-500 block">USER ID</span>
-                <span className="block truncate text-sky-300" title={user?.id || undefined}>{user?.id || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
+        <div className="grid min-h-0 flex-1 sm:grid-cols-[220px_1fr]">
+          <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto border-b border-slate-800/80 p-3 sm:flex-col sm:border-b-0 sm:border-r sm:p-4">
+            {sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined} className={`flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition sm:w-full ${section === id ? 'bg-sky-500/10 text-sky-300' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}><Icon className="h-4 w-4 shrink-0" />{label}</button>)}
+          </nav>
 
-          {/* Database & Architecture Section */}
-          <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
-            <div className="flex items-center space-x-2 text-emerald-400 font-semibold">
-              <Database className="w-3.5 h-3.5" />
-              <span>Database Engine & pgvector</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Lumora employs PostgreSQL with <code className="text-sky-300 font-mono">pgvector</code> extension for high-dimensional 1536d chunk embeddings. Multi-tenant workspace isolation is enforced at query time.
-            </p>
-          </div>
+          <div className="min-h-0 overflow-y-auto p-5 sm:p-7">
+            {section === 'account' && <section aria-labelledby="account-heading" className="space-y-6"><div><h3 id="account-heading" className="text-lg font-semibold text-white">Account</h3><p className="mt-1 text-sm text-slate-400">Your profile and account access.</p></div><div className="flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-4">{user?.imageUrl ? <img src={user.imageUrl} alt="" className="h-14 w-14 rounded-full border border-slate-700 object-cover" /> : <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-cyan-700 text-lg font-bold text-white">{initials}</span>}<div className="min-w-0"><p className="truncate font-semibold text-white">{user?.fullName || 'Lumora learner'}</p><p className="truncate text-sm text-slate-400">{user?.email || 'No email available'}</p><p className="mt-1 text-[11px] text-slate-500">Profile details are managed through your sign-in account.</p></div></div><button type="button" onClick={() => (onSignOut || signOut)()} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-rose-800 hover:bg-rose-950/30 hover:text-rose-300"><LogOut className="h-4 w-4" />Sign out</button></section>}
 
-          {/* Isolation & Security Section */}
-          <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
-            <div className="flex items-center space-x-2 text-indigo-400 font-semibold">
-              <Shield className="w-3.5 h-3.5" />
-              <span>Workspace Isolation Protocol</span>
-            </div>
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400">Strict Query Isolation:</span>
-              <span className="px-2 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800/60 rounded font-mono text-[10px]">
-                ACTIVE & VERIFIED
-              </span>
-            </div>
-          </div>
+            {section === 'learning' && <section aria-labelledby="learning-heading" className="space-y-5"><div><h3 id="learning-heading" className="text-lg font-semibold text-white">Learning preferences</h3><p className="mt-1 text-sm text-slate-400">Personal learning controls will appear here as Lumora supports them.</p></div><div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-6 text-center"><Sparkles className="mx-auto h-5 w-5 text-sky-400" /><p className="mt-3 text-sm font-medium text-slate-200">No preferences to configure yet</p><p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-slate-500">Your current learning experience works without additional setup.</p></div></section>}
 
-          {/* Close button */}
-          <div className="pt-3 flex items-center justify-end border-t border-slate-800/80">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl text-xs transition-colors"
-            >
-              Close
-            </button>
+            {section === 'plan' && <section aria-labelledby="plan-heading" className="space-y-5"><div><h3 id="plan-heading" className="text-lg font-semibold text-white">Plan & usage</h3><p className="mt-1 text-sm text-slate-400">A clear view of your current Lumora access.</p></div><div className="rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 to-cyan-500/5 p-5"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold text-white">Current access</p><p className="mt-1 text-xs text-slate-400">Lumora account</p></div><span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300">Active</span></div></div><p className="text-xs leading-5 text-slate-500">Usage limits and billing controls will be shown here when plan management is available.</p></section>}
+
+            {section === 'privacy' && <section aria-labelledby="privacy-heading" className="space-y-5"><div><h3 id="privacy-heading" className="text-lg font-semibold text-white">Data & privacy</h3><p className="mt-1 text-sm text-slate-400">Understand how account controls are handled.</p></div><div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4"><div className="flex gap-3"><Shield className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" /><div><p className="text-sm font-medium text-white">Your account data</p><p className="mt-1 text-xs leading-5 text-slate-400">Account deletion and data export are not currently available inside Lumora. Contact the application owner for account data requests.</p></div></div></div></section>}
           </div>
         </div>
       </div>

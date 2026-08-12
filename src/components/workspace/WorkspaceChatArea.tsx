@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { StoredCitation, StoredMessage } from '../../lib/chat/conversation-store';
 import type { ToolStatusUpdate, WebSource } from '../../lib/ai/types';
+import type { SourceRecord } from '../../lib/source-store';
+import { SourceTypeIcon } from './SourceTypeIcon';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
@@ -31,6 +33,8 @@ interface WorkspaceChatAreaProps {
   error?: string | null;
   sourceCount: number;
   processingSourceCount: number;
+  sources: SourceRecord[];
+  hasIndexedSources: boolean;
   onSelectCitation?: (citation: StoredCitation) => void;
   onSubmitMessage: (prompt: string) => void;
   onClearHistory: () => void;
@@ -179,6 +183,8 @@ export function WorkspaceChatArea({
   error,
   sourceCount,
   processingSourceCount,
+  sources,
+  hasIndexedSources,
   onSelectCitation,
   onSubmitMessage,
   onClearHistory,
@@ -189,8 +195,6 @@ export function WorkspaceChatArea({
   const stickToBottomRef = useRef(true);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const assistantMessages = messages.filter((message) => message.role === 'ASSISTANT').length;
-  const latestActivity = messages.at(-1)?.createdAt;
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -248,13 +252,15 @@ export function WorkspaceChatArea({
     <div
       ref={feedRef}
       onScroll={handleScroll}
-      className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-4 sm:px-5 md:px-6"
+      className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-5 md:px-6"
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
-        <div className="mb-5 flex flex-col gap-3 border-b border-slate-800/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
           <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
             <MessageSquare className="h-4 w-4 shrink-0 text-sky-400" />
-            <span className="truncate font-semibold text-slate-300">Grounded research thread</span>
+            <span className="truncate font-semibold text-slate-300">Learning conversation</span>
+            <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-500">{sourceCount} {sourceCount === 1 ? 'source' : 'sources'}</span>
+            {processingSourceCount > 0 && <span className="inline-flex items-center gap-1.5 text-[10px] text-sky-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />{processingSourceCount} processing</span>}
           </div>
           {messages.length > 0 && (
             <button
@@ -270,29 +276,25 @@ export function WorkspaceChatArea({
           )}
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            { label: 'Sources', value: sourceCount },
-            { label: 'Responses', value: assistantMessages },
-            { label: 'Processing', value: processingSourceCount },
-            {
-              label: 'Recent activity',
-              value: latestActivity
-                ? new Date(latestActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'New',
-            },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-xl border border-slate-800/80 bg-slate-900/45 px-3 py-2.5">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{stat.label}</p>
-              <p className="mt-1 truncate text-sm font-semibold tabular-nums text-slate-200">{stat.value}</p>
-            </div>
-          ))}
-        </div>
-
         <div className="flex-1 space-y-1" aria-live="polite">
           {error && (
             <div role="alert" className="mb-5 rounded-xl border border-rose-900/70 bg-rose-950/30 px-4 py-3 text-xs text-rose-200">
               {error}
+            </div>
+          )}
+
+          {messages.length === 0 && !isGenerating && (
+            <div className="flex min-h-[340px] items-center justify-center py-8 text-center">
+              <div className="w-full max-w-xl">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-800/60 bg-sky-950/40 text-sky-300"><Sparkles className="h-5 w-5" /></div>
+                <h2 className="mt-4 text-xl font-semibold text-white">{hasIndexedSources ? 'What would you like to understand?' : 'Preparing your sources'}</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Lumora answers from your ready sources and shows the context behind each response.' : 'You can start asking questions as soon as at least one source is ready.'}</p>
+                {hasIndexedSources && <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                  {['Summarize the key ideas', 'Explain the hardest concept', 'What should I learn first?'].map((question) => (
+                    <button key={question} type="button" onClick={() => onSubmitMessage(question)} className="rounded-xl border border-slate-800 bg-slate-900/55 px-3 py-3 text-left text-xs leading-5 text-slate-300 transition hover:border-sky-700/70 hover:bg-slate-900 hover:text-white">{question}</button>
+                  ))}
+                </div>}
+              </div>
             </div>
           )}
 
@@ -370,22 +372,30 @@ export function WorkspaceChatArea({
                             <span>{message.citations.length} Workspace {message.citations.length === 1 ? 'source' : 'sources'}</span>
                           </div>
                           <div className="flex max-w-full flex-wrap gap-2">
-                            {message.citations.map((citation, citationIndex) => (
-                              <button
+                            {message.citations.map((citation, citationIndex) => {
+                              const source = sources.find((item) => item.id === citation.sourceId);
+                              const surface = source?.type === 'PDF'
+                                ? 'border-rose-900/70 bg-rose-950/25 hover:border-rose-700/70'
+                                : source?.type === 'YOUTUBE'
+                                  ? 'border-red-900/70 bg-red-950/25 hover:border-red-700/70'
+                                  : source?.type === 'TEXT'
+                                    ? 'border-violet-900/70 bg-violet-950/25 hover:border-violet-700/70'
+                                    : 'border-sky-900/70 bg-sky-950/25 hover:border-sky-700/70';
+                              return <button
                                 key={citation.id || citationIndex}
                                 type="button"
                                 onClick={() => onSelectCitation?.(citation)}
                                 title={citation.snippet}
-                                className="group flex max-w-full items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900 px-2.5 py-1.5 text-left text-[11px] text-slate-300 transition hover:border-sky-500/60 hover:bg-slate-800 hover:text-white"
+                                className={`group flex max-w-full items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-[11px] text-slate-300 transition hover:text-white ${surface}`}
                               >
-                                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${citation.kind === 'WEB' ? 'bg-sky-950 text-sky-400' : 'bg-emerald-950 text-emerald-400'}`}>
-                                  {citation.kind === 'WEB' ? <Globe className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-950/60">
+                                  {source ? <SourceTypeIcon type={source.type} className="h-3 w-3" /> : citation.kind === 'WEB' ? <Globe className="h-3 w-3 text-sky-400" /> : <FileText className="h-3 w-3 text-violet-400" />}
                                 </span>
                                 <span className="max-w-[12rem] truncate font-medium sm:max-w-[16rem]">{citation.title}</span>
                                 <span className="shrink-0 text-[10px] text-slate-500">{formatCitationLocation(citation)}</span>
                                 <ExternalLink className="h-3 w-3 shrink-0 text-slate-500 transition group-hover:text-sky-400" />
-                              </button>
-                            ))}
+                              </button>;
+                            })}
                           </div>
                         </div>
                       )}

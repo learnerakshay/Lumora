@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
-  Plus,
   Search,
   MoreVertical,
   Layers,
@@ -15,7 +14,6 @@ import {
 import { SourceRecord, SourceType } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
-import { WorkspaceIcon } from '../dashboard/WorkspaceIcon';
 
 interface WorkspaceSourcesSidebarProps {
   workspace: {
@@ -26,7 +24,6 @@ interface WorkspaceSourcesSidebarProps {
   };
   sources: SourceRecord[];
   loading: boolean;
-  onOpenAddSource: (type?: SourceType) => void;
   onSelectSourceDetails: (source: SourceRecord) => void;
   onDeleteSource: (sourceId: string) => void;
   onRefreshSources?: () => void;
@@ -36,7 +33,6 @@ export function WorkspaceSourcesSidebar({
   workspace,
   sources,
   loading,
-  onOpenAddSource,
   onSelectSourceDetails,
   onDeleteSource,
   onRefreshSources,
@@ -65,7 +61,7 @@ export function WorkspaceSourcesSidebar({
 
     if (
       !confirm(
-        `Are you sure you want to remove "${source.title}" and delete all its vector embeddings?`
+        `Remove "${source.title}" and its indexed learning content?`
       )
     ) {
       return;
@@ -93,8 +89,15 @@ export function WorkspaceSourcesSidebar({
     { type: 'WEBSITE', label: 'Web' },
     { type: 'TEXT', label: 'Text' },
     { type: 'YOUTUBE', label: 'YouTube' },
-    { type: 'VTT', label: 'VTT' },
   ];
+
+  const filterStyles: Record<Exclude<SourceType, 'VTT'> | 'ALL', string> = {
+    ALL: 'border-sky-500/40 bg-sky-500/15 text-sky-300',
+    PDF: 'border-rose-700/60 bg-rose-950/40 text-rose-300',
+    WEBSITE: 'border-sky-700/60 bg-sky-950/40 text-sky-300',
+    TEXT: 'border-violet-700/60 bg-violet-950/40 text-violet-300',
+    YOUTUBE: 'border-red-700/60 bg-red-950/40 text-red-300',
+  };
 
   const filteredSources = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -110,7 +113,7 @@ export function WorkspaceSourcesSidebar({
   const sourceAccent: Record<SourceType, string> = {
     PDF: 'border-l-rose-500/70',
     WEBSITE: 'border-l-sky-500/70',
-    TEXT: 'border-l-emerald-500/70',
+    TEXT: 'border-l-violet-500/70',
     YOUTUBE: 'border-l-red-500/70',
     VTT: 'border-l-amber-500/70',
   };
@@ -118,37 +121,27 @@ export function WorkspaceSourcesSidebar({
   const sourceSurface: Record<SourceType, string> = {
     PDF: 'bg-rose-950/35 border-rose-900/50',
     WEBSITE: 'bg-sky-950/35 border-sky-900/50',
-    TEXT: 'bg-emerald-950/35 border-emerald-900/50',
+    TEXT: 'bg-violet-950/35 border-violet-900/50',
     YOUTUBE: 'bg-red-950/35 border-red-900/50',
     VTT: 'bg-amber-950/35 border-amber-900/50',
   };
 
   return (
-    <aside aria-label="Workspace sources" className="w-full lg:w-80 bg-[#121824] border-r border-slate-800/80 flex flex-col h-full shrink-0">
+    <aside aria-label="Workspace sources" className="flex h-full w-full shrink-0 flex-col border-r border-slate-800/80 bg-[#0e141f] lg:w-[280px]">
       {/* Top Navigation & Workspace Header */}
-      <div className="p-4 border-b border-slate-800/80 space-y-3 bg-slate-900/40">
+      <div className="space-y-3 border-b border-slate-800/80 bg-[#101722] p-3.5">
         <Link
           to="/workspaces"
           className="inline-flex items-center space-x-2 text-xs font-medium text-slate-400 hover:text-sky-300 transition-colors group"
         >
           <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Back to Dashboard</span>
+          <span>All Workspaces</span>
         </Link>
 
-        {/* Workspace Title & Icon */}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400 shrink-0 shadow-sm">
-              <WorkspaceIcon name={workspace.icon || 'brain'} className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-sm font-bold text-white truncate leading-tight">
-                {workspace.name}
-              </h1>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {sources.length} {sources.length === 1 ? 'Source' : 'Sources'}
-              </span>
-            </div>
+          <div>
+            <h2 className="text-sm font-semibold text-white">Sources</h2>
+            <p className="mt-0.5 text-[10px] text-slate-500">{sources.length} {sources.length === 1 ? 'item' : 'items'} in this Workspace</p>
           </div>
 
           {onRefreshSources && (
@@ -164,15 +157,6 @@ export function WorkspaceSourcesSidebar({
           )}
         </div>
 
-        {/* Add Source CTA Button */}
-        <button
-          type="button"
-          onClick={() => onOpenAddSource()}
-          className="w-full py-2.5 px-3.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded-xl text-xs transition-colors flex items-center justify-center space-x-2 shadow-md shadow-sky-500/20"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Add Knowledge Source</span>
-        </button>
       </div>
 
       {/* Search & Filters */}
@@ -212,7 +196,7 @@ export function WorkspaceSourcesSidebar({
                 aria-pressed={isSelected}
                 className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
                   isSelected
-                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                    ? `border ${filterStyles[ft.type as keyof typeof filterStyles]}`
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
@@ -253,19 +237,9 @@ export function WorkspaceSourcesSidebar({
               <p className="text-[11px] text-slate-400 leading-relaxed max-w-[200px] mx-auto">
                 {searchTerm || selectedTypeFilter !== 'ALL'
                   ? 'Adjust your search or choose a different source type.'
-                  : 'Add a document, webpage, video, transcript, or note to ground your Workspace.'}
+                  : 'Add a PDF, webpage, plain text, or YouTube video to start learning.'}
               </p>
             </div>
-            {!searchTerm && selectedTypeFilter === 'ALL' && (
-              <button
-                type="button"
-                onClick={() => onOpenAddSource()}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-sky-950 text-sky-300 border border-sky-800/60 rounded-xl text-xs font-semibold hover:bg-sky-900 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add First Source</span>
-              </button>
-            )}
           </div>
         ) : (
           /* Source Cards List */
@@ -380,11 +354,6 @@ export function WorkspaceSourcesSidebar({
         )}
       </div>
 
-      {/* Footer Info */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-900/60 text-[10px] text-slate-400 flex items-center justify-between font-mono">
-        <span>Lumora Storage</span>
-        <span className="text-sky-400">Isolated Scope</span>
-      </div>
     </aside>
   );
 }

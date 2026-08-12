@@ -17,7 +17,7 @@ import {
   SourceType,
 } from '../lib/source-store';
 import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
-import { processSourcePipeline } from '../lib/ingestion/pipeline';
+import { ingestionCoordinator } from '../lib/ingestion/coordinator';
 import { extractYouTubeVideoId } from '../lib/ingestion/youtube-url';
 import { getWorkspaceChunks } from '../lib/chunk-store';
 import { searchWorkspaceChunks, buildRAGContext } from '../lib/retrieval/rag-service';
@@ -64,6 +64,7 @@ import { requireApiAuth } from '../lib/auth';
 import { AppError } from '../lib/errors';
 import { successResponse, errorResponse } from '../lib/api-response';
 import { logger } from '../lib/logger';
+import { getServerEnv } from '../lib/env';
 
 export const workspaceRouter = Router();
 
@@ -80,7 +81,9 @@ const sourceUpload = multer({
 });
 
 const sourceUploadMiddleware: RequestHandler = (req, res, next) => {
+  const uploadStartedAt = Date.now();
   sourceUpload.single('file')(req, res, (error: any) => {
+    res.locals.sourceUploadDurationMs = Date.now() - uploadStartedAt;
     if (!error) {
       next();
       return;
@@ -91,6 +94,12 @@ const sourceUploadMiddleware: RequestHandler = (req, res, next) => {
         ? 'Uploaded file exceeds the 20 MB limit.'
         : `Invalid source upload: ${error.message || 'multipart parsing failed'}`;
     const response = errorResponse(AppError.badRequest(message, 'INVALID_SOURCE_UPLOAD'));
+    logger.warn('Ingestion upload rejected', {
+      stage: 'UPLOAD',
+      durationMs: res.locals.sourceUploadDurationMs,
+      errorCode: 'INVALID_SOURCE_UPLOAD',
+      uploadCode: typeof error.code === 'string' ? error.code : 'MULTIPART_ERROR',
+    });
     res.status(response.statusCode).json(response.payload);
   });
 };
@@ -247,6 +256,7 @@ workspaceRouter.post(
   '/:id/sources',
   sourceUploadMiddleware,
   async (req: Request, res: Response) => {
+  const sourceRequestStartedAt = Date.now();
   try {
     const workspaceId = res.locals.workspace.id;
     const { title, type, url, rawContent } = req.body || {};
@@ -356,15 +366,25 @@ workspaceRouter.post(
         sourceUrl: finalUrl || null,
       },
     });
+    logger.info('Ingestion source persisted', {
+      sourceId: source.id,
+      version: source.currentVersion,
+      sourceType,
+      stage: 'UPLOAD',
+      durationMs: res.locals.sourceUploadDurationMs ?? Date.now() - sourceRequestStartedAt,
+      persistenceDurationMs: Date.now() - sourceRequestStartedAt,
+      artifactBytes: artifactSize ?? (
+        originalContent ? Buffer.byteLength(originalContent, 'utf8') : null
+      ),
+      remoteSource: Boolean(finalUrl),
+    });
 
-    processSourcePipeline({
+    ingestionCoordinator.dispatch({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: sourceType,
       version: source.currentVersion,
-    }).catch((err) => {
-      logger.error(`Background ingestion pipeline error for source ${source.id}`, err);
     });
 
     return res.status(201).json(successResponse(source));
@@ -389,16 +409,16 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
       return res.status(404).json(errorResponse(new Error('Source not found')).payload);
     }
 
-    const version = await createReprocessingVersion(sourceId);
+    const version = await createReprocessingVersion(sourceId, {
+      staleAfterMs: getServerEnv().INGESTION_STALE_AFTER_MS,
+    });
 
-    processSourcePipeline({
+    ingestionCoordinator.dispatch({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: source.type,
       version,
-    }).catch((err) => {
-      logger.error(`Reprocessing pipeline error for source ${source.id}`, err);
     });
 
     return res.status(200).json(

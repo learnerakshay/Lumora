@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, LockKeyhole } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { LandingAtmosphere } from '../landing/LandingAtmosphere';
 import { LumoraBrand } from '../landing/LumoraBrand';
@@ -68,7 +68,7 @@ export function AuthWelcomeBoard({
             Your AI Knowledge Operating System
           </p>
           <p className="mx-auto max-w-md text-sm leading-6 text-slate-400 sm:text-base">
-            Build isolated research Workspaces, organize knowledge from every source, and collaborate with grounded AI.
+            Bring your learning materials together, organize them into Workspaces, and learn with grounded AI.
           </p>
         </div>
 
@@ -85,7 +85,7 @@ export function AuthWelcomeBoard({
             onClick={() => onAuthenticate('email')}
             className="landing-primary-cta auth-primary-button group flex w-full items-center justify-center gap-3 rounded-xl border border-cyan-300/70 bg-gradient-to-r from-blue-600 via-sky-500 to-blue-600 px-5 py-3.5 text-sm font-bold uppercase tracking-[0.1em] text-white shadow-[0_0_35px_rgba(14,165,233,0.28)] disabled:cursor-wait disabled:opacity-60 sm:text-base"
           >
-            <span>{isSignIn ? 'Access Workspace' : 'Create Lumora Identity'}</span>
+            <span>{isSignIn ? 'Sign In' : 'Create Account'}</span>
             <ArrowRight className="h-5 w-5" />
           </button>
 
@@ -93,7 +93,7 @@ export function AuthWelcomeBoard({
             to={isSignIn ? '/sign-up' : '/sign-in'}
             className="auth-secondary-button flex w-full items-center justify-center rounded-xl border border-sky-700/75 bg-slate-950/35 px-5 py-3.5 text-sm font-semibold uppercase tracking-[0.08em] text-slate-100 transition sm:text-base"
           >
-            {isSignIn ? 'Create Lumora Identity' : 'Access Workspace'}
+            {isSignIn ? 'Create Account' : 'Sign In'}
           </Link>
         </div>
 
@@ -124,10 +124,6 @@ export function AuthWelcomeBoard({
           </button>
         </div>
 
-        <p className="mt-7 flex items-center justify-center gap-2 text-xs text-slate-500">
-          <LockKeyhole className="h-4 w-4 text-sky-400" />
-          <span>Secure authentication powered by Clerk.</span>
-        </p>
       </section>
     </main>
   );

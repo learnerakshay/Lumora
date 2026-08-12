@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { FileText, Globe, Video, FileCode, MessageSquare, Cpu, Sparkles, MessageCircle, Lightbulb, Compass, Network, BookOpen, ArrowRight } from 'lucide-react';
+import { FileText, Globe, Video, FileCode, Cpu, Sparkles, MessageCircle, Lightbulb, Bookmark, Layers3, ArrowRight } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
@@ -77,7 +77,7 @@ export function HowItWorksSection() {
             How Lumora Works
           </h2>
           <p className="text-slate-400 text-sm sm:text-base">
-            From fragmented raw sources to distilled, high-fidelity knowledge in three effortless steps.
+            Bring in useful material, let Lumora prepare it, and explore it through grounded conversation.
           </p>
         </div>
 
@@ -117,12 +117,12 @@ export function HowItWorksSection() {
                   <span>PDF Research & Papers</span>
                 </div>
                 <div className="workflow-item flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200">
-                  <Globe className="w-4 h-4 text-emerald-400" />
+                  <Globe className="h-4 w-4 text-cyan-300" />
                   <span>Web Pages & Documentation</span>
                 </div>
                 <div className="workflow-item flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200">
                   <Video className="h-4 w-4 text-cyan-300" />
-                  <span>YouTube Transcripts & VTT</span>
+                  <span>YouTube Videos</span>
                 </div>
                 <div className="workflow-item flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200">
                   <FileCode className="w-4 h-4 text-sky-400" />
@@ -137,7 +137,7 @@ export function HowItWorksSection() {
             </div>
           </div>
 
-          {/* STEP 2: UNDERSTAND (Lumora Core) */}
+          {/* STEP 2: UNDERSTAND */}
           <div className="landing-card group relative flex flex-col justify-between space-y-6 rounded-2xl border border-sky-500/40 bg-[#101826]/95 p-6 shadow-xl shadow-sky-950/20">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-sky-500 text-slate-950 text-[10px] font-bold uppercase tracking-wider">
               Core Processing
@@ -149,7 +149,7 @@ export function HowItWorksSection() {
                   STEP 02
                 </span>
                 <span className="px-2.5 py-1 rounded-full bg-teal-950/80 text-teal-300 text-[10px] font-semibold border border-teal-800/50">
-                  pgvector + RAG
+                  Source preparation
                 </span>
               </div>
 
@@ -157,24 +157,24 @@ export function HowItWorksSection() {
                 Understand
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Lumora chunks, embeds into 1536-dim vector space, and establishes contextual relationships.
+                Lumora prepares and indexes your material so it can find the most relevant context for each question.
               </p>
 
-              {/* Lumora Core Visual Badge Box */}
+              {/* Knowledge preparation visual */}
               <div className="my-4 p-5 bg-gradient-to-b from-[#182030] to-[#0d131f] border border-sky-500/30 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
                 <div className="landing-icon flex h-12 w-12 items-center justify-center rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-400">
                   <Cpu className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-white">Lumora Vector Core</h4>
-                  <p className="text-[10px] text-slate-400 font-mono">1536-dim Vector Embeddings</p>
+                  <h4 className="text-sm font-semibold text-white">Lumora Knowledge Core</h4>
+                  <p className="text-[10px] text-slate-400">Your sources, prepared for learning</p>
                 </div>
                 <div className="landing-signal w-full" />
               </div>
             </div>
 
             <div className="pt-4 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Hybrid Vector & Keyword Indexing</span>
+              <span>Relevant context ready for each question</span>
               <ArrowRight className="w-3.5 h-3.5 text-teal-400" />
             </div>
           </div>
@@ -195,7 +195,7 @@ export function HowItWorksSection() {
                 Transform
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Synthesize insights, ask complex queries with exact citations, and generate actionable artifacts.
+                Ask questions, connect ideas across sources, and follow citations back to the supporting material.
               </p>
 
               {/* Output Capabilities Stack */}
@@ -209,12 +209,12 @@ export function HowItWorksSection() {
                   <span>Cited Source Insights & Summaries</span>
                 </div>
                 <div className="workflow-item flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200">
-                  <Compass className="w-4 h-4 text-emerald-400" />
-                  <span>Structured Learning Roadmaps</span>
+                  <Bookmark className="h-4 w-4 text-violet-300" />
+                  <span>Clear Source Citations</span>
                 </div>
                 <div className="workflow-item flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200">
-                  <BookOpen className="h-4 w-4 text-blue-300" />
-                  <span>Comprehensive Study Guides</span>
+                  <Layers3 className="h-4 w-4 text-blue-300" />
+                  <span>Multi-source Understanding</span>
                 </div>
               </div>
             </div>

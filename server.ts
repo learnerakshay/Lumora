@@ -10,6 +10,7 @@ import { workspaceRouter } from './src/routes/workspaces';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
+import { ingestionCoordinator } from './src/lib/ingestion/coordinator';
 
 async function startServer() {
   const env = getServerEnv();
@@ -71,9 +72,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const stopIngestionRecovery = ingestionCoordinator.startRecoveryLoop({
+    staleAfterMs: env.INGESTION_STALE_AFTER_MS,
+    intervalMs: env.INGESTION_RECOVERY_INTERVAL_MS,
+    maxAutomaticRecoveries: env.INGESTION_MAX_RECOVERY_ATTEMPTS,
+  });
+  const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Lumora Foundation Server running on http://0.0.0.0:${PORT} [${NODE_ENV}]`);
   });
+  server.on('close', stopIngestionRecovery);
 }
 
 startServer().catch((err) => {

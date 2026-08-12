@@ -52,7 +52,7 @@ export function DeleteWorkspaceModal({
             </div>
             <div>
               <h2 id="delete-workspace-title" className="text-base font-semibold text-white">Delete Workspace</h2>
-              <p className="text-xs text-rose-300/80">Confirm destructive action</p>
+              <p className="text-xs text-rose-300/80">This action cannot be undone</p>
             </div>
           </div>
           <button
@@ -78,19 +78,8 @@ export function DeleteWorkspaceModal({
             <span className="font-semibold text-white font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
               {workspace.name}
             </span>
-            ? This action cannot be undone and will delete all associated sources, chunks, and citations.
+            ? This action cannot be undone and will also delete its sources and learning history.
           </p>
-
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-[11px] text-slate-400 font-mono space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Target ID:</span>
-              <span className="text-slate-200">{workspace.id}</span>
-            </div>
-            <div className="flex items-center justify-between text-rose-400">
-              <span>Cascading Deletion:</span>
-              <span>All Sources & Vectors</span>
-            </div>
-          </div>
 
           {/* Actions */}
           <div className="pt-3 flex items-center justify-end space-x-3 border-t border-slate-800/80">

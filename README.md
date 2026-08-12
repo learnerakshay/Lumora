@@ -549,6 +549,14 @@ EMBEDDING_PROVIDER="openai"
 EMBEDDING_MODEL="text-embedding-3-small"
 EMBEDDING_DIMENSIONS="1536"
 EMBEDDING_VERSION="v1"
+INGESTION_STALE_AFTER_MS="900000"
+INGESTION_RECOVERY_INTERVAL_MS="60000"
+INGESTION_MAX_RECOVERY_ATTEMPTS="2"
+YOUTUBE_TRANSCRIPT_PROVIDER="direct"
+YOUTUBE_TRANSCRIPT_PROXY_URL="https://YOUR-VERCEL-DOMAIN.example/api/youtube-transcript"
+YOUTUBE_TRANSCRIPT_PROXY_TOKEN="REPLACE_WITH_SHARED_RANDOM_SECRET"
+YOUTUBE_TRANSCRIPT_TIMEOUT_MS="25000"
+YOUTUBE_TRANSCRIPT_RELAY_TOKEN="REPLACE_WITH_SHARED_RANDOM_SECRET"
 CHAT_MODEL="REPLACE_WITH_SUPPORTED_CHAT_MODEL"
 CHAT_REASONING_EFFORT="medium"
 CHAT_REQUEST_TIMEOUT_MS="60000"
@@ -574,6 +582,14 @@ BLOB_READ_WRITE_TOKEN=""
 | `EMBEDDING_MODEL` | Yes | `text-embedding-3-small` or `text-embedding-3-large` |
 | `EMBEDDING_DIMENSIONS` | Yes | Must be `1536` for the current pgvector schema |
 | `EMBEDDING_VERSION` | Yes | Version label persisted with indexes |
+| `INGESTION_STALE_AFTER_MS` | Yes | Lease window before a nonterminal attempt is recovered; default 15 minutes |
+| `INGESTION_RECOVERY_INTERVAL_MS` | Yes | Database recovery sweep interval; default 60 seconds |
+| `INGESTION_MAX_RECOVERY_ATTEMPTS` | Yes | Bounded automatic retries after interrupted attempts; default 2 |
+| `YOUTUBE_TRANSCRIPT_PROVIDER` | Yes | `direct` locally, or `proxy` for datacenter-safe production extraction |
+| `YOUTUBE_TRANSCRIPT_PROXY_URL` | Proxy only | Trusted HTTPS endpoint accepting `POST { videoId }` |
+| `YOUTUBE_TRANSCRIPT_PROXY_TOKEN` | Proxy only | Server-only bearer token for the transcript proxy |
+| `YOUTUBE_TRANSCRIPT_TIMEOUT_MS` | Yes | Per-attempt transcript-provider timeout between 5 and 60 seconds |
+| `YOUTUBE_TRANSCRIPT_RELAY_TOKEN` | Vercel only | Server-only bearer token accepted by `/api/youtube-transcript`; must match Render's proxy token |
 | `CHAT_MODEL` | Yes | Must match one of the models accepted by `src/lib/env.ts` |
 | `CHAT_REASONING_EFFORT` | Yes | `none`, `low`, `medium`, `high`, or `xhigh` |
 | `CHAT_REQUEST_TIMEOUT_MS` | Yes | Provider timeout between 1,000 and 300,000 ms |
@@ -627,6 +643,25 @@ Production infrastructure must provide:
 3. Clerk production credentials;
 4. OpenAI credentials and a compatible model configuration;
 5. Tavily credentials only when external web search is desired.
+
+Render deployments should set `YOUTUBE_TRANSCRIPT_PROVIDER=proxy` because direct
+YouTube transcript requests are commonly blocked from datacenter egress. Vercel
+serves the repository's protected `/api/youtube-transcript` function before the
+existing catch-all `/api/*` rewrite to Render. Configure the same strong random
+secret as `YOUTUBE_TRANSCRIPT_RELAY_TOKEN` on Vercel and
+`YOUTUBE_TRANSCRIPT_PROXY_TOKEN` on Render. The contract is:
+
+```text
+POST {YOUTUBE_TRANSCRIPT_PROXY_URL}
+Authorization: Bearer {YOUTUBE_TRANSCRIPT_PROXY_TOKEN}
+Body: { "videoId": "11-character-id" }
+Response: { "language": "en", "cues": [{ "text": "...", "offset": 0, "duration": 1000, "lang": "en" }] }
+```
+
+The server validates every cue and never fabricates or partially accepts transcript content.
+Nonterminal ingestion attempts use database compare-and-set claims, heartbeats,
+and bounded versioned recovery; no local filesystem or in-memory queue is the
+source of truth.
 
 The readiness endpoint at `/api/health` verifies database connectivity and `pgvector` availability instead of returning a synthetic healthy state.
 
