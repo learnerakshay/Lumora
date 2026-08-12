@@ -72,6 +72,7 @@ function retrievalDependencies(rows: any[], owned = true) {
   let embeddingCalls = 0;
   let workspaceWhere: any = null;
   let retrievalSql = '';
+  let retrievalValues: unknown[] = [];
   const dependencies = {
     database: {
       workspace: {
@@ -80,8 +81,9 @@ function retrievalDependencies(rows: any[], owned = true) {
           return owned ? { id: 'workspace-1' } : null;
         },
       },
-      $queryRaw: async (strings: TemplateStringsArray) => {
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
         retrievalSql = strings.join('');
+        retrievalValues = values;
         return rows;
       },
     } as any,
@@ -101,6 +103,9 @@ function retrievalDependencies(rows: any[], owned = true) {
       },
       get retrievalSql() {
         return retrievalSql;
+      },
+      get retrievalValues() {
+        return retrievalValues;
       },
     },
   };
@@ -148,6 +153,8 @@ test('context budgeting keeps complete chunks and reports insufficient context',
   assert.equal(context.hasContext, true);
   assert.deepEqual(context.chunks.map((item) => item.id), ['fitting']);
   assert.match(context.contextPrompt, /Complete fitting chunk\./);
+  assert.match(context.contextPrompt, /exclusive factual basis/i);
+  assert.match(context.contextPrompt, /Every substantive factual claim/i);
   assert.doesNotMatch(context.contextPrompt, /AAAA/);
 
   const empty = buildRAGContext([oversized], 'question', 'DETAILED', {
@@ -156,6 +163,7 @@ test('context budgeting keeps complete chunks and reports insufficient context',
   assert.equal(empty.hasContext, false);
   assert.deepEqual(empty.citations, []);
   assert.match(empty.contextPrompt, /no relevant indexed documents/i);
+  assert.match(empty.contextPrompt, /Do NOT invent facts/i);
 });
 
 test('citations preserve PDF page, website URL, and transcript timestamps', () => {
@@ -294,4 +302,37 @@ test('below-threshold candidates produce an empty grounded result', async () => 
     dependencies,
   );
   assert.deepEqual(results, []);
+});
+
+test('source-scoped retrieval constrains candidates before vector ranking and top-K', async () => {
+  const requestedSource = 'source-requested';
+  const { dependencies, state } = retrievalDependencies([
+    rawRow({
+      id: 'requested-chunk',
+      sourceId: requestedSource,
+      indexId: 'requested-index',
+      activeIndexId: 'requested-index',
+      sourceTitle: 'Explicitly selected source',
+    }),
+  ]);
+  const results = await searchWorkspaceChunks(
+    'workspace-1',
+    'user-1',
+    'question whose global top results belong to other sources',
+    { topK: 5, threshold: 0.15, sourceIds: [requestedSource] },
+    dependencies,
+  );
+
+  assert.deepEqual(results.map(({ sourceId }) => sourceId), [requestedSource]);
+  assert.ok(
+    state.retrievalValues.some(
+      (value) => Array.isArray(value) && value.includes(requestedSource),
+    ),
+  );
+  assert.match(state.retrievalSql, /source\.id = ANY/);
+  assert.ok(
+    state.retrievalSql.indexOf('source.id = ANY') <
+      state.retrievalSql.indexOf('ORDER BY'),
+    'source scope must be applied before vector ordering and LIMIT',
+  );
 });

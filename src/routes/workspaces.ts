@@ -36,6 +36,8 @@ import { buildConversationHistory } from '../lib/chat/conversation-context';
 import {
   activeChatGenerations,
   classifyChatLifecycleFailure,
+  INSUFFICIENT_WORKSPACE_EVIDENCE_MESSAGE,
+  shouldReturnInsufficientWorkspaceEvidence,
   type ChatLifecyclePhase,
 } from '../lib/chat/generation-lifecycle';
 import {
@@ -49,7 +51,6 @@ import {
   orchestrateGroundedResponse,
   webSourcesFromExecution,
 } from '../lib/ai/orchestrator';
-import { isTavilySearchAvailable } from '../lib/ai/production-tools';
 import {
   externalWebSourcesAppendix,
   ExternalWebSafeStream,
@@ -877,13 +878,11 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
               workspaceId,
               res.locals.userId,
               scope.query,
-              { topK: 20, threshold: 0.15 },
+              { topK: 5, threshold: 0.15, sourceIds: [scope.sourceId] },
             );
             return {
               scope,
-              chunks: candidates
-                .filter(({ sourceId }) => sourceId === scope.sourceId)
-                .slice(0, 5),
+              chunks: candidates,
             };
           }),
         );
@@ -907,24 +906,19 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           workspaceId,
           res.locals.userId,
           retrievalQuery,
-          { topK: 5, threshold: 0.15 },
+          {
+            topK: 5,
+            threshold: 0.15,
+            ...(actionPlan?.target === 'source' && actionPlan.sourceIds.length > 0
+              ? { sourceIds: actionPlan.sourceIds }
+              : {}),
+          },
         );
       }
     } catch (retrievalError: any) {
       logger.error('Validated Workspace retrieval failed', retrievalError);
       throw retrievalError;
     }
-    if (
-      actionPlan?.target === 'source' &&
-      actionPlan.sourceIds.length > 0 &&
-      !actionPlan.sourceRetrievals?.length
-    ) {
-      const allowedSourceIds = new Set(actionPlan.sourceIds);
-      retrievedChunks = retrievedChunks.filter(({ sourceId }) =>
-        allowedSourceIds.has(sourceId),
-      );
-    }
-
     lifecyclePhase = 'citation_validation';
     const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
     sendEvent({
@@ -938,14 +932,15 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     });
 
     if (
-      !ragContext.hasContext &&
-      !actionPlan?.allowWithoutWorkspaceContext &&
-      (!isTavilySearchAvailable() || actionPlan?.sourceIds.length)
+      shouldReturnInsufficientWorkspaceEvidence(
+        ragContext.hasContext,
+        actionPlan?.allowWithoutWorkspaceContext === true,
+      )
     ) {
       const insufficientContext =
         actionPlan
           ? `I couldn't retrieve sufficient validated Workspace evidence to complete ${actionPlan.actionLabel}. Check that the selected sources are fully indexed, then try again.`
-          : "I couldn't find sufficient indexed knowledge in this Workspace to answer that question. Add or reprocess a relevant source, then try again.";
+          : INSUFFICIENT_WORKSPACE_EVIDENCE_MESSAGE;
       sendEvent({ type: 'chunk', text: insufficientContext });
       const savedMessage = regenerationTurn
         ? await replaceWorkspaceAssistantMessage({
@@ -967,6 +962,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         userMessage: savedUserMessage,
         message: savedMessage,
         citations: [],
+        groundingStatus: 'insufficient_workspace_evidence',
         regenerated: Boolean(regenerationTurn),
       });
       return;

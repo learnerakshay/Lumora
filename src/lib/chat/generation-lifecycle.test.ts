@@ -8,7 +8,10 @@ import {
 import {
   ActiveChatGenerationRegistry,
   classifyChatLifecycleFailure,
+  INSUFFICIENT_WORKSPACE_EVIDENCE_MESSAGE,
+  shouldReturnInsufficientWorkspaceEvidence,
 } from './generation-lifecycle';
+import { CitationTrustError } from './conversation-store';
 
 test('transport disconnect does not abort bounded generation and completion can persist', async () => {
   const registry = new ActiveChatGenerationRegistry();
@@ -104,4 +107,32 @@ test('chat lifecycle errors retain safe phase-specific classifications', () => {
   );
   assert.equal(cancellation.code, 'CHAT_CANCELLED');
   assert.equal(cancellation.intentionalCancellation, true);
+});
+
+test('unsupported standard Workspace questions take the insufficient-evidence path', () => {
+  assert.equal(shouldReturnInsufficientWorkspaceEvidence(false, false), true);
+  assert.equal(shouldReturnInsufficientWorkspaceEvidence(true, false), false);
+  assert.equal(shouldReturnInsufficientWorkspaceEvidence(false, true), false);
+  assert.match(
+    INSUFFICIENT_WORKSPACE_EVIDENCE_MESSAGE,
+    /couldn't find enough evidence in this Workspace/i,
+  );
+});
+
+test('citation trust failures retain citation-specific classifications', () => {
+  const invalid = classifyChatLifecycleFailure(
+    new CitationTrustError('invalid marker metadata', 'CITATION_VALIDATION_FAILED'),
+    'persistence',
+    false,
+  );
+  assert.equal(invalid.code, 'CITATION_VALIDATION_FAILED');
+  assert.equal(invalid.phase, 'citation_validation');
+
+  const mismatch = classifyChatLifecycleFailure(
+    new CitationTrustError('inactive index', 'CITATION_PROVENANCE_MISMATCH'),
+    'persistence',
+    false,
+  );
+  assert.equal(mismatch.code, 'CITATION_PROVENANCE_MISMATCH');
+  assert.doesNotMatch(mismatch.userMessage, /inactive index/);
 });

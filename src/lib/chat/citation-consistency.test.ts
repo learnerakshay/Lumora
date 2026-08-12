@@ -29,6 +29,17 @@ test('returns only cited provenance in first-use order without duplicates', () =
   );
 });
 
+test('every accepted marker resolves only to evidence supplied for that generation', () => {
+  const supplied = [citation(1), citation(2)];
+  const accepted = citationsUsedByResponse(
+    'First fact [Citation #1]. Combined fact [Citation #1] [Citation #2].',
+    supplied,
+  );
+  const suppliedChunkIds = new Set(supplied.map(({ chunkId }) => chunkId));
+  assert.ok(accepted.every(({ chunkId }) => suppliedChunkIds.has(chunkId)));
+  assert.deepEqual(accepted.map(({ chunkId }) => chunkId), ['chunk-1', 'chunk-2']);
+});
+
 test('rejects missing and fabricated citation markers', () => {
   assert.throws(() => citationsUsedByResponse('Unsupported claim.', [citation(1)]));
   assert.throws(() => citationsUsedByResponse('Claim [Citation #3].', [citation(1)]));

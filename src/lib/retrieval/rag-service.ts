@@ -79,9 +79,10 @@ interface RawRetrievalRow {
   vectorDimensions: number | null;
 }
 
-interface RetrievalOptions {
+export interface RetrievalOptions {
   topK?: number;
   threshold?: number;
+  sourceIds?: string[];
 }
 
 interface ContextOptions {
@@ -285,6 +286,15 @@ export async function searchWorkspaceChunks(
   if (!Number.isFinite(threshold) || threshold < -1 || threshold > 1) {
     throw new Error('Retrieval similarity threshold must be between -1 and 1');
   }
+  const sourceIds = options.sourceIds
+    ? [...new Set(options.sourceIds.map((sourceId) => sourceId.trim()).filter(Boolean))]
+    : [];
+  if (options.sourceIds && sourceIds.length === 0) {
+    throw new Error('Source-scoped retrieval requires at least one valid source ID');
+  }
+  if (sourceIds.length > 50) {
+    throw new Error('Source-scoped retrieval cannot exceed 50 sources');
+  }
 
   const workspace = await database.workspace.findFirst({
     where: {
@@ -347,6 +357,7 @@ export async function searchWorkspaceChunks(
         ON source_content."sourceId" = source.id
         AND source_content.version = source_index."sourceVersion"
       WHERE source."workspaceId" = ${workspace.id}
+        AND (${sourceIds.length === 0} OR source.id = ANY(${sourceIds}::text[]))
     ),
     index_state AS (
       SELECT
@@ -710,12 +721,12 @@ ${contextBlocks}
 ===================================
 
 INSTRUCTIONS:
-1. Ground your response in the provided workspace context snippets above.
+1. Use the supplied Workspace evidence as the exclusive factual basis for the answer. Do not supplement it with pretrained factual knowledge.
 2. Synthesize a structured response formatted in clean Markdown (use headers, bold key phrases, bullet points, code blocks or tables where appropriate).
-3. Cite every grounded factual claim with one or more exact markers from the supplied context, such as "[Citation #1]". Use only available Citation numbers. Do not write source-title citations or invent citation markers.
+3. Every substantive factual claim must be supported by the supplied evidence and accompanied by one or more exact markers such as "[Citation #1]". Use only available Citation numbers. Do not write source-title citations or invent citation markers.
 4. Tone & Style: ${modeInstructions}
 5. Conversation history is for continuity only and is never evidence. Validate factual claims against the Workspace context.
-6. If the provided context lacks sufficient information to completely answer certain aspects of the user question, explicitly mention what is present and what is missing. Never hallucinate unverified details outside the workspace context.`;
+6. If the provided context does not support all or part of the requested answer, explicitly qualify or refuse that unsupported part. Never extrapolate beyond the supplied evidence or present unsupported details as fact.`;
 
   return {
     hasContext: true,

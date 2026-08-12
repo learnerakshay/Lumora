@@ -3,6 +3,7 @@ import {
   ChatGenerationAbortedError,
   ChatProviderError,
 } from './openai-provider';
+import { CitationTrustError } from './conversation-store';
 
 export type ChatLifecyclePhase =
   | 'request'
@@ -94,6 +95,16 @@ export class ActiveChatGenerationRegistry {
 
 export const activeChatGenerations = new ActiveChatGenerationRegistry();
 
+export const INSUFFICIENT_WORKSPACE_EVIDENCE_MESSAGE =
+  "I couldn't find enough evidence in this Workspace to answer that reliably. Add or reprocess a relevant source, then try again.";
+
+export function shouldReturnInsufficientWorkspaceEvidence(
+  hasWorkspaceContext: boolean,
+  allowWithoutWorkspaceContext: boolean,
+): boolean {
+  return !hasWorkspaceContext && !allowWithoutWorkspaceContext;
+}
+
 export function classifyChatLifecycleFailure(
   error: unknown,
   phase: ChatLifecyclePhase,
@@ -131,6 +142,17 @@ export function classifyChatLifecycleFailure(
       intentionalCancellation: false,
     };
   }
+  if (error instanceof CitationTrustError) {
+    return {
+      code: error.code,
+      phase: 'citation_validation',
+      userMessage:
+        error.code === 'CITATION_PROVENANCE_MISMATCH'
+          ? 'The response citation no longer matched the validated Workspace evidence.'
+          : 'The response citation metadata did not pass validation.',
+      intentionalCancellation: false,
+    };
+  }
 
   const byPhase: Record<ChatLifecyclePhase, Omit<ClassifiedChatFailure, 'phase'>> = {
     request: {
@@ -149,7 +171,7 @@ export function classifyChatLifecycleFailure(
       intentionalCancellation: false,
     },
     citation_validation: {
-      code: 'RESPONSE_VALIDATION_FAILED',
+      code: 'CITATION_VALIDATION_FAILED',
       userMessage: 'The generated response did not pass grounded-response validation.',
       intentionalCancellation: false,
     },

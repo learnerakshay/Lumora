@@ -9,6 +9,7 @@ export interface StoredCitation {
   chunkId: string;
   sourceId: string;
   indexId: string;
+  sourceVersion: number;
   title: string;
   snippet: string;
   kind?: 'DOCUMENT' | 'WEB';
@@ -35,7 +36,23 @@ export interface StoredMessage {
 
 type CitationInput = Omit<RAGCitation, 'id'>;
 
-function toStoredCitation(citation: {
+export class CitationTrustError extends Error {
+  constructor(
+    message: string,
+    public readonly code:
+      | 'CITATION_VALIDATION_FAILED'
+      | 'CITATION_PROVENANCE_MISMATCH',
+  ) {
+    super(message);
+    this.name = 'CitationTrustError';
+  }
+}
+
+export const historicalCitationInclude = {
+  include: { index: { select: { sourceVersion: true } } },
+} as const;
+
+export function toStoredCitation(citation: {
   id: string;
   messageId: string;
   chunkId: string;
@@ -50,6 +67,7 @@ function toStoredCitation(citation: {
   timestampStartMs: number | null;
   timestampEndMs: number | null;
   textOrigin: string;
+  index: { sourceVersion: number };
 }): StoredCitation {
   return {
     id: citation.id,
@@ -57,6 +75,7 @@ function toStoredCitation(citation: {
     chunkId: citation.chunkId,
     sourceId: citation.sourceId,
     indexId: citation.indexId,
+    sourceVersion: citation.index.sourceVersion,
     title: citation.title,
     snippet: citation.snippet,
     kind: citation.kind as StoredCitation['kind'],
@@ -129,18 +148,10 @@ export async function getWorkspaceMessages(workspaceId: string): Promise<StoredM
       OR: [{ workspaceId }, { workspace: { slug: workspaceId } }],
     },
     include: {
+      // Persisted citations are historical provenance. Current retrieval
+      // eligibility was enforced transactionally when they were created.
       citations: {
-        where: {
-          chunk: {
-            workspace: {
-              OR: [{ id: workspaceId }, { slug: workspaceId }],
-            },
-            index: {
-              status: 'READY',
-              activeForSource: { isNot: null },
-            },
-          },
-        },
+        ...historicalCitationInclude,
       },
     },
     orderBy: { createdAt: 'asc' },
@@ -158,14 +169,20 @@ function validateCitationInput(citation: CitationInput): void {
     !citation.snippet.trim() ||
     !citation.textOrigin.trim()
   ) {
-    throw new Error('Citation provenance is incomplete');
+    throw new CitationTrustError(
+      'Citation provenance is incomplete',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   if (
     !Number.isFinite(citation.score) ||
     citation.score < -1 ||
     citation.score > 1
   ) {
-    throw new Error('Citation similarity score is invalid');
+    throw new CitationTrustError(
+      'Citation similarity score is invalid',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   const hasStart = citation.timestampStartMs !== null;
   const hasEnd = citation.timestampEndMs !== null;
@@ -177,21 +194,36 @@ function validateCitationInput(citation: CitationInput): void {
         citation.timestampStartMs! < 0 ||
         citation.timestampEndMs! < citation.timestampStartMs!))
   ) {
-    throw new Error('Citation timestamp range is invalid');
+    throw new CitationTrustError(
+      'Citation timestamp range is invalid',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   if (citation.kind === 'WEB' && !citation.url) {
-    throw new Error('Website citation URL is required');
+    throw new CitationTrustError(
+      'Website citation URL is required',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   if (citation.page !== null && (!Number.isInteger(citation.page) || citation.page < 1)) {
-    throw new Error('Citation page number is invalid');
+    throw new CitationTrustError(
+      'Citation page number is invalid',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   if (citation.url) {
     try {
       if (new URL(citation.url).protocol !== 'https:') {
-        throw new Error('Citation URL must use HTTPS');
+        throw new CitationTrustError(
+          'Citation URL must use HTTPS',
+          'CITATION_VALIDATION_FAILED',
+        );
       }
     } catch {
-      throw new Error('Citation URL is invalid');
+      throw new CitationTrustError(
+        'Citation URL is invalid',
+        'CITATION_VALIDATION_FAILED',
+      );
     }
   }
 }
@@ -204,7 +236,10 @@ async function validateCitationsForWorkspace(
   citations.forEach(validateCitationInput);
   const uniqueChunkIds = [...new Set(citations.map((citation) => citation.chunkId))];
   if (uniqueChunkIds.length !== citations.length) {
-    throw new Error('Duplicate citation chunks are not allowed');
+    throw new CitationTrustError(
+      'Duplicate citation chunks are not allowed',
+      'CITATION_VALIDATION_FAILED',
+    );
   }
   if (citations.length === 0) return;
 
@@ -258,8 +293,9 @@ async function validateCitationsForWorkspace(
   for (const citation of citations) {
     const eligible = eligibleById.get(citation.chunkId);
     if (!eligible) {
-      throw new Error(
+      throw new CitationTrustError(
         'Citation references an inactive, missing, stale, or cross-Workspace chunk',
+        'CITATION_PROVENANCE_MISMATCH',
       );
     }
     const canonical = createCitation({
@@ -291,7 +327,10 @@ async function validateCitationsForWorkspace(
       canonical.timestampEndMs === citation.timestampEndMs &&
       canonical.textOrigin === citation.textOrigin;
     if (!matchesCanonicalProvenance) {
-      throw new Error('Citation provenance does not match its indexed chunk');
+      throw new CitationTrustError(
+        'Citation provenance does not match its indexed chunk',
+        'CITATION_PROVENANCE_MISMATCH',
+      );
     }
   }
 }
@@ -370,7 +409,11 @@ export async function createWorkspaceMessage(data: {
                 }
               : undefined,
         },
-        include: { citations: true },
+        include: {
+          citations: {
+            ...historicalCitationInclude,
+          },
+        },
       });
 
       return toStoredMessage(created);
@@ -462,9 +505,15 @@ export async function reserveAssistantRegeneration(
       const assistant = await tx.message.findUnique({
         where: { id: assistantMessageId },
         include: {
-          citations: true,
+          citations: {
+            ...historicalCitationInclude,
+          },
           parentMessage: {
-            include: { citations: true },
+            include: {
+              citations: {
+                ...historicalCitationInclude,
+              },
+            },
           },
         },
       });
@@ -559,7 +608,11 @@ export async function replaceWorkspaceAssistantMessage(data: {
                 }
               : undefined,
         },
-        include: { citations: true },
+        include: {
+          citations: {
+            ...historicalCitationInclude,
+          },
+        },
       });
       return toStoredMessage(updated);
     },
