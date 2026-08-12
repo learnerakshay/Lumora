@@ -9,6 +9,10 @@ import {
 } from 'youtube-transcript';
 import { logger } from '../logger';
 import { IngestionFailure } from './errors';
+import {
+  acquireGeminiYouTubeTranscript,
+  GeminiYouTubeAcquisitionError,
+} from './gemini-youtube-acquisition';
 import { validatePublicHttpsUrl } from './safe-fetch';
 
 const MAX_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -38,6 +42,74 @@ export interface YouTubeTranscriptProviderDependencies {
   fetchImpl?: typeof fetch;
   validateEndpoint?: typeof validatePublicHttpsUrl;
   directFetch?: (videoId: string) => Promise<YouTubeTranscriptCue[]>;
+  geminiAcquire?: typeof acquireGeminiYouTubeTranscript;
+}
+
+async function fetchGeminiTranscript(
+  videoId: string,
+  apiKey: string | undefined,
+  dependencies: YouTubeTranscriptProviderDependencies,
+): Promise<YouTubeTranscriptResult> {
+  if (!apiKey) {
+    throw new IngestionFailure({
+      message: 'GEMINI_API_KEY is not configured for YouTube acquisition',
+      errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+      userMessage: 'YouTube ingestion is temporarily unavailable.',
+      provider: 'gemini',
+    });
+  }
+
+  try {
+    const acquisition = await (dependencies.geminiAcquire || acquireGeminiYouTubeTranscript)({
+      apiKey,
+      videoId,
+      youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    });
+    return {
+      provider: 'direct',
+      language: acquisition.language,
+      cues: acquisition.segments.map((segment) => ({
+        text: segment.text,
+        offset: segment.startSeconds * 1_000,
+        duration: (segment.endSeconds - segment.startSeconds) * 1_000,
+        lang: acquisition.language,
+      })),
+    };
+  } catch (error) {
+    if (!(error instanceof GeminiYouTubeAcquisitionError)) throw error;
+    if (
+      error.classification === 'VIDEO_UNAVAILABLE' ||
+      error.classification === 'NO_SPEECH_DETECTED'
+    ) {
+      throw new IngestionFailure({
+        message: `Gemini YouTube acquisition failed: ${error.classification}`,
+        errorCode: 'TRANSCRIPT_UNAVAILABLE',
+        userMessage: error.classification === 'NO_SPEECH_DETECTED'
+          ? 'No discernible speech was detected in this YouTube video.'
+          : 'This YouTube video is unavailable or not public.',
+        provider: 'gemini',
+        cause: error,
+      });
+    }
+
+    const userMessage = error.classification === 'TIMEOUT'
+      ? 'YouTube extraction timed out. Please retry shortly.'
+      : error.classification === 'RATE_LIMITED'
+        ? 'YouTube extraction is temporarily rate limited. Please retry shortly.'
+        : error.classification === 'EXTRACTION_MALFORMED'
+          ? 'YouTube extraction returned invalid structured content.'
+          : error.classification === 'CONTENT_POLICY'
+            ? 'This YouTube video cannot be processed because of a content policy restriction.'
+            : 'YouTube extraction failed upstream. Please retry shortly.';
+    throw new IngestionFailure({
+      message: `Gemini YouTube acquisition failed: ${error.classification}`,
+      errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+      userMessage,
+      retryable: error.retryable,
+      provider: 'gemini',
+      cause: error,
+    });
+  }
 }
 
 function validateCues(value: unknown, provider: 'direct' | 'proxy'): YouTubeTranscriptCue[] {
@@ -327,15 +399,12 @@ export async function fetchYouTubeTranscript(
   config?: YouTubeTranscriptProviderConfig,
   dependencies: YouTubeTranscriptProviderDependencies = {},
 ): Promise<YouTubeTranscriptResult> {
-  const resolved = config || (() => {
+  if (!config) {
     const env = getServerEnv();
-    return {
-      provider: 'direct' as const,
-      timeoutMs: env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
-    };
-  })();
+    return fetchGeminiTranscript(videoId, env.GEMINI_API_KEY, dependencies);
+  }
 
-  return resolved.provider === 'proxy'
-    ? fetchProxyTranscript(videoId, resolved, dependencies)
-    : fetchDirectTranscript(videoId, resolved, dependencies);
+  return config.provider === 'proxy'
+    ? fetchProxyTranscript(videoId, config, dependencies)
+    : fetchDirectTranscript(videoId, config, dependencies);
 }

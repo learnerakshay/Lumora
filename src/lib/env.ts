@@ -15,6 +15,7 @@ const serverEnvSchema = z
       .string()
       .min(1, 'VITE_CLERK_PUBLISHABLE_KEY is required'),
     OPENAI_API_KEY: z.string().trim().min(1).optional(),
+    GEMINI_API_KEY: optionalSecret,
     EMBEDDING_PROVIDER: z.literal('openai').default('openai'),
     EMBEDDING_MODEL: z
       .enum(['text-embedding-3-small', 'text-embedding-3-large'])
@@ -106,6 +107,14 @@ const serverEnvSchema = z
         code: 'custom',
         path: ['OPENAI_API_KEY'],
         message: 'OPENAI_API_KEY is required in production',
+      });
+    }
+
+    if (!env.GEMINI_API_KEY) {
+      context.addIssue({
+        code: 'custom',
+        path: ['GEMINI_API_KEY'],
+        message: 'GEMINI_API_KEY is required in production',
       });
     }
 

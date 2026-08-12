@@ -101,6 +101,48 @@ test('reference YouTube provider times out and rejects empty or malformed segmen
   );
 });
 
+test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues', async () => {
+  const originalEnv = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    VITE_CLERK_PUBLISHABLE_KEY: process.env.VITE_CLERK_PUBLISHABLE_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    NODE_ENV: process.env.NODE_ENV,
+  };
+  Object.assign(process.env, {
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+    CLERK_SECRET_KEY: 'test-clerk-secret',
+    VITE_CLERK_PUBLISHABLE_KEY: 'test-clerk-publishable',
+    GEMINI_API_KEY: 'test-gemini-key',
+    NODE_ENV: 'test',
+  });
+  try {
+    let receivedUrl = '';
+    const result = await fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+      geminiAcquire: async (input) => {
+        receivedUrl = input.youtubeUrl;
+        return {
+          language: 'en',
+          segments: [
+            { text: 'Opening', startSeconds: 1.25, endSeconds: 3.75 },
+          ],
+        };
+      },
+    });
+    assert.equal(receivedUrl, 'https://www.youtube.com/watch?v=-moW9jvvMr4');
+    assert.equal(result.provider, 'direct');
+    assert.equal(result.language, 'en');
+    assert.deepEqual(result.cues, [
+      { text: 'Opening', offset: 1_250, duration: 2_500, lang: 'en' },
+    ]);
+  } finally {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('proxy YouTube provider authenticates server-side and rejects incomplete cues', async () => {
   let authorization = '';
   let requestBody = '';
