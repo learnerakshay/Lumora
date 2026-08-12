@@ -123,3 +123,28 @@ export class ConversationOperationGate {
     return this.activeOperation;
   }
 }
+
+export class ConversationStreamGuard {
+  private current: { workspaceId: string; operationId: string } | null = null;
+
+  activate(workspaceId: string, operationId: string): void {
+    this.current = { workspaceId, operationId };
+  }
+
+  isCurrent(workspaceId: string, operationId: string): boolean {
+    return (
+      this.current?.workspaceId === workspaceId &&
+      this.current.operationId === operationId
+    );
+  }
+
+  invalidate(workspaceId?: string): void {
+    if (!workspaceId || this.current?.workspaceId === workspaceId) {
+      this.current = null;
+    }
+  }
+
+  get active(): Readonly<{ workspaceId: string; operationId: string }> | null {
+    return this.current;
+  }
+}

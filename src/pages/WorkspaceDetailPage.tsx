@@ -4,6 +4,7 @@ import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
 import {
   ConversationOperationGate,
+  ConversationStreamGuard,
   parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
@@ -59,6 +60,7 @@ export function WorkspaceDetailPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const conversationRevisionRef = useRef(0);
   const operationGateRef = useRef(new ConversationOperationGate());
+  const streamGuardRef = useRef(new ConversationStreamGuard());
 
   // Modal States
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
@@ -144,12 +146,22 @@ export function WorkspaceDetailPage() {
   }, [workspaceId]);
 
   useEffect(() => {
+    const activeWorkspaceId = workspaceId;
+    streamGuardRef.current.invalidate();
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    operationGateRef.current = new ConversationOperationGate();
     conversationRevisionRef.current += 1;
     setMessages([]);
     setHistoryError(null);
     fetchWorkspace();
     fetchSources();
     void fetchMessages();
+    return () => {
+      streamGuardRef.current.invalidate(activeWorkspaceId);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
   }, [fetchWorkspace, fetchSources, fetchMessages]);
 
   // Polling loop when any source is currently PROCESSING or PENDING
@@ -167,6 +179,17 @@ export function WorkspaceDetailPage() {
     return () => clearInterval(interval);
   }, [sources, fetchSources]);
 
+  // A persisted SENDING assistant record means server-side generation is still
+  // active after a reload or transport interruption. Poll only until it reaches
+  // its durable SUCCESS/ERROR terminal state.
+  useEffect(() => {
+    if (!messages.some((message) => message.status === 'SENDING')) return;
+    const interval = setInterval(() => {
+      void fetchMessages();
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [messages, fetchMessages]);
+
   // Chat Streaming Submission Handler
   const handleSubmitMessage = async (
     promptText: string,
@@ -174,17 +197,27 @@ export function WorkspaceDetailPage() {
     action?: AIActionRequest,
     regenerateAssistant?: StoredMessage,
   ) => {
-    if (!workspaceId || !promptText.trim()) return;
+    if (
+      !workspaceId ||
+      !promptText.trim() ||
+      messages.some((message) => message.status === 'SENDING')
+    ) return;
+    const capturedWorkspaceId = workspaceId;
+    const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const operationId = regenerateAssistant
-      ? `regenerate:${regenerateAssistant.id}`
-      : `submit:${Date.now()}`;
-    if (!operationGateRef.current.begin(operationId)) return;
+      ? `regenerate:${regenerateAssistant.id}:${nonce}`
+      : `submit:${nonce}`;
+    const operationGate = operationGateRef.current;
+    if (!operationGate.begin(operationId)) return;
+    streamGuardRef.current.activate(capturedWorkspaceId, operationId);
+    const isCurrentOperation = () =>
+      streamGuardRef.current.isCurrent(capturedWorkspaceId, operationId);
     conversationRevisionRef.current += 1;
 
     const isRegeneration = Boolean(regenerateAssistant);
     const tempUserMsg: StoredMessage = {
       id: `usr_${Date.now()}`,
-      workspaceId,
+      workspaceId: capturedWorkspaceId,
       parentMessageId: null,
       role: 'USER',
       content: promptText.trim(),
@@ -217,15 +250,16 @@ export function WorkspaceDetailPage() {
     abortControllerRef.current = abortController;
 
     try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/chat/stream`, {
+      const res = await fetch(`/api/workspaces/${capturedWorkspaceId}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           isRegeneration
-            ? { regenerateMessageId: regenerateAssistant!.id }
+            ? { regenerateMessageId: regenerateAssistant!.id, operationId }
             : {
                 message: promptText.trim(),
                 mode,
+                operationId,
                 ...(action ? { action } : {}),
               },
         ),
@@ -266,7 +300,9 @@ export function WorkspaceDetailPage() {
           if (line.startsWith('data: ')) {
             const data = JSON.parse(line.substring(6));
             if (data.type === 'chunk' && data.text) {
-              setStreamingText((prev) => prev + data.text);
+              if (isCurrentOperation()) {
+                setStreamingText((prev) => prev + data.text);
+              }
             } else if (
               data.type === 'user_persisted' &&
               !isRegeneration &&
@@ -274,19 +310,22 @@ export function WorkspaceDetailPage() {
               typeof data.message === 'object' &&
               typeof data.message.id === 'string'
             ) {
-              setMessages((current) =>
-                current.map((item) =>
-                  item.id === tempUserMsg.id
-                    ? (data.message as StoredMessage)
-                    : item,
-                ),
-              );
+              if (isCurrentOperation()) {
+                setMessages((current) =>
+                  current.map((item) =>
+                    item.id === tempUserMsg.id
+                      ? (data.message as StoredMessage)
+                      : item,
+                  ),
+                );
+              }
             } else if (
               data.type === 'tool_status' &&
               typeof data.requestId === 'string' &&
               typeof data.toolName === 'string' &&
               typeof data.status === 'string'
             ) {
+              if (!isCurrentOperation()) continue;
               setToolExecutions((current) => {
                 const update = data as ToolStatusUpdate;
                 const existing = current.findIndex(
@@ -319,9 +358,10 @@ export function WorkspaceDetailPage() {
                   }
                 },
               );
-              setStreamingWebSources(validSources);
+              if (isCurrentOperation()) setStreamingWebSources(validSources);
             } else if (data.type === 'done') {
               terminalEventReceived = true;
+              if (!isCurrentOperation()) continue;
               if (
                 !data.message ||
                 typeof data.message !== 'object' ||
@@ -354,6 +394,26 @@ export function WorkspaceDetailPage() {
               completedResponse = true;
             } else if (data.type === 'error') {
               terminalEventReceived = true;
+              if (!isCurrentOperation()) continue;
+              if (
+                !isRegeneration &&
+                data.userMessage &&
+                typeof data.userMessage === 'object' &&
+                typeof data.userMessage.id === 'string' &&
+                data.message &&
+                typeof data.message === 'object' &&
+                typeof data.message.id === 'string'
+              ) {
+                setMessages((current) =>
+                  reconcileCompletedTurn(
+                    current,
+                    tempUserMsg.id,
+                    data.userMessage as StoredMessage,
+                    data.message as StoredMessage,
+                  ),
+                );
+                conversationRevisionRef.current += 1;
+              }
               throw new Error(data.error || 'AI generation failed.');
             }
           }
@@ -365,26 +425,31 @@ export function WorkspaceDetailPage() {
       if (terminalEventReceived && !completedResponse) {
         throw new Error('The AI response did not reach a persisted completed state.');
       }
-      if (completedResponse) {
+      if (completedResponse && isCurrentOperation()) {
         void fetchMessages();
       }
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
+      if (isCurrentOperation() && err.name !== 'AbortError') {
         setActivityError(err.message || 'Error communicating with RAG response stream.');
       }
-      if (!isRegeneration) {
+      if (!isRegeneration && isCurrentOperation()) {
         await fetchMessages();
       }
     } finally {
-      setIsGenerating(false);
-      setStreamingText('');
-      setStreamingCitations([]);
-      setToolExecutions([]);
-      setStreamingWebSources([]);
-      setActiveActionLabel(null);
-      setRegeneratingMessageId(null);
-      abortControllerRef.current = null;
-      operationGateRef.current.end(operationId);
+      if (isCurrentOperation()) {
+        setIsGenerating(false);
+        setStreamingText('');
+        setStreamingCitations([]);
+        setToolExecutions([]);
+        setStreamingWebSources([]);
+        setActiveActionLabel(null);
+        setRegeneratingMessageId(null);
+        streamGuardRef.current.invalidate(capturedWorkspaceId);
+      }
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+      operationGate.end(operationId);
     }
   };
 
@@ -416,12 +481,32 @@ export function WorkspaceDetailPage() {
     );
   };
 
-  const handleCancelGeneration = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setIsGenerating(false);
-      setActiveActionLabel(null);
+  const handleCancelGeneration = async () => {
+    const activeOperation = streamGuardRef.current.active;
+    const transportController = abortControllerRef.current;
+    if (transportController && activeOperation) {
+      await fetch(`/api/workspaces/${activeOperation.workspaceId}/chat/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationId: activeOperation.operationId }),
+        }).catch(() => undefined);
+      transportController.abort();
+      if (abortControllerRef.current === transportController) {
+        abortControllerRef.current = null;
+      }
+      if (
+        streamGuardRef.current.isCurrent(
+          activeOperation.workspaceId,
+          activeOperation.operationId,
+        )
+      ) {
+        setIsGenerating(false);
+        setStreamingText('');
+        setStreamingCitations([]);
+        setToolExecutions([]);
+        setStreamingWebSources([]);
+        setActiveActionLabel(null);
+      }
     }
   };
 
@@ -533,6 +618,10 @@ export function WorkspaceDetailPage() {
   const hasIndexedSources = sources.some(
     (source) => source.status === 'COMPLETED' && source.stage === 'COMPLETED'
   );
+  const hasPersistedGeneration = messages.some(
+    (message) => message.status === 'SENDING',
+  );
+  const chatIsGenerating = isGenerating || hasPersistedGeneration;
 
   if (loadingWorkspace && !workspace) {
     return (
@@ -646,8 +735,8 @@ export function WorkspaceDetailPage() {
         {/* Center View: Shows Onboarding or Chat Thread */}
         {sources.length > 0 ? (
           <WorkspaceChatArea
-            messages={messages}
-            isGenerating={isGenerating}
+            messages={messages.filter((message) => message.status !== 'SENDING')}
+            isGenerating={chatIsGenerating}
             streamingText={streamingText}
             streamingCitations={streamingCitations}
             toolExecutions={toolExecutions}
@@ -676,7 +765,10 @@ export function WorkspaceDetailPage() {
         {/* Bottom Prompt Composer */}
         <WorkspacePromptComposer
           hasIndexedSources={hasIndexedSources}
-          isGenerating={isGenerating}
+          isGenerating={chatIsGenerating}
+          canCancelGeneration={
+            isGenerating && Boolean(streamGuardRef.current.active)
+          }
           sources={sources}
           selectedSourceId={selectedSourceDetails?.id}
           hasConversation={messages.length > 0}

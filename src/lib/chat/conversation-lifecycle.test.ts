@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { StoredMessage } from './conversation-store';
 import {
   ConversationOperationGate,
+  ConversationStreamGuard,
   parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
@@ -217,4 +218,59 @@ test('operation gate prevents duplicate submits and parallel regeneration', () =
   assert.equal(gate.active, 'regenerate:assistant-1');
   gate.end('regenerate:assistant-1');
   assert.equal(gate.begin('submit:other'), true);
+});
+
+test('Workspace navigation invalidates delayed events from the previous stream', () => {
+  const guard = new ConversationStreamGuard();
+  guard.activate('workspace-a', 'operation-a');
+  assert.equal(guard.isCurrent('workspace-a', 'operation-a'), true);
+
+  guard.invalidate('workspace-a');
+  guard.activate('workspace-b', 'operation-b');
+  assert.equal(guard.isCurrent('workspace-a', 'operation-a'), false);
+  assert.equal(guard.isCurrent('workspace-b', 'operation-b'), true);
+});
+
+test('cleanup for an old Workspace cannot invalidate the current Workspace stream', () => {
+  const guard = new ConversationStreamGuard();
+  guard.activate('workspace-b', 'operation-b');
+  guard.invalidate('workspace-a');
+  assert.deepEqual(guard.active, {
+    workspaceId: 'workspace-b',
+    operationId: 'operation-b',
+  });
+});
+
+test('reload after interrupted transport converges to one durable completed turn', () => {
+  const user = message('user-1', 'USER', null, 'question');
+  const assistant = message('assistant-1', 'ASSISTANT', user.id, 'durable answer');
+  const history = parseConversationHistoryResponse(
+    { ok: true, status: 200 },
+    { success: true, data: [user, assistant] },
+  );
+  assert.deepEqual(history.map(({ id }) => id), ['user-1', 'assistant-1']);
+  assert.equal(new Set(history.map(({ id }) => id)).size, 2);
+});
+
+test('missing terminal done is recovered from persisted history without duplication', () => {
+  const optimistic = message('usr-temp', 'USER', null, 'question');
+  const user = message('user-1', 'USER', null, 'question');
+  const assistant = message('assistant-1', 'ASSISTANT', user.id, 'persisted before disconnect');
+  const recovered = parseConversationHistoryResponse(
+    { ok: true, status: 200 },
+    { success: true, data: [user, assistant] },
+  );
+  const reconciled = reconcileCompletedTurn(
+    [optimistic],
+    optimistic.id,
+    recovered[0],
+    recovered[1],
+  );
+  const repeated = reconcileCompletedTurn(
+    reconciled,
+    optimistic.id,
+    recovered[0],
+    recovered[1],
+  );
+  assert.deepEqual(repeated.map(({ id }) => id), ['user-1', 'assistant-1']);
 });

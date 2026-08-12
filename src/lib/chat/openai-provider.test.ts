@@ -145,7 +145,7 @@ test('rejects a stream that closes without a completion event', async () => {
   }
 });
 
-test('propagates client disconnect as an abort without completing generation', async () => {
+test('propagates caller cancellation as an abort without completing generation', async () => {
   const originalFetch = globalThis.fetch;
   const controller = new AbortController();
   globalThis.fetch = async (_url, request) =>

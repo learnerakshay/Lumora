@@ -9,6 +9,7 @@ export type AnswerMode = 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
 interface WorkspacePromptComposerProps {
   hasIndexedSources: boolean;
   isGenerating?: boolean;
+  canCancelGeneration?: boolean;
   onOpenAddSource: () => void;
   onSubmitMessage: (prompt: string, mode: AnswerMode) => void;
   sources?: SourceRecord[];
@@ -32,6 +33,7 @@ const ANSWER_MODES: { id: AnswerMode; label: string }[] = [
 export function WorkspacePromptComposer({
   hasIndexedSources,
   isGenerating = false,
+  canCancelGeneration = true,
   onOpenAddSource,
   onSubmitMessage,
   sources = [],
@@ -172,12 +174,13 @@ export function WorkspacePromptComposer({
             {isGenerating ? (
               <button
                 type="button"
-                onClick={onCancelGeneration}
-                className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-800 bg-rose-950 px-3 text-xs font-bold text-rose-300 transition hover:bg-rose-900"
-                aria-label="Stop response generation"
+                onClick={canCancelGeneration ? onCancelGeneration : undefined}
+                disabled={!canCancelGeneration}
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-800 bg-rose-950 px-3 text-xs font-bold text-rose-300 transition hover:bg-rose-900 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-400"
+                aria-label={canCancelGeneration ? 'Stop response generation' : 'Server is completing response generation'}
               >
                 <StopCircle className="h-3.5 w-3.5" />
-                <span>Stop</span>
+                <span>{canCancelGeneration ? 'Stop' : 'Completing…'}</span>
               </button>
             ) : (
               <button

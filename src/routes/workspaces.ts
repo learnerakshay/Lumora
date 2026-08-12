@@ -1,5 +1,6 @@
 import { Router, Request, Response, RequestHandler } from 'express';
 import multer from 'multer';
+import { randomUUID } from 'node:crypto';
 import {
   getWorkspaces,
   createWorkspace,
@@ -33,15 +34,18 @@ import {
 } from '../lib/chat/conversation-store';
 import { buildConversationHistory } from '../lib/chat/conversation-context';
 import {
+  activeChatGenerations,
+  classifyChatLifecycleFailure,
+  type ChatLifecyclePhase,
+} from '../lib/chat/generation-lifecycle';
+import {
   CitationSafeStream,
   citationsUsedByResponse,
 } from '../lib/chat/citation-consistency';
 import {
   ChatGenerationAbortedError,
-  ChatProviderError,
 } from '../lib/chat/openai-provider';
 import {
-  AIOrchestrationError,
   orchestrateGroundedResponse,
   webSourcesFromExecution,
 } from '../lib/ai/orchestrator';
@@ -556,6 +560,23 @@ workspaceRouter.delete('/:id/messages/:messageId', async (req: Request, res: Res
   }
 });
 
+// POST /api/workspaces/:id/chat/cancel
+workspaceRouter.post('/:id/chat/cancel', async (req: Request, res: Response) => {
+  const operationId = req.body?.operationId;
+  if (typeof operationId !== 'string' || !operationId.trim() || operationId.length > 200) {
+    const response = errorResponse(
+      AppError.badRequest('A valid chat operation ID is required', 'INVALID_CHAT_OPERATION'),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
+  const cancelled = await activeChatGenerations.cancelAndWait(
+    res.locals.workspace.id,
+    res.locals.userId,
+    operationId,
+  );
+  return res.status(200).json(successResponse({ cancelled }));
+});
+
 // POST /api/workspaces/:id/chat/stream
 workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => {
   const workspaceId = res.locals.workspace.id;
@@ -564,6 +585,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     mode: requestedMode = 'DETAILED',
     action: requestedAction,
     regenerateMessageId,
+    operationId: requestedOperationId,
   } = req.body || {};
   const validModes = ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const;
   const isRegeneration = regenerateMessageId !== undefined;
@@ -571,6 +593,18 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     | Awaited<ReturnType<typeof reserveAssistantRegeneration>>
     | null = null;
   let regenerationReserved = false;
+
+  if (
+    requestedOperationId !== undefined &&
+    (typeof requestedOperationId !== 'string' ||
+      !requestedOperationId.trim() ||
+      requestedOperationId.length > 200)
+  ) {
+    const response = errorResponse(
+      AppError.badRequest('Chat operation ID is invalid', 'INVALID_CHAT_OPERATION'),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
 
   if (
     isRegeneration &&
@@ -730,47 +764,61 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     (typeof submittedMessage === 'string' ? submittedMessage.trim() : '');
   const retrievalQuery = actionPlan?.retrievalQuery || queryText;
   const modelQuery = actionPlan?.modelPrompt || queryText;
+  const operationId =
+    typeof requestedOperationId === 'string' ? requestedOperationId : randomUUID();
   const generationController = new AbortController();
   let responseFinished = false;
-  let clientDisconnected = false;
-  let serverAbortObserved = false;
+  let transportDisconnected = false;
+  let lifecyclePhase: ChatLifecyclePhase = 'request';
+  let savedUserMessage: StoredMessage | null = null;
+  let pendingAssistantMessage: StoredMessage | null = null;
+
+  if (
+    !activeChatGenerations.register(
+      workspaceId,
+      res.locals.userId,
+      operationId,
+      generationController,
+    )
+  ) {
+    const response = errorResponse(
+      new AppError('This chat operation is already active.', 409, 'CHAT_OPERATION_CONFLICT'),
+    );
+    return res.status(response.statusCode).json(response.payload);
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  const abortGeneration = (reason: 'client' | 'server' = 'server') => {
-    if (generationController.signal.aborted) return;
-    if (reason === 'client') {
-      clientDisconnected = true;
-      logger.warn('Chat stream client disconnected', { workspaceId, reason: 'client_disconnect' });
-    } else {
-      serverAbortObserved = true;
-      logger.warn('Chat stream server aborted generation', { workspaceId, reason: 'server_abort' });
-    }
-    generationController.abort();
+  const markTransportDisconnected = () => {
+    if (transportDisconnected || responseFinished) return;
+    transportDisconnected = true;
+    logger.info('Chat transport disconnected; bounded generation will continue', {
+      workspaceId,
+      operationId,
+      reason: 'transport_disconnect',
+    });
   };
-  const handleResponseClose = () => {
-    if (!responseFinished) {
-      abortGeneration(req.aborted ? 'client' : 'server');
-    }
-  };
-  req.once('aborted', () => abortGeneration('client'));
+  const handleRequestAborted = () => markTransportDisconnected();
+  const handleResponseClose = () => markTransportDisconnected();
+  req.once('aborted', handleRequestAborted);
   res.once('close', handleResponseClose);
 
   const sendEvent = (eventData: object): boolean => {
-    if (generationController.signal.aborted || res.destroyed || res.writableEnded) {
-      abortGeneration();
+    if (transportDisconnected || res.destroyed || res.writableEnded) {
+      markTransportDisconnected();
       return false;
     }
     const accepted = res.write(`data: ${JSON.stringify(eventData)}\n\n`);
-    if (!accepted && res.destroyed) abortGeneration();
-    return !generationController.signal.aborted;
+    if (!accepted && res.destroyed) markTransportDisconnected();
+    return !transportDisconnected;
   };
 
   try {
-    const savedUserMessage: StoredMessage = regenerationTurn
+    lifecyclePhase = 'persistence';
+    savedUserMessage = regenerationTurn
       ? regenerationTurn.userMessage
       : await createWorkspaceMessage({
           workspaceId,
@@ -781,7 +829,16 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         });
     if (!regenerationTurn) {
       sendEvent({ type: 'user_persisted', message: savedUserMessage });
+      pendingAssistantMessage = await createWorkspaceMessage({
+        workspaceId,
+        parentMessageId: savedUserMessage.id,
+        role: 'ASSISTANT',
+        content: 'Response generation is in progress.',
+        mode,
+        status: 'SENDING',
+      });
     }
+    if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
     const recentHistory =
       actionMessageSnapshot || (await getWorkspaceMessages(workspaceId));
@@ -791,6 +848,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     );
 
     let retrievedChunks;
+    lifecyclePhase = 'retrieval';
     try {
       if (actionPlan?.sourceRetrievals?.length) {
         const scopedResults = await Promise.all(
@@ -811,12 +869,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         );
         const missingScope = scopedResults.find(({ chunks }) => chunks.length === 0);
         if (missingScope) {
-          sendEvent({
-            type: 'error',
-            code: 'ACTION_SOURCE_CONTEXT_MISSING',
-            error: `No usable indexed context was found for "${missingScope.scope.sourceTitle}". Reprocess that source and try again.`,
-          });
-          return;
+          throw new Error(
+            `No usable indexed context was found for "${missingScope.scope.sourceTitle}".`,
+          );
         }
         retrievedChunks = [];
         const largestScope = Math.max(
@@ -837,12 +892,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       }
     } catch (retrievalError: any) {
       logger.error('Validated Workspace retrieval failed', retrievalError);
-      sendEvent({
-        type: 'error',
-        code: 'RETRIEVAL_FAILED',
-        error: 'Unable to retrieve validated indexed knowledge for this Workspace.',
-      });
-      return;
+      throw retrievalError;
     }
     if (
       actionPlan?.target === 'source' &&
@@ -855,6 +905,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       );
     }
 
+    lifecyclePhase = 'citation_validation';
     const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
     sendEvent({
       type: 'start',
@@ -883,10 +934,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             content: insufficientContext,
             mode,
           })
-        : await createWorkspaceMessage({
+        : await replaceWorkspaceAssistantMessage({
             workspaceId,
-            parentMessageId: savedUserMessage.id,
-            role: 'ASSISTANT',
+            assistantMessageId: pendingAssistantMessage!.id,
             content: insufficientContext,
             mode,
           });
@@ -906,7 +956,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       ? new CitationSafeStream(
           ragContext.citations,
           (text) => {
-            if (!sendEvent({ type: 'chunk', text })) abortGeneration();
+            sendEvent({ type: 'chunk', text });
           },
         )
       : null;
@@ -915,11 +965,12 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       (text) => {
         if (citationSafeStream) {
           citationSafeStream.push(text);
-        } else if (!sendEvent({ type: 'chunk', text })) {
-          abortGeneration();
+        } else {
+          sendEvent({ type: 'chunk', text });
         }
       },
     );
+    lifecyclePhase = 'orchestration';
     const generated = await orchestrateGroundedResponse({
       workspaceId,
       hasWorkspaceContext: ragContext.hasContext,
@@ -949,11 +1000,12 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         }
       },
       onToolStatus: (status) => {
-        if (!sendEvent({ type: 'tool_status', ...status })) abortGeneration();
+        sendEvent({ type: 'tool_status', ...status });
       },
     });
     if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
+    lifecyclePhase = 'citation_validation';
     const usedCitations = ragContext.hasContext
       ? citationsUsedByResponse(generated.text, ragContext.citations)
       : [];
@@ -978,6 +1030,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       timestampEndMs: c.timestampEndMs,
       textOrigin: c.textOrigin,
     }));
+    lifecyclePhase = 'persistence';
     const savedAssistantMessage = regenerationTurn
       ? await replaceWorkspaceAssistantMessage({
           workspaceId,
@@ -986,10 +1039,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           mode,
           citations: persistedCitations,
         })
-      : await createWorkspaceMessage({
+      : await replaceWorkspaceAssistantMessage({
           workspaceId,
-          parentMessageId: savedUserMessage.id,
-          role: 'ASSISTANT',
+          assistantMessageId: pendingAssistantMessage!.id,
           content: finalResponse,
           mode,
           citations: persistedCitations,
@@ -1007,6 +1059,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       webSourceCount: generated.orchestration.webSources.length,
       actionId: actionPlan?.actionId,
       actionTarget: actionPlan?.target,
+      operationId,
+      transportDisconnected,
     });
 
     sendEvent({
@@ -1020,27 +1074,50 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       regenerated: Boolean(regenerationTurn),
     });
   } catch (err: any) {
-    if (err instanceof ChatGenerationAbortedError || generationController.signal.aborted) {
-      if (clientDisconnected) {
-        logger.info('Chat stream interrupted by client disconnect', { workspaceId });
-      } else if (serverAbortObserved) {
-        logger.info('Chat stream aborted by server', { workspaceId });
-      } else {
-        logger.info('Grounded response generation cancelled', { workspaceId });
+    const intentionalCancellation = activeChatGenerations.wasCancellationRequested(
+      workspaceId,
+      res.locals.userId,
+      operationId,
+    );
+    const failure = classifyChatLifecycleFailure(
+      err,
+      lifecyclePhase,
+      intentionalCancellation,
+    );
+    logger.error('Chat lifecycle failed', err, {
+      workspaceId,
+      operationId,
+      phase: failure.phase,
+      code: failure.code,
+      transportDisconnected,
+      intentionalCancellation: failure.intentionalCancellation,
+    });
+    let terminalMessage: StoredMessage | null = null;
+    if (savedUserMessage && pendingAssistantMessage && !regenerationTurn) {
+      try {
+        terminalMessage = await replaceWorkspaceAssistantMessage({
+          workspaceId,
+          assistantMessageId: pendingAssistantMessage.id,
+          content: failure.userMessage,
+          mode,
+          status: 'ERROR',
+        });
+      } catch (persistenceError) {
+        logger.error('Failed to persist terminal chat failure', persistenceError, {
+          workspaceId,
+          operationId,
+          originalCode: failure.code,
+        });
       }
-      return;
     }
-    logger.error('RAG Stream Handler Error', err, { workspaceId, phase: 'provider_failure' });
     sendEvent({
       type: 'error',
-      code:
-        err instanceof ChatProviderError || err instanceof AIOrchestrationError
-          ? err.code
-          : 'CHAT_GENERATION_FAILED',
-      error:
-        err instanceof ChatProviderError || err instanceof AIOrchestrationError
-          ? err.message
-          : 'Grounded AI response generation failed before completion.',
+      code: failure.code,
+      phase: failure.phase,
+      error: failure.userMessage,
+      ...(terminalMessage && savedUserMessage
+        ? { message: terminalMessage, userMessage: savedUserMessage }
+        : {}),
     });
   } finally {
     try {
@@ -1051,8 +1128,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         regenerateMessageId,
       });
     }
+    activeChatGenerations.unregister(workspaceId, res.locals.userId, operationId);
     responseFinished = true;
-    req.removeListener('aborted', abortGeneration);
+    req.removeListener('aborted', handleRequestAborted);
     res.removeListener('close', handleResponseClose);
     if (!res.writableEnded && !res.destroyed) res.end();
   }

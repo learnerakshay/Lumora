@@ -96,6 +96,34 @@ function toStoredMessage(message: {
 }
 
 export async function getWorkspaceMessages(workspaceId: string): Promise<StoredMessage[]> {
+  const staleGenerationCutoff = new Date(Date.now() - 10 * 60 * 1000);
+  await prisma.$transaction([
+    prisma.message.updateMany({
+      where: {
+        OR: [{ workspaceId }, { workspace: { slug: workspaceId } }],
+        role: 'ASSISTANT',
+        status: 'SENDING',
+        regenerationStartedAt: null,
+        createdAt: { lt: staleGenerationCutoff },
+      },
+      data: {
+        status: 'ERROR',
+        content: 'Response generation was interrupted before completion.',
+      },
+    }),
+    prisma.message.updateMany({
+      where: {
+        OR: [{ workspaceId }, { workspace: { slug: workspaceId } }],
+        role: 'ASSISTANT',
+        status: 'SENDING',
+        regenerationStartedAt: { lt: staleGenerationCutoff },
+      },
+      data: {
+        status: 'SUCCESS',
+        regenerationStartedAt: null,
+      },
+    }),
+  ]);
   const messages = await prisma.message.findMany({
     where: {
       OR: [{ workspaceId }, { workspace: { slug: workspaceId } }],
@@ -480,6 +508,7 @@ export async function replaceWorkspaceAssistantMessage(data: {
   assistantMessageId: string;
   content: string;
   mode: StoredMessage['mode'];
+  status?: 'SUCCESS' | 'ERROR';
   citations?: CitationInput[];
 }): Promise<StoredMessage> {
   return prisma.$transaction(
@@ -508,7 +537,7 @@ export async function replaceWorkspaceAssistantMessage(data: {
         data: {
           content: data.content,
           mode: data.mode,
-          status: 'SUCCESS',
+          status: data.status || 'SUCCESS',
           regenerationStartedAt: null,
           citations:
             citations.length > 0
