@@ -13,6 +13,15 @@ export class ChatProviderError extends Error {
     message: string,
     public readonly code: string,
     public readonly statusCode = 502,
+    public readonly diagnostics?: {
+      eventType?: string;
+      responseStatus?: string;
+      incompleteReason?: string;
+      providerErrorCode?: string;
+      providerErrorMessage?: string;
+      hadText: boolean;
+      completionReceived: boolean;
+    },
   ) {
     super(message);
     this.name = 'ChatProviderError';
@@ -33,12 +42,12 @@ interface OpenAIStreamEvent {
   response?: {
     id?: string;
     status?: string;
-    error?: { message?: string };
+    error?: { code?: string; message?: string };
     incomplete_details?: { reason?: string };
     output?: OpenAIFunctionCallItem[];
   };
   item?: OpenAIFunctionCallItem;
-  error?: { message?: string };
+  error?: { code?: string; message?: string };
 }
 
 interface OpenAIFunctionCallItem {
@@ -229,6 +238,7 @@ export async function generateGroundedResponse(
     let text = '';
     let completed = false;
     let responseId = '';
+    let refusalSeen = false;
     const toolRequests = new Map<string, ToolRequest>();
 
     const captureToolRequest = (item?: OpenAIFunctionCallItem) => {
@@ -287,21 +297,101 @@ export async function generateGroundedResponse(
           );
         }
         event.response.output?.forEach(captureToolRequest);
+        if (refusalSeen) {
+          throw new ChatProviderError(
+            'The AI provider refused to answer this request.',
+            'OPENAI_REFUSAL',
+            422,
+            {
+              eventType: event.type,
+              responseStatus: event.response.status,
+              hadText: Boolean(text.trim()),
+              completionReceived: true,
+            },
+          );
+        }
         responseId = event.response.id;
         completed = true;
         return;
       }
-      if (
-        event.type === 'response.failed' ||
-        event.type === 'response.incomplete' ||
-        event.type === 'error' ||
-        event.type === 'response.refusal.delta'
-      ) {
+      if (event.type === 'response.refusal.delta') {
+        refusalSeen = true;
+        return;
+      }
+      if (event.type === 'response.incomplete') {
+        const reason = event.response?.incomplete_details?.reason || 'unknown';
+        const code =
+          reason === 'max_output_tokens' || reason === 'max_tokens'
+            ? 'OPENAI_MAX_OUTPUT_TOKENS'
+            : reason === 'content_filter'
+              ? 'OPENAI_CONTENT_FILTER'
+              : 'OPENAI_RESPONSE_INCOMPLETE';
+        const message =
+          code === 'OPENAI_MAX_OUTPUT_TOKENS'
+            ? 'The AI response exceeded its configured output-token budget.'
+            : code === 'OPENAI_CONTENT_FILTER'
+              ? 'The AI provider stopped the response for safety filtering.'
+              : 'The AI provider returned an incomplete response.';
         throw new ChatProviderError(
-          'The AI provider did not complete the grounded response.',
-          'OPENAI_GENERATION_FAILED',
+          message,
+          code,
+          502,
+          {
+            eventType: event.type,
+            responseStatus: event.response?.status,
+            incompleteReason: reason,
+            providerErrorCode: event.response?.error?.code,
+            providerErrorMessage: event.response?.error?.message,
+            hadText: Boolean(text.trim()),
+            completionReceived: false,
+          },
         );
       }
+      if (event.type === 'response.failed' || event.type === 'error') {
+        const providerError = event.response?.error || event.error;
+        throw new ChatProviderError(
+          event.type === 'response.failed'
+            ? 'The AI provider failed while generating the response.'
+            : 'The AI provider stream reported an error.',
+          event.type === 'response.failed'
+            ? 'OPENAI_RESPONSE_FAILED'
+            : 'OPENAI_STREAM_ERROR',
+          502,
+          {
+            eventType: event.type,
+            responseStatus: event.response?.status,
+            providerErrorCode: providerError?.code,
+            providerErrorMessage: providerError?.message,
+            hadText: Boolean(text.trim()),
+            completionReceived: false,
+          },
+        );
+      }
+    };
+
+    const processEventBlock = (block: string): void => {
+      const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      if (!data || data === '[DONE]') return;
+      let parsedEvent: OpenAIStreamEvent;
+      try {
+        parsedEvent = JSON.parse(data) as OpenAIStreamEvent;
+      } catch {
+        throw new ChatProviderError(
+          'The AI provider returned a malformed stream.',
+          'OPENAI_MALFORMED_STREAM',
+          502,
+          {
+            eventType: 'malformed_sse_data',
+            hadText: Boolean(text.trim()),
+            completionReceived: completed,
+          },
+        );
+      }
+      handleEvent(parsedEvent);
     };
 
     while (!completed) {
@@ -310,25 +400,10 @@ export async function generateGroundedResponse(
       buffer += decoder.decode(value, { stream: true });
       const eventBlocks = buffer.split(/\r?\n\r?\n/);
       buffer = eventBlocks.pop() || '';
-      for (const block of eventBlocks) {
-        const data = block
-          .split(/\r?\n/)
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trimStart())
-          .join('\n');
-        if (!data || data === '[DONE]') continue;
-        let parsedEvent: OpenAIStreamEvent;
-        try {
-          parsedEvent = JSON.parse(data) as OpenAIStreamEvent;
-        } catch {
-          throw new ChatProviderError(
-            'The AI provider returned a malformed stream.',
-            'OPENAI_MALFORMED_STREAM',
-          );
-        }
-        handleEvent(parsedEvent);
-      }
+      eventBlocks.forEach(processEventBlock);
     }
+    buffer += decoder.decode();
+    if (buffer.trim()) processEventBlock(buffer);
 
     if (!completed || !responseId || (!text.trim() && toolRequests.size === 0)) {
       throw new ChatProviderError(
@@ -357,7 +432,15 @@ export async function generateGroundedResponse(
       logger.warn('Chat provider stream aborted by caller', { userId: input.userId });
       throw new ChatGenerationAbortedError();
     }
-    logger.error('Chat provider stream failed', error, { userId: input.userId });
+    logger.error('Chat provider stream failed', error, {
+      userId: input.userId,
+      ...(error instanceof ChatProviderError
+        ? {
+            providerCode: error.code,
+            ...error.diagnostics,
+          }
+        : {}),
+    });
     throw error;
   } finally {
     clearTimeout(timeout);

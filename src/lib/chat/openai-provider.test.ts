@@ -15,8 +15,14 @@ const requiredEnv = {
   CHAT_REQUEST_TIMEOUT_MS: '5000',
 };
 
-function streamResponse(events: object[]): Response {
-  const payload = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+function streamResponse(events: object[], trailingDelimiter = true): Response {
+  const payload = events
+    .map((event, index) =>
+      `data: ${JSON.stringify(event)}${
+        trailingDelimiter || index < events.length - 1 ? '\n\n' : ''
+      }`,
+    )
+    .join('');
   return new Response(
     new ReadableStream({
       start(controller) {
@@ -139,6 +145,111 @@ test('rejects a stream that closes without a completion event', async () => {
       generateGroundedResponse(input()),
       (error: unknown) =>
         error instanceof ChatProviderError && error.code === 'OPENAI_INCOMPLETE_STREAM',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('processes a final buffered completion event without a trailing SSE delimiter', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    streamResponse(
+      [
+        { type: 'response.output_text.delta', sequence_number: 1, delta: 'Grounded [Citation #1]' },
+        {
+          type: 'response.completed',
+          sequence_number: 2,
+          response: { id: 'resp_buffered', status: 'completed' },
+        },
+      ],
+      false,
+    );
+  try {
+    const result = await generateGroundedResponse(input());
+    assert.equal(result.responseId, 'resp_buffered');
+    assert.equal(result.text, 'Grounded [Citation #1]');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('classifies output-token exhaustion with safe terminal diagnostics', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    streamResponse([
+      { type: 'response.output_text.delta', sequence_number: 1, delta: 'Partial grounded text' },
+      {
+        type: 'response.incomplete',
+        sequence_number: 2,
+        response: {
+          id: 'resp_incomplete',
+          status: 'incomplete',
+          incomplete_details: { reason: 'max_output_tokens' },
+        },
+      },
+    ]);
+  try {
+    await assert.rejects(
+      generateGroundedResponse(input()),
+      (error: unknown) =>
+        error instanceof ChatProviderError &&
+        error.code === 'OPENAI_MAX_OUTPUT_TOKENS' &&
+        error.diagnostics?.eventType === 'response.incomplete' &&
+        error.diagnostics.incompleteReason === 'max_output_tokens' &&
+        error.diagnostics.hadText === true &&
+        error.diagnostics.completionReceived === false,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('partial text followed by a genuine provider failure remains a failure', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    streamResponse([
+      { type: 'response.output_text.delta', sequence_number: 1, delta: 'Partial text' },
+      {
+        type: 'response.failed',
+        sequence_number: 2,
+        response: {
+          id: 'resp_failed',
+          status: 'failed',
+          error: { code: 'server_error', message: 'Internal provider detail' },
+        },
+      },
+    ]);
+  try {
+    await assert.rejects(
+      generateGroundedResponse(input()),
+      (error: unknown) =>
+        error instanceof ChatProviderError &&
+        error.code === 'OPENAI_RESPONSE_FAILED' &&
+        error.diagnostics?.providerErrorCode === 'server_error' &&
+        error.diagnostics.hadText === true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('refusal deltas are classified separately after the terminal completion', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    streamResponse([
+      { type: 'response.refusal.delta', sequence_number: 1, delta: 'Unable to comply.' },
+      {
+        type: 'response.completed',
+        sequence_number: 2,
+        response: { id: 'resp_refusal', status: 'completed' },
+      },
+    ]);
+  try {
+    await assert.rejects(
+      generateGroundedResponse(input()),
+      (error: unknown) =>
+        error instanceof ChatProviderError && error.code === 'OPENAI_REFUSAL',
     );
   } finally {
     globalThis.fetch = originalFetch;
