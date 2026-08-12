@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SourceRecord, SourceType } from '../lib/source-store';
 import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
@@ -620,6 +620,13 @@ export function WorkspaceDetailPage() {
   const hasIndexedSources = sources.some(
     (source) => source.type !== 'VTT' && source.status === 'COMPLETED' && source.stage === 'COMPLETED'
   );
+  const visibleSources = sources.filter((source) => source.type !== 'VTT');
+
+  const latestCitations = [...messages]
+    .reverse()
+    .find((message) => message.role === 'ASSISTANT' && message.citations?.length)
+    ?.citations || streamingCitations;
+
   const hasPersistedGeneration = messages.some(
     (message) => message.status === 'SENDING',
   );
@@ -675,7 +682,7 @@ export function WorkspaceDetailPage() {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#090e16] text-slate-100">
-      {/* Left Sidebar — Desktop */}
+      {/* Left Sidebar â€” Desktop */}
       <div className="hidden lg:block">
         <WorkspaceSourcesSidebar
           workspace={workspace}
@@ -771,10 +778,11 @@ export function WorkspaceDetailPage() {
           canCancelGeneration={
             isGenerating && Boolean(streamGuardRef.current.active)
           }
-          sources={sources}
-          selectedSourceId={selectedSourceDetails?.id}
+          sources={visibleSources}
+        selectedSourceId={selectedSourceDetails?.id}
           hasConversation={messages.length > 0}
-          onSubmitMessage={handleSubmitMessage}
+        onOpenAddSource={handleOpenAddSource}
+        onSubmitMessage={handleSubmitMessage}
           onSubmitAction={handleSubmitAction}
           onCancelGeneration={handleCancelGeneration}
         />
@@ -829,3 +837,4 @@ export function WorkspaceDetailPage() {
     </div>
   );
 }
+
