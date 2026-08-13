@@ -93,7 +93,31 @@ test('Gemini acquisition rejects undeclared response fields', async () => {
   );
 });
 
-test('Gemini acquisition classifies empty segments as no speech without retry', async () => {
+test('Gemini acquisition recovers when the no-speech verification pass finds speech', async () => {
+  const prompts: string[] = [];
+  let attempts = 0;
+  const result = await acquireGeminiYouTubeTranscript(
+    { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+    {
+      logger: silentLogger,
+      createInteraction: async (request: any) => {
+        attempts += 1;
+        prompts.push(request.input[1].text);
+        return {
+          output_text: attempts === 1
+            ? JSON.stringify({ language: 'en', segments: [] })
+            : validOutput(),
+        };
+      },
+    },
+  );
+  assert.equal(attempts, 2);
+  assert.equal(result.segments.length, 2);
+  assert.notEqual(prompts[0], prompts[1]);
+  assert.match(prompts[1], /second, complete verification pass/i);
+});
+
+test('Gemini acquisition classifies no speech as permanent only after verification', async () => {
   let attempts = 0;
   await assert.rejects(
     acquireGeminiYouTubeTranscript(
@@ -108,9 +132,33 @@ test('Gemini acquisition classifies empty segments as no speech without retry', 
     ),
     (error: unknown) =>
       error instanceof GeminiYouTubeAcquisitionError &&
-      error.classification === 'NO_SPEECH_DETECTED',
+      error.classification === 'NO_SPEECH_DETECTED' &&
+      error.retryable === false,
   );
-  assert.equal(attempts, 1);
+  assert.equal(attempts, 2);
+});
+
+test('a no-speech result after a transient retry still receives one verification pass', async () => {
+  let attempts = 0;
+  const result = await acquireGeminiYouTubeTranscript(
+    { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+    {
+      logger: silentLogger,
+      retryBackoffMs: 0,
+      createInteraction: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw Object.assign(new Error('temporary provider failure'), { status: 503 });
+        }
+        if (attempts === 2) {
+          return { output_text: JSON.stringify({ language: 'en', segments: [] }) };
+        }
+        return { output_text: validOutput() };
+      },
+    },
+  );
+  assert.equal(attempts, 3);
+  assert.equal(result.segments.length, 2);
 });
 
 test('Gemini acquisition retries one 429 then succeeds', async () => {

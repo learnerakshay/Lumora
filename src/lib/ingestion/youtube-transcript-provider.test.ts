@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { YoutubeTranscriptDisabledError } from 'youtube-transcript';
 import { IngestionFailure } from './errors';
+import { GeminiYouTubeAcquisitionError } from './gemini-youtube-acquisition';
 import { fetchYouTubeTranscript } from './youtube-transcript-provider';
 
 test('direct YouTube provider preserves validated cue timing and language', async () => {
@@ -135,6 +136,23 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
     assert.deepEqual(result.cues, [
       { text: 'Opening', offset: 1_250, duration: 2_500, lang: 'en' },
     ]);
+
+    await assert.rejects(
+      fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+        geminiAcquire: async () => {
+          throw new GeminiYouTubeAcquisitionError(
+            'NO_SPEECH_DETECTED',
+            'No speech after verification.',
+            false,
+          );
+        },
+      }),
+      (error: unknown) =>
+        error instanceof IngestionFailure &&
+        error.errorCode === 'TRANSCRIPT_UNAVAILABLE' &&
+        error.retryable === false &&
+        /No discernible speech/i.test(error.userMessage),
+    );
   } finally {
     for (const [key, value] of Object.entries(originalEnv)) {
       if (value === undefined) delete process.env[key];

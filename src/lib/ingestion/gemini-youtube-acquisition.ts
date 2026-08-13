@@ -5,7 +5,7 @@ export const GEMINI_YOUTUBE_MODEL = 'gemini-3.6-flash';
 export const GEMINI_YOUTUBE_TIMEOUT_MS = 120_000;
 
 const RETRY_BACKOFF_MS = 500;
-const MAX_ATTEMPTS = 2;
+const MAX_PRIMARY_ATTEMPTS = 2;
 
 export type GeminiYouTubeFailureClassification =
   | 'VIDEO_UNAVAILABLE'
@@ -90,6 +90,14 @@ const TRANSCRIPT_PROMPT = [
   'Use the ISO 639-1 primary language code when possible.',
   'Return an empty segments array only when no speech is discernible.',
   'Output nothing outside the required JSON schema.',
+].join(' ');
+
+const NO_SPEECH_VERIFICATION_PROMPT = [
+  'Perform a second, complete verification pass over this video for human speech.',
+  'Listen for brief, quiet, background, voice-over, or dialogue speech that may have been missed previously.',
+  'If any speech is discernible, return a faithful transcript with ordered startSeconds and endSeconds segments.',
+  'Return an empty segments array only after reviewing the complete video and confirming there is no discernible speech.',
+  'Preserve the original spoken language, use an ISO 639-1 language code when possible, and output nothing outside the required JSON schema.',
 ].join(' ');
 
 function statusOf(error: unknown): number | undefined {
@@ -287,14 +295,16 @@ export async function acquireGeminiYouTubeTranscript(input: {
     : new GoogleGenAI({ apiKey: input.apiKey });
   const createInteraction = dependencies.createInteraction
     ?? ((request, options) => client!.interactions.create(request as any, options));
+  let verifyingNoSpeech = false;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_PRIMARY_ATTEMPTS + 1; attempt += 1) {
     const startedAt = Date.now();
     log.info('Gemini YouTube acquisition started', {
       videoId: input.videoId,
       model: GEMINI_YOUTUBE_MODEL,
       stage: 'ACQUISITION_START',
       attempt,
+      acquisitionMode: verifyingNoSpeech ? 'no_speech_verification' : 'primary',
     });
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -312,7 +322,12 @@ export async function acquireGeminiYouTubeTranscript(input: {
           model: GEMINI_YOUTUBE_MODEL,
           input: [
             { type: 'video', uri: input.youtubeUrl },
-            { type: 'text', text: TRANSCRIPT_PROMPT },
+            {
+              type: 'text',
+              text: verifyingNoSpeech
+                ? NO_SPEECH_VERIFICATION_PROMPT
+                : TRANSCRIPT_PROMPT,
+            },
           ],
           response_format: {
             type: 'text',
@@ -345,8 +360,22 @@ export async function acquireGeminiYouTubeTranscript(input: {
         durationMs: Date.now() - startedAt,
         failureClassification: failure.classification,
         attempt,
+        acquisitionMode: verifyingNoSpeech ? 'no_speech_verification' : 'primary',
       });
-      if (!failure.retryable || attempt === MAX_ATTEMPTS) throw failure;
+      if (
+        failure.classification === 'NO_SPEECH_DETECTED' &&
+        !verifyingNoSpeech
+      ) {
+        verifyingNoSpeech = true;
+        continue;
+      }
+      if (
+        verifyingNoSpeech ||
+        !failure.retryable ||
+        attempt === MAX_PRIMARY_ATTEMPTS
+      ) {
+        throw failure;
+      }
       await new Promise((resolve) => setTimeout(resolve, retryBackoffMs));
     } finally {
       if (timer) clearTimeout(timer);

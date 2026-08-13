@@ -443,8 +443,9 @@ async function createVersionFromArtifact(
 export async function createReprocessingVersion(
   sourceId: string,
   options: { staleAfterMs?: number } = {},
+  database: Pick<typeof prisma, '$transaction'> = prisma,
 ): Promise<number> {
-  return prisma.$transaction(async (tx) => {
+  return database.$transaction(async (tx) => {
     const source = await tx.source.findUnique({
       where: { id: sourceId },
       include: {

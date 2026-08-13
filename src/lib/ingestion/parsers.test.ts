@@ -304,6 +304,8 @@ test('missing parser fails visibly', async () => {
 test('YouTube URL validation accepts supported video links and rejects unsupported ones', () => {
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
   assert.equal(extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ?si=share-token&t=4'), 'dQw4w9WgXcQ');
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=share-token&list=PL123'), 'dQw4w9WgXcQ');
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/channel/UC123'), null);
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/playlist?list=PL123'), null);
