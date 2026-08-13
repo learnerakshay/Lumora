@@ -385,7 +385,7 @@ export function AddSourceModal({
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors flex items-center space-x-1.5 disabled:opacity-50"
+                className="flex items-center space-x-1.5 rounded-xl bg-cyan-300 px-5 py-2 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-500/10 transition-colors hover:bg-cyan-200 disabled:opacity-50"
               >
                 {submitting ? (
                   <>

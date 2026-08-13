@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { WORKSPACE_ICONS } from './WorkspaceIcon';
+import { getWorkspaceIdentity, WORKSPACE_IDENTITIES } from './WorkspaceIcon';
 import { X, Edit3, Loader2 } from 'lucide-react';
 
 interface RenameWorkspaceModalProps {
@@ -25,7 +25,7 @@ export function RenameWorkspaceModal({
 }: RenameWorkspaceModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState('folder');
+  const [selectedIcon, setSelectedIcon] = useState('general');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -33,7 +33,7 @@ export function RenameWorkspaceModal({
     if (workspace) {
       setName(workspace.name || '');
       setDescription(workspace.description || '');
-      setSelectedIcon(workspace.icon || 'folder');
+      setSelectedIcon(getWorkspaceIdentity(workspace.icon).id);
       setError(null);
     }
   }, [workspace]);
@@ -71,7 +71,7 @@ export function RenameWorkspaceModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-workspace-title"
-        className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl shadow-black/80 sm:rounded-2xl"
+        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_28px_80px_rgba(0,0,0,0.55)] sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -82,7 +82,7 @@ export function RenameWorkspaceModal({
             </div>
             <div>
               <h2 id="edit-workspace-title" className="text-base font-semibold text-white">Edit Workspace</h2>
-              <p className="text-xs text-slate-400">Update its name, description, or icon</p>
+              <p className="text-xs text-slate-400">Update its name, description, or identity</p>
             </div>
           </div>
           <button
@@ -130,27 +130,27 @@ export function RenameWorkspaceModal({
             />
           </div>
 
-          {/* Icon Selector */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-300">Workspace Icon</label>
-            <div className="grid grid-cols-5 gap-2">
-              {WORKSPACE_ICONS.map(({ id, label, Icon }) => {
+          {/* Identity Selector */}
+          <div className="space-y-2.5">
+            <label className="text-xs font-medium text-slate-300">Workspace Identity</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {WORKSPACE_IDENTITIES.map(({ id, label, Icon, color, rgb }) => {
                 const isSelected = selectedIcon === id;
                 return (
                   <button
                     key={id}
                     type="button"
                     onClick={() => setSelectedIcon(id)}
-                    title={label}
-                    aria-label={`${label} Workspace icon`}
+                    title={`${label} Workspace identity`}
+                    aria-label={`${label} Workspace identity`}
                     aria-pressed={isSelected}
-                    className={`flex items-center justify-center p-2.5 rounded-xl border transition-all ${
-                      isSelected
-                        ? 'bg-sky-950/80 border-sky-500 text-sky-400 shadow-sm shadow-sky-500/20'
-                        : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                    }`}
+                    style={{ '--identity-color': color, '--identity-rgb': rgb } as React.CSSProperties}
+                    className={`group flex min-h-16 items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ${isSelected ? 'workspace-identity-option-selected' : 'workspace-identity-option'}`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[rgb(var(--identity-rgb)/0.12)] text-[var(--identity-color)] transition-colors duration-200 group-hover:bg-[rgb(var(--identity-rgb)/0.18)]">
+                      <Icon className="h-4 w-4" strokeWidth={1.8} />
+                    </span>
+                    <span className="text-[11px] font-semibold leading-4 text-slate-300 group-hover:text-white">{label}</span>
                   </button>
                 );
               })}
@@ -170,7 +170,7 @@ export function RenameWorkspaceModal({
             <button
               type="submit"
               disabled={isSubmitting || !name.trim()}
-              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold rounded-xl text-xs transition-colors flex items-center space-x-1.5 shadow-md shadow-sky-500/20"
+              className="flex items-center space-x-1.5 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition-colors hover:bg-cyan-200 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <>

@@ -10,7 +10,7 @@ import {
   PanelRight,
 } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
-import { WorkspaceIcon } from '../dashboard/WorkspaceIcon';
+import { getWorkspaceIdentity, WorkspaceIcon } from '../dashboard/WorkspaceIcon';
 
 interface WorkspaceHeaderProps {
   workspace: {
@@ -38,6 +38,7 @@ export function WorkspaceHeader({
   citationCount,
 }: WorkspaceHeaderProps) {
   const { user } = useAuth();
+  const identity = getWorkspaceIdentity(workspace.icon);
 
   const [isEditing, setIsEditing] = useState(false);
   const [nameInput, setNameInput] = useState(workspace.name);
@@ -74,8 +75,11 @@ export function WorkspaceHeader({
           <Menu className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center space-x-3 min-w-0">
-          <div className="hidden w-8 h-8 rounded-xl bg-sky-950/80 border border-sky-800/60 sm:flex items-center justify-center text-sky-400 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div
+            style={{ '--identity-color': identity.color, '--identity-rgb': identity.rgb } as React.CSSProperties}
+            className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[rgb(var(--identity-rgb)/0.38)] bg-[rgb(var(--identity-rgb)/0.11)] text-[var(--identity-color)] shadow-[0_0_16px_rgb(var(--identity-rgb)/0.07)] sm:flex"
+          >
             <WorkspaceIcon name={workspace.icon || 'brain'} className="w-4 h-4" />
           </div>
 
@@ -132,7 +136,7 @@ export function WorkspaceHeader({
         <button
           type="button"
           onClick={onOpenAddSource}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300"
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cyan-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-500/10 transition hover:bg-cyan-200"
         >
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add Source</span>
@@ -141,7 +145,7 @@ export function WorkspaceHeader({
         <button
           type="button"
           onClick={onToggleContext}
-          className="relative rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-400 transition hover:border-slate-700 hover:text-white xl:hidden"
+          className="relative rounded-xl border border-slate-800/80 bg-slate-900/70 p-2 text-slate-400 transition hover:border-slate-700 hover:text-white xl:hidden"
           title="Response context"
           aria-label="Open response context"
         >

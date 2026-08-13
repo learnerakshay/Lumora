@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WORKSPACE_ICONS, WorkspaceIcon } from './WorkspaceIcon';
+import { WORKSPACE_IDENTITIES } from './WorkspaceIcon';
 import { X, Sparkles, Loader2 } from 'lucide-react';
 
 interface CreateWorkspaceModalProps {
@@ -11,7 +11,7 @@ interface CreateWorkspaceModalProps {
 export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorkspaceModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState('brain');
+  const [selectedIcon, setSelectedIcon] = useState('general');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -42,7 +42,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
       // Reset form
       setName('');
       setDescription('');
-      setSelectedIcon('brain');
+      setSelectedIcon('general');
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to create workspace. Please try again.');
@@ -57,13 +57,13 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-workspace-title"
-        className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl shadow-black/80 sm:rounded-2xl"
+        className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_28px_80px_rgba(0,0,0,0.55)] sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-800/80 bg-slate-900/50">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-cyan-800/60 bg-cyan-950/70 text-cyan-300">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
@@ -102,7 +102,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
               maxLength={60}
               required
               autoFocus
-              className="w-full px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors"
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-sm text-white placeholder-slate-500 transition-colors focus:border-cyan-400/70 focus:outline-none focus:ring-1 focus:ring-cyan-400/30"
             />
           </div>
 
@@ -117,31 +117,34 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
               placeholder="Brief summary of what this workspace contains..."
               rows={3}
               maxLength={200}
-              className="w-full px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors resize-none"
+              className="w-full resize-none rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2 text-xs text-white placeholder-slate-500 transition-colors focus:border-cyan-400/70 focus:outline-none focus:ring-1 focus:ring-cyan-400/30"
             />
           </div>
 
           {/* Icon Selector */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-300">Workspace Icon</label>
-            <div className="grid grid-cols-5 gap-2">
-              {WORKSPACE_ICONS.map(({ id, label, Icon }) => {
+          <div className="space-y-2.5">
+            <label className="text-xs font-medium text-slate-300">Workspace Identity</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {WORKSPACE_IDENTITIES.map(({ id, label, Icon, color, rgb }) => {
                 const isSelected = selectedIcon === id;
                 return (
                   <button
                     key={id}
                     type="button"
                     onClick={() => setSelectedIcon(id)}
-                    title={label}
-                    aria-label={`${label} Workspace icon`}
+                    title={`${label} Workspace identity`}
+                    aria-label={`${label} Workspace identity`}
                     aria-pressed={isSelected}
-                    className={`flex items-center justify-center p-2.5 rounded-xl border transition-all ${
-                      isSelected
-                        ? 'bg-sky-950/80 border-sky-500 text-sky-400 shadow-sm shadow-sky-500/20'
-                        : 'bg-slate-900/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                    }`}
+                    style={{
+                      '--identity-color': color,
+                      '--identity-rgb': rgb,
+                    } as React.CSSProperties}
+                    className={`group flex min-h-16 items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ${isSelected ? 'workspace-identity-option-selected' : 'workspace-identity-option'}`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[rgb(var(--identity-rgb)/0.12)] text-[var(--identity-color)] transition-colors duration-200 group-hover:bg-[rgb(var(--identity-rgb)/0.18)]">
+                      <Icon className="h-4 w-4" strokeWidth={1.8} />
+                    </span>
+                    <span className="text-[11px] font-semibold leading-4 text-slate-300 group-hover:text-white">{label}</span>
                   </button>
                 );
               })}
@@ -161,7 +164,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
             <button
               type="submit"
               disabled={isSubmitting || !name.trim()}
-              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold rounded-xl text-xs transition-colors flex items-center space-x-1.5 shadow-md shadow-sky-500/20"
+              className="flex items-center space-x-1.5 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition-colors hover:bg-cyan-200 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none"
             >
               {isSubmitting ? (
                 <>

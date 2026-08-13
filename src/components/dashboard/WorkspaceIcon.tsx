@@ -1,62 +1,65 @@
 import React from 'react';
 import {
-  Folder,
-  Brain,
-  Database,
-  Sparkles,
   BookOpen,
-  Code,
-  Cpu,
-  Rocket,
-  Terminal,
-  Search,
-  Layers,
-  LucideProps,
+  Brain,
+  Code2,
+  Database,
+  Folder,
+  Sparkles,
+  type LucideIcon,
+  type LucideProps,
 } from 'lucide-react';
+
+export type WorkspaceIdentityId =
+  | 'general'
+  | 'developer'
+  | 'learning'
+  | 'research'
+  | 'study'
+  | 'experimental';
+
+export interface WorkspaceIdentity {
+  id: WorkspaceIdentityId;
+  label: string;
+  Icon: LucideIcon;
+  color: string;
+  rgb: string;
+}
+
+export const WORKSPACE_IDENTITIES: readonly WorkspaceIdentity[] = [
+  { id: 'general', label: 'General', Icon: Folder, color: '#22d3ee', rgb: '34 211 238' },
+  { id: 'developer', label: 'Developer', Icon: Code2, color: '#60a5fa', rgb: '96 165 250' },
+  { id: 'learning', label: 'Learning', Icon: Brain, color: '#c084fc', rgb: '192 132 252' },
+  { id: 'research', label: 'Research', Icon: Database, color: '#2dd4bf', rgb: '45 212 191' },
+  { id: 'study', label: 'Study', Icon: BookOpen, color: '#fbbf24', rgb: '251 191 36' },
+  { id: 'experimental', label: 'AI / Experimental', Icon: Sparkles, color: '#a78bfa', rgb: '167 139 250' },
+] as const;
+
+const LEGACY_IDENTITY_MAP: Record<string, WorkspaceIdentityId> = {
+  folder: 'general',
+  code: 'developer',
+  terminal: 'developer',
+  cpu: 'developer',
+  brain: 'learning',
+  database: 'research',
+  search: 'research',
+  book: 'study',
+  layers: 'study',
+  sparkles: 'experimental',
+  rocket: 'experimental',
+};
+
+export function getWorkspaceIdentity(name?: string | null): WorkspaceIdentity {
+  const normalized = (name || 'general').toLowerCase();
+  const identityId = LEGACY_IDENTITY_MAP[normalized] || normalized;
+  return WORKSPACE_IDENTITIES.find((identity) => identity.id === identityId) || WORKSPACE_IDENTITIES[0];
+}
 
 interface WorkspaceIconProps extends LucideProps {
   name?: string | null;
 }
 
-export const WORKSPACE_ICONS = [
-  { id: 'brain', label: 'Brain / AI', Icon: Brain },
-  { id: 'folder', label: 'Folder', Icon: Folder },
-  { id: 'database', label: 'Database', Icon: Database },
-  { id: 'sparkles', label: 'Sparkles', Icon: Sparkles },
-  { id: 'book', label: 'Book', Icon: BookOpen },
-  { id: 'code', label: 'Code', Icon: Code },
-  { id: 'cpu', label: 'CPU', Icon: Cpu },
-  { id: 'rocket', label: 'Rocket', Icon: Rocket },
-  { id: 'terminal', label: 'Terminal', Icon: Terminal },
-  { id: 'search', label: 'Search', Icon: Search },
-];
-
-export function WorkspaceIcon({ name, className = 'w-4 h-4', ...props }: WorkspaceIconProps) {
-  const iconId = (name || 'folder').toLowerCase();
-
-  switch (iconId) {
-    case 'brain':
-      return <Brain className={className} {...props} />;
-    case 'database':
-      return <Database className={className} {...props} />;
-    case 'sparkles':
-      return <Sparkles className={className} {...props} />;
-    case 'book':
-      return <BookOpen className={className} {...props} />;
-    case 'code':
-      return <Code className={className} {...props} />;
-    case 'cpu':
-      return <Cpu className={className} {...props} />;
-    case 'rocket':
-      return <Rocket className={className} {...props} />;
-    case 'terminal':
-      return <Terminal className={className} {...props} />;
-    case 'search':
-      return <Search className={className} {...props} />;
-    case 'layers':
-      return <Layers className={className} {...props} />;
-    case 'folder':
-    default:
-      return <Folder className={className} {...props} />;
-  }
+export function WorkspaceIcon({ name, className = 'h-4 w-4', ...props }: WorkspaceIconProps) {
+  const { Icon } = getWorkspaceIdentity(name);
+  return <Icon className={className} strokeWidth={1.8} {...props} />;
 }

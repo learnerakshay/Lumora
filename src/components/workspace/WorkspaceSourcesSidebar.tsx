@@ -160,7 +160,7 @@ export function WorkspaceSourcesSidebar({
       </div>
 
       {/* Search & Filters */}
-      <div className="p-3 border-b border-slate-800/80 space-y-2 bg-slate-900/20">
+      <div className={`space-y-2 border-b border-slate-800/80 bg-slate-900/20 p-3 ${!loading && sources.length === 0 ? 'opacity-45' : ''}`}>
         {/* Search Input */}
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -170,6 +170,7 @@ export function WorkspaceSourcesSidebar({
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search sources..."
             aria-label="Search sources"
+            disabled={!loading && sources.length === 0}
             className="w-full pl-8 pr-7 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors"
           />
           {searchTerm && (
@@ -192,9 +193,10 @@ export function WorkspaceSourcesSidebar({
               <button
                 key={ft.type}
                 type="button"
+                disabled={!loading && sources.length === 0}
                 onClick={() => setSelectedTypeFilter(ft.type)}
                 aria-pressed={isSelected}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all whitespace-nowrap ${
+                className={`whitespace-nowrap rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-all disabled:cursor-not-allowed ${
                   isSelected
                     ? `border ${filterStyles[ft.type as keyof typeof filterStyles]}`
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
@@ -225,7 +227,7 @@ export function WorkspaceSourcesSidebar({
         ) : filteredSources.length === 0 ? (
           /* Empty State */
           <div className="p-6 text-center space-y-3 bg-slate-900/30 border border-dashed border-slate-700/80 rounded-2xl my-4 animate-fade-in">
-            <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 text-slate-500 flex items-center justify-center mx-auto">
+            <div className="lumora-empty-icon-muted mx-auto flex h-10 w-10 items-center justify-center rounded-2xl">
               <Layers className="w-5 h-5" />
             </div>
             <div className="space-y-1">

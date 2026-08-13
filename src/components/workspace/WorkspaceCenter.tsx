@@ -20,7 +20,7 @@ export function WorkspaceCenter({ workspace, onOpenAddSource }: WorkspaceCenterP
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-7 sm:px-6">
       <div className="w-full max-w-2xl">
         <div className="text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-800/60 bg-sky-950/50 text-sky-300">
+          <span className="lumora-empty-icon-strong mx-auto flex h-12 w-12 items-center justify-center rounded-2xl text-cyan-300">
             <Sparkles className="h-5 w-5" />
           </span>
           <h2 className="mt-4 text-xl font-semibold tracking-tight text-white sm:text-2xl">Start learning with {workspace.name}</h2>
@@ -29,14 +29,14 @@ export function WorkspaceCenter({ workspace, onOpenAddSource }: WorkspaceCenterP
           </p>
         </div>
 
-        <section aria-labelledby="add-source-heading" className="mt-7 rounded-2xl border border-slate-800 bg-[#111925] p-4 shadow-xl shadow-black/15 sm:p-5">
+        <section aria-labelledby="add-source-heading" className="mt-7 rounded-2xl border border-slate-800/80 bg-[#111925] p-4 shadow-xl shadow-black/15 sm:p-5">
           <div className="flex items-center justify-between gap-4">
             <div><h3 id="add-source-heading" className="text-sm font-semibold text-white">Add your first source</h3><p className="mt-0.5 text-xs text-slate-500">Choose the material you want to learn from.</p></div>
             <Plus className="h-5 w-5 text-sky-400" />
           </div>
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {sourceChoices.map(({ type, label, detail, icon: Icon, style }) => (
-              <button key={type} type="button" onClick={() => onOpenAddSource(type)} className="group flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/55 p-3 text-left transition hover:border-slate-700 hover:bg-slate-900">
+              <button key={type} type="button" onClick={() => onOpenAddSource(type)} className="group flex items-center gap-3 rounded-2xl border border-slate-800/80 bg-slate-900/55 p-3 text-left transition-[background-color,border-color,box-shadow] duration-200 hover:border-slate-700 hover:bg-slate-900 hover:shadow-lg hover:shadow-black/10">
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${style}`}><Icon className="h-4 w-4" /></span>
                 <span><span className="block text-xs font-semibold text-slate-200 group-hover:text-white">{label}</span><span className="mt-0.5 block text-[10px] text-slate-500">{detail}</span></span>
               </button>

@@ -45,8 +45,10 @@ export function WorkspaceContextPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {citations.length === 0 ? (
-          <div className="mt-4 rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/30 px-4 py-7 text-center">
-            <Quote className="mx-auto h-5 w-5 text-slate-600" />
+          <div className="mt-4 rounded-2xl border border-slate-800/80 bg-[#111925]/80 px-4 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+            <span className="lumora-empty-icon-strong mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-cyan-300">
+              <Quote className="h-6 w-6" strokeWidth={1.8} />
+            </span>
             <p className="mt-3 text-xs font-semibold text-slate-300">Context appears with answers</p>
             <p className="mt-1 text-[11px] leading-5 text-slate-500">Ask a question and Lumora will show the real sources used to ground its response.</p>
           </div>
@@ -63,7 +65,8 @@ export function WorkspaceContextPanel({
                   key={citation.id || `${citation.sourceId}-${index}`}
                   type="button"
                   onClick={() => onSelectCitation(citation)}
-                  className="group w-full rounded-xl border border-slate-800 bg-slate-900/55 p-3 text-left transition hover:border-sky-700/70 hover:bg-slate-900"
+                  style={{ animationDelay: `${Math.min(index, 5) * 80}ms` }}
+                  className="animate-fade-in group w-full rounded-2xl border border-slate-800/80 bg-slate-900/55 p-3 text-left transition hover:border-sky-700/70 hover:bg-slate-900"
                 >
                   <div className="flex items-start gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70">

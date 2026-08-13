@@ -82,13 +82,14 @@ export function WorkspacePromptComposer({
               <button
                 key={mode.id}
                 type="button"
+                disabled={!hasIndexedSources || isGenerating}
                 onClick={() => setSelectedMode(mode.id)}
                 aria-pressed={selectedMode === mode.id}
-                className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-semibold transition ${
+                className={`shrink-0 rounded-lg border px-2.5 py-1 text-[10px] font-semibold transition-[background-color,border-color,color,box-shadow,opacity] duration-150 disabled:cursor-not-allowed ${
                   selectedMode === mode.id
-                    ? 'bg-sky-500 text-slate-950 shadow-sm'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                }`}
+                    ? 'border-cyan-400/35 bg-cyan-400/10 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.08)]'
+                    : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                } ${!hasIndexedSources ? 'opacity-40' : ''}`}
               >
                 {mode.label}
               </button>
@@ -100,10 +101,10 @@ export function WorkspacePromptComposer({
         </div>
 
         <div
-          className={`rounded-2xl border shadow-lg shadow-black/10 transition ${
+          className={`rounded-2xl border transition-[border-color,background-color,box-shadow,opacity] duration-200 ${
             hasIndexedSources
-              ? 'border-slate-700/90 bg-slate-900/90 focus-within:border-sky-500/80 focus-within:ring-1 focus-within:ring-sky-500/40'
-              : 'border-slate-800/60 bg-slate-900/40'
+              ? 'border-slate-700/90 bg-slate-900/90 shadow-lg shadow-black/10 focus-within:border-cyan-400/65 focus-within:bg-[#141d2a] focus-within:shadow-[0_12px_34px_rgba(0,0,0,0.2),0_0_22px_rgba(34,211,238,0.07)]'
+              : 'border-slate-800/45 bg-slate-900/25 opacity-65 shadow-none'
           }`}
         >
           <textarea
@@ -132,7 +133,7 @@ export function WorkspacePromptComposer({
                   selectedSourceId={selectedSourceId}
                   hasConversation={hasConversation}
                   draftText={promptText}
-                  disabled={isGenerating}
+                  disabled={isGenerating || !hasIndexedSources}
                   onRun={(request, displayMessage) => {
                     onSubmitAction(request, displayMessage, selectedMode);
                     setPromptText('');
@@ -162,8 +163,8 @@ export function WorkspacePromptComposer({
                 disabled={!hasIndexedSources || !promptText.trim()}
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${
                   hasIndexedSources && promptText.trim()
-                    ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20 hover:bg-sky-400 active:scale-95'
-                    : 'cursor-not-allowed bg-slate-800 text-slate-500'
+                    ? 'bg-cyan-300 text-slate-950 shadow-md shadow-cyan-500/20 hover:bg-cyan-200'
+                    : 'cursor-not-allowed bg-slate-800/70 text-slate-500 opacity-55'
                 }`}
                 aria-label="Send research prompt"
               >
