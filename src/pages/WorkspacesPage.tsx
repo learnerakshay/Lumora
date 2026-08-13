@@ -7,17 +7,21 @@ import { CreateWorkspaceModal } from '../components/dashboard/CreateWorkspaceMod
 import { RenameWorkspaceModal } from '../components/dashboard/RenameWorkspaceModal';
 import { DeleteWorkspaceModal } from '../components/dashboard/DeleteWorkspaceModal';
 import {
-  Folder,
   Plus,
   ArrowRight,
   Edit2,
   Trash2,
   FileText,
+  Globe,
+  AlignLeft,
+  Youtube,
+  Subtitles,
   Layers,
   Search,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
+  ChevronRight,
 } from 'lucide-react';
 
 interface Workspace {
@@ -32,36 +36,31 @@ interface Workspace {
   sourcesCount: number;
 }
 
-const WORKSPACE_CARD_ACCENTS = [
-  {
-    card: 'hover:border-sky-500/55 hover:shadow-sky-950/25',
-    glow: 'bg-sky-500/10',
-    icon: 'border-sky-700/60 bg-sky-950/55 text-sky-300',
-    title: 'group-hover:text-sky-300',
-    source: 'text-sky-400',
-    action: 'hover:border-sky-500/70 hover:bg-sky-500/10 hover:text-sky-200',
-  },
-  {
-    card: 'hover:border-cyan-500/55 hover:shadow-cyan-950/25',
-    glow: 'bg-cyan-500/10',
-    icon: 'border-cyan-700/60 bg-cyan-950/55 text-cyan-300',
-    title: 'group-hover:text-cyan-300',
-    source: 'text-cyan-400',
-    action: 'hover:border-cyan-500/70 hover:bg-cyan-500/10 hover:text-cyan-200',
-  },
-  {
-    card: 'hover:border-violet-500/50 hover:shadow-violet-950/25',
-    glow: 'bg-violet-500/10',
-    icon: 'border-violet-700/60 bg-violet-950/55 text-violet-300',
-    title: 'group-hover:text-violet-300',
-    source: 'text-violet-400',
-    action: 'hover:border-violet-500/70 hover:bg-violet-500/10 hover:text-violet-200',
-  },
-] as const;
+type SourceType = 'PDF' | 'WEBSITE' | 'TEXT' | 'YOUTUBE' | 'VTT';
+type SourceStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
-function getWorkspaceAccent(workspaceId: string) {
-  const hash = [...workspaceId].reduce((total, character) => total + character.charCodeAt(0), 0);
-  return WORKSPACE_CARD_ACCENTS[hash % WORKSPACE_CARD_ACCENTS.length];
+interface WorkspaceSourceSummary {
+  id: string;
+  type: SourceType;
+  status: SourceStatus;
+}
+
+const SOURCE_META: Record<SourceType, { label: string; icon: React.ElementType; className: string }> = {
+  PDF: { label: 'PDF', icon: FileText, className: 'text-rose-300' },
+  WEBSITE: { label: 'Website', icon: Globe, className: 'text-sky-300' },
+  TEXT: { label: 'Text', icon: AlignLeft, className: 'text-violet-300' },
+  YOUTUBE: { label: 'YouTube', icon: Youtube, className: 'text-red-300' },
+  VTT: { label: 'Captions', icon: Subtitles, className: 'text-amber-300' },
+};
+
+const isSourceType = (value: unknown): value is SourceType =>
+  typeof value === 'string' && value in SOURCE_META;
+
+const isSourceStatus = (value: unknown): value is SourceStatus =>
+  value === 'PENDING' || value === 'PROCESSING' || value === 'COMPLETED' || value === 'FAILED';
+
+function uniqueSourceTypes(sources: WorkspaceSourceSummary[]): SourceType[] {
+  return [...new Set(sources.map((source) => source.type))];
 }
 
 function formatRelativeTime(dateString: string): string {
@@ -94,6 +93,7 @@ export function WorkspacesPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'sources'>('newest');
+  const [sourceSummaries, setSourceSummaries] = useState<Record<string, WorkspaceSourceSummary[]>>({});
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -110,6 +110,35 @@ export function WorkspacesPage() {
     }, 4000);
   };
 
+  const hydrateSourceSummaries = async (records: Workspace[]) => {
+    const results = await Promise.allSettled(
+      records.map(async (workspace) => {
+        const response = await fetch(`/api/workspaces/${workspace.id}/sources`);
+        if (!response.ok) return [workspace.id, [] as WorkspaceSourceSummary[]] as const;
+        const payload: unknown = await response.json();
+        const data =
+          typeof payload === 'object' && payload !== null &&
+          'success' in payload && payload.success === true &&
+          'data' in payload && Array.isArray(payload.data)
+            ? payload.data
+            : [];
+        const summaries = data.flatMap((source: unknown) => {
+          if (typeof source !== 'object' || source === null) return [];
+          const record = source as Record<string, unknown>;
+          if (typeof record.id !== 'string' || !isSourceType(record.type) || !isSourceStatus(record.status)) return [];
+          return [{ id: record.id, type: record.type, status: record.status }];
+        });
+        return [workspace.id, summaries] as const;
+      })
+    );
+
+    const next: Record<string, WorkspaceSourceSummary[]> = {};
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') next[result.value[0]] = result.value[1];
+    });
+    setSourceSummaries(next);
+  };
+
   // Fetch Workspaces
   const fetchWorkspaces = async () => {
     try {
@@ -124,6 +153,7 @@ export function WorkspacesPage() {
       const payload = await res.json();
       if (payload.success && Array.isArray(payload.data)) {
         setWorkspaces(payload.data);
+        void hydrateSourceSummaries(payload.data);
       } else {
         throw new Error(payload.error?.message || 'Failed to parse workspace records.');
       }
@@ -162,6 +192,7 @@ export function WorkspacesPage() {
     // Immediate state update
     const newWs: Workspace = payload.data;
     setWorkspaces((prev) => [newWs, ...prev]);
+    setSourceSummaries((prev) => ({ ...prev, [newWs.id]: [] }));
     showToast(`Workspace "${newWs.name}" created successfully.`);
   };
 
@@ -238,118 +269,154 @@ export function WorkspacesPage() {
     return list;
   }, [workspaces, searchTerm, sortBy]);
 
-  // Derived real stats from DB records
   const totalWorkspaces = workspaces.length;
-  const totalSources = workspaces.reduce((sum, w) => sum + (w.sourcesCount || 0), 0);
+  const recentWorkspaces = useMemo(
+    () => [...workspaces]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 3),
+    [workspaces]
+  );
+  const showContinueSection = totalWorkspaces >= 10 && !searchTerm.trim();
+
+  const openWorkspace = (workspace: Workspace) => navigate(`/workspaces/${workspace.id}`);
+
+  const renderWorkspaceCard = (workspace: Workspace) => {
+    const sources = sourceSummaries[workspace.id] || [];
+    const sourceTypes = uniqueSourceTypes(sources);
+    const processingCount = sources.filter(
+      (source) => source.status === 'PENDING' || source.status === 'PROCESSING'
+    ).length;
+
+    return (
+      <article
+        key={workspace.id}
+        className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-800/90 bg-[#111824] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.16)] transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-cyan-500/35 hover:bg-[#131c29] hover:shadow-[0_20px_48px_rgba(0,0,0,0.28)] focus-within:border-cyan-500/50 focus-within:ring-2 focus-within:ring-cyan-400/30 sm:p-[18px]"
+      >
+        <button
+          type="button"
+          aria-label={`Open ${workspace.name}`}
+          onClick={() => openWorkspace(workspace)}
+          className="absolute inset-0 z-0 rounded-2xl focus:outline-none"
+        />
+        <div className="pointer-events-none absolute -right-12 -top-16 h-32 w-32 rounded-full bg-cyan-400/[0.045] blur-3xl transition-colors duration-200 group-hover:bg-cyan-400/[0.08]" />
+
+        <div className="pointer-events-none relative z-10 flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/90 text-cyan-300 shadow-inner shadow-black/20 transition-colors group-hover:border-cyan-500/30 group-hover:bg-cyan-950/20">
+              <WorkspaceIcon name={workspace.icon} className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100 transition-colors group-hover:text-white">
+                {workspace.name}
+              </h3>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Updated {formatRelativeTime(workspace.updatedAt)}
+              </p>
+            </div>
+          </div>
+
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setRenameWorkspace(workspace);
+              }}
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-800 hover:text-cyan-300"
+              title="Rename / Edit Workspace"
+              aria-label={`Edit ${workspace.name}`}
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDeleteWorkspace(workspace);
+              }}
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-rose-950/40 hover:text-rose-300"
+              title="Delete Workspace"
+              aria-label={`Delete ${workspace.name}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="pointer-events-none relative z-10 mt-4 flex min-h-8 items-center justify-between gap-3 border-t border-slate-800/70 pt-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {workspace.sourcesCount === 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                <FileText className="h-3.5 w-3.5 text-slate-600" />
+                No sources yet
+              </span>
+            ) : (
+              <>
+                <span className="text-[11px] text-slate-500">
+                  {workspace.sourcesCount} {workspace.sourcesCount === 1 ? 'source' : 'sources'}
+                </span>
+                {sourceTypes.length > 0 && (
+                  <div className="flex items-center -space-x-1" aria-label={`Source types: ${sourceTypes.map((type) => SOURCE_META[type].label).join(', ')}`}>
+                    {sourceTypes.slice(0, 4).map((type) => {
+                      const meta = SOURCE_META[type];
+                      const Icon = meta.icon;
+                      return (
+                        <span key={type} title={meta.label} className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-700/90 bg-[#0d131d]">
+                          <Icon className={`h-2.5 w-2.5 ${meta.className}`} />
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+            {processingCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-cyan-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
+                Processing
+              </span>
+            )}
+          </div>
+
+          <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-cyan-300 opacity-100 transition-all duration-200 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100">
+            Open <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <DashboardLayout
       searchTerm={searchTerm}
-      onSearchChange={setSearchTerm}
+      onSearchChange={loading || workspaces.length > 0 ? setSearchTerm : undefined}
       onCreateWorkspaceClick={!loading && workspaces.length > 0 ? () => setIsCreateOpen(true) : undefined}
     >
-      <div className="space-y-7">
+      <div className="animate-fade-in">
         {/* Toast Feedback */}
         {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 p-4 bg-emerald-950 border border-emerald-800 text-emerald-200 rounded-2xl shadow-2xl flex items-center space-x-3 text-xs animate-slide-up">
+          <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-xs text-emerald-200 shadow-2xl animate-fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span className="font-medium">{toastMessage}</span>
           </div>
         )}
 
-        {/* Compact welcome and real overview */}
-        <section className="relative overflow-hidden rounded-2xl border border-sky-900/35 bg-[#111824] px-5 py-5 shadow-xl shadow-black/10 sm:px-6">
-          <div className="pointer-events-none absolute -right-20 -top-28 h-64 w-64 rounded-full bg-sky-500/12 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-32 left-1/3 h-48 w-64 rounded-full bg-violet-500/[0.06] blur-3xl" />
-          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-medium text-sky-400">Welcome back, {user?.fullName?.split(' ')[0] || 'learner'}</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Continue learning</h1>
-              <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-400">Open a Workspace and pick up where you left off.</p>
+        {error && (
+          <div role="alert" className="mb-6 flex items-center justify-between rounded-2xl border border-rose-800/80 bg-rose-950/60 p-4 text-xs text-rose-300">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>{error}</span>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:w-[290px]">
-              <div className="rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 shadow-inner shadow-sky-950/20"><div className="flex items-center gap-2 text-xs text-slate-300"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/10"><Folder className="h-4 w-4 text-sky-400" /></span>Workspaces</div><p className="mt-1 text-xl font-semibold text-white">{totalWorkspaces}</p></div>
-              <div className="rounded-xl border border-violet-800/35 bg-violet-950/15 p-3 shadow-inner shadow-violet-950/20"><div className="flex items-center gap-2 text-xs text-slate-300"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10"><FileText className="h-4 w-4 text-violet-400" /></span>Sources</div><p className="mt-1 text-xl font-semibold text-white">{totalSources}</p></div>
-            </div>
+            <button onClick={fetchWorkspaces} className="rounded-lg bg-rose-900 px-3 py-1 font-medium text-white transition-colors hover:bg-rose-800">Retry</button>
           </div>
-        </section>
+        )}
 
-        {/* Workspaces Management Header & Filters */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-white tracking-tight flex items-center space-x-2">
-                <span>Your Workspaces</span>
-                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-xs">
-                  {filteredWorkspaces.length}
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Pick up where you left off or start a new area of study.
-              </p>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center space-x-3">
-              {/* Sort Selector */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="px-3 py-1.5 bg-[#121824] border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-sky-500 font-medium"
-              >
-                <option value="newest">Sort by: Recently Updated</option>
-                <option value="oldest">Sort by: Oldest First</option>
-                <option value="sources">Sort by: Most Sources</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={fetchWorkspaces}
-                className="p-2 bg-[#121824] hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs transition-colors"
-                title="Refresh Workspaces"
-                aria-label="Refresh Workspaces"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
-              </button>
-            </div>
-          </div>
-
-          {/* Search bar inside content area for small screens */}
-          <div className="md:hidden relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search workspaces by name or description..."
-              aria-label="Search Workspaces"
-              className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-            />
-          </div>
-
-          {/* Error Banner */}
-          {error && (
-            <div role="alert" className="p-4 bg-rose-950/60 border border-rose-800/80 rounded-2xl text-xs text-rose-300 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{error}</span>
-              </div>
-              <button
-                onClick={fetchWorkspaces}
-                className="px-3 py-1 bg-rose-900 hover:bg-rose-800 text-white rounded-lg text-xs font-medium transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          {/* Loading Skeleton State */}
-          {loading && workspaces.length === 0 ? (
-            <div aria-busy="true" aria-label="Loading Workspaces" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {loading && workspaces.length === 0 ? (
+          <div className="space-y-7" aria-busy="true" aria-label="Loading Workspaces">
+            <div className="h-24 animate-pulse rounded-2xl border border-slate-800/80 bg-[#111824]" />
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3].map((n) => (
-                <div
-                  key={n}
-                  className="p-5 bg-[#121824] border border-slate-800/80 rounded-2xl space-y-4 animate-pulse"
-                >
+                <div key={n} className="min-h-[190px] animate-pulse space-y-4 rounded-2xl border border-slate-800/80 bg-[#111824] p-5">
                   <div className="flex items-center justify-between">
                     <div className="w-10 h-10 rounded-xl bg-slate-800" />
                     <div className="w-16 h-4 rounded bg-slate-800" />
@@ -365,139 +432,123 @@ export function WorkspacesPage() {
                 </div>
               ))}
             </div>
-          ) : filteredWorkspaces.length === 0 ? (
-            /* Empty State */
-            <div className="p-12 text-center bg-[#121824] border border-slate-800/80 rounded-2xl space-y-4 max-w-2xl mx-auto my-6 shadow-xl">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400">
-                <Layers className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-semibold text-white">
-                  {searchTerm ? 'No matching workspaces found' : 'No workspaces created yet'}
-                </h3>
-                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                  {searchTerm
-                    ? `No workspaces matched "${searchTerm}". Try clearing your search term or create a new workspace.`
-                    : 'Create your first private Workspace, add trusted sources, and begin a grounded conversation.'}
-                </p>
+          </div>
+        ) : totalWorkspaces === 0 && !searchTerm ? (
+          <section className="relative flex min-h-[calc(100vh-8.5rem)] items-center justify-center overflow-hidden rounded-3xl border border-slate-800/70 bg-[#0e151f] px-5 py-14 shadow-[0_28px_80px_rgba(0,0,0,0.2)] sm:px-10 lg:min-h-[620px]">
+            <div className="pointer-events-none absolute left-1/2 top-[22%] h-64 w-64 -translate-x-1/2 rounded-full bg-cyan-400/[0.08] blur-[80px]" />
+            <div className="pointer-events-none absolute inset-x-16 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent" />
+
+            <div className="relative mx-auto w-full max-w-3xl text-center">
+              <div className="relative mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-[22px] border border-cyan-400/25 bg-[#111c28] text-cyan-300 shadow-[0_18px_45px_rgba(0,0,0,0.35),0_0_36px_rgba(34,211,238,0.08)]">
+                <span className="absolute inset-2 rounded-2xl border border-white/[0.04]" />
+                <Layers className="relative h-9 w-9" strokeWidth={1.6} />
               </div>
 
-              {!searchTerm && (
-                <div className="mx-auto grid max-w-lg grid-cols-1 gap-2 text-left sm:grid-cols-3">
-                  {[
-                    ['1', 'Create', 'Name your Workspace'],
-                    ['2', 'Add sources', 'Upload or import knowledge'],
-                    ['3', 'Ask', 'Start a grounded chat'],
-                  ].map(([step, title, description]) => (
-                    <div key={step} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                      <span className="text-[10px] font-bold text-sky-400">STEP {step}</span>
-                      <p className="mt-1 text-xs font-semibold text-slate-200">{title}</p>
-                      <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{description}</p>
+              <h1 className="text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+                Build your first knowledge Workspace
+              </h1>
+              <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-400 sm:text-[15px]">
+                Add PDFs, websites, notes, or videos and ask grounded questions from your own sources.
+              </p>
+
+              <div className="relative mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-5 text-left sm:grid-cols-3 sm:gap-4 sm:text-center">
+                <div className="absolute bottom-auto left-5 top-5 h-[calc(100%-2.5rem)] w-px bg-gradient-to-b from-cyan-400/40 via-cyan-400/20 to-slate-700 sm:left-[16.66%] sm:right-[16.66%] sm:top-5 sm:h-px sm:w-auto sm:bg-gradient-to-r" />
+                {[
+                  ['1', 'Create Workspace', 'Set up a focused knowledge space'],
+                  ['2', 'Add Sources', 'Bring in the material you trust'],
+                  ['3', 'Ask with Citations', 'Get grounded, traceable answers'],
+                ].map(([step, title, description], index) => (
+                  <div key={step} className="relative flex items-start gap-4 sm:block">
+                    <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-[#101a25] text-xs font-semibold text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.06)]">
+                      {step}
+                    </span>
+                    <div className="pt-0.5 sm:pt-0">
+                      <p className="font-medium text-slate-200 sm:mt-3 sm:text-sm">{title}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {index < 2 && <ChevronRight className="absolute right-[-14px] top-3 hidden h-4 w-4 text-cyan-400/30 sm:block" />}
+                  </div>
+                ))}
+              </div>
 
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => searchTerm ? setSearchTerm('') : setIsCreateOpen(true)}
-                  className="px-5 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold rounded-xl text-xs transition-colors inline-flex items-center space-x-2 shadow-lg shadow-sky-500/20"
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(true)}
+                className="mt-10 inline-flex h-11 items-center gap-2 rounded-xl bg-cyan-300 px-5 text-sm font-semibold text-slate-950 shadow-[0_12px_28px_rgba(34,211,238,0.16)] transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-[0_16px_34px_rgba(34,211,238,0.22)] active:translate-y-0"
+              >
+                <Plus className="h-4 w-4" />
+                Create Workspace
+              </button>
+            </div>
+          </section>
+        ) : (
+          <div className="space-y-7">
+            <section className="flex flex-col gap-5 border-b border-slate-800/70 pb-7 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-medium text-cyan-400">Welcome back, {user?.fullName?.split(' ')[0] || 'learner'}</p>
+                <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Your Workspaces</h1>
+                <p className="mt-2 text-sm text-slate-400">Find a Workspace or create a new one to keep learning.</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+                  aria-label="Sort Workspaces"
+                  className="h-9 rounded-xl border border-slate-800 bg-[#111824] px-3 text-xs font-medium text-slate-300 outline-none transition-colors focus:border-cyan-500/60"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>{searchTerm ? 'Clear Search' : 'Create Workspace'}</span>
+                  <option value="newest">Recently Updated</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="sources">Most Sources</option>
+                </select>
+                <button type="button" onClick={fetchWorkspaces} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-[#111824] text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-200" title="Refresh Workspaces" aria-label="Refresh Workspaces">
+                  <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-cyan-300' : ''}`} />
                 </button>
               </div>
+            </section>
+
+            <div className="relative md:hidden">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search Workspaces" aria-label="Search Workspaces" className="h-10 w-full rounded-xl border border-slate-800 bg-[#111824] pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none" />
             </div>
-          ) : (
-            /* Workspaces Cards Grid */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredWorkspaces.map((workspace) => {
-                const accent = getWorkspaceAccent(workspace.id);
-                return (
-                <article
-                  key={workspace.id}
-                  className={`group relative flex flex-col justify-between space-y-4 overflow-hidden rounded-2xl border border-slate-800/90 bg-[#121824] p-5 shadow-md transition duration-200 hover:-translate-y-1 hover:bg-[#151e2c] hover:shadow-xl ${accent.card}`}
-                >
-                  <div className={`pointer-events-none absolute -right-10 -top-14 h-28 w-28 rounded-full opacity-60 blur-2xl transition-opacity group-hover:opacity-100 ${accent.glow}`} />
-                  <div className="space-y-3">
-                    {/* Header bar of Card */}
-                    <div className="flex items-center justify-between">
-                      <div className={`relative flex h-10 w-10 items-center justify-center rounded-xl border shadow-inner transition-transform group-hover:scale-105 ${accent.icon}`}>
-                        <WorkspaceIcon name={workspace.icon} className="w-5 h-5" />
-                      </div>
 
-                      <div className="flex items-center space-x-1">
-                        {/* Edit Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenameWorkspace(workspace);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-sky-300 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="Rename / Edit Workspace"
-                          aria-label={`Edit ${workspace.name}`}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
+            {showContinueSection && (
+              <section aria-labelledby="continue-heading" className="space-y-4">
+                <div>
+                  <h2 id="continue-heading" className="text-base font-semibold tracking-tight text-slate-100">Continue where you left off</h2>
+                  <p className="mt-1 text-xs text-slate-500">Your most recently updated Workspaces.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                  {recentWorkspaces.map(renderWorkspaceCard)}
+                </div>
+              </section>
+            )}
 
-                        {/* Delete Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteWorkspace(workspace);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                          title="Delete Workspace"
-                          aria-label={`Delete ${workspace.name}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
+            <section aria-labelledby="library-heading" className="space-y-4">
+              <div className="flex items-center gap-2">
+                <h2 id="library-heading" className="text-base font-semibold tracking-tight text-slate-100">
+                  {showContinueSection ? 'All Workspaces' : 'Workspace library'}
+                </h2>
+                <span className="rounded-full border border-slate-800 bg-slate-900/70 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                  {filteredWorkspaces.length}
+                </span>
+              </div>
 
-                    {/* Title & Description */}
-                    <div>
-                      <h3 className={`text-base font-semibold text-white transition-colors line-clamp-1 ${accent.title}`}>
-                        {workspace.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                        {workspace.description || 'No description provided.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Card Footer */}
-                  <div className="pt-3 border-t border-slate-800/80 space-y-3">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                      <span className="flex items-center space-x-1">
-                        <FileText className={`w-3 h-3 ${accent.source}`} />
-                        <span>{workspace.sourcesCount} {workspace.sourcesCount === 1 ? 'source' : 'sources'}</span>
-                      </span>
-
-                      <span className="text-slate-500">
-                        Updated {formatRelativeTime(workspace.updatedAt)}
-                      </span>
-                    </div>
-
-                    {/* Open Workspace Action Button */}
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/workspaces/${workspace.id}`)}
-                      className={`flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 transition-all duration-200 group/btn ${accent.action}`}
-                    >
-                      <span>Continue learning</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
-                    </button>
-                  </div>
-                </article>
-                );
-              })}
-            </div>
-          )}
-        </div>
+              {filteredWorkspaces.length === 0 ? (
+                <div className="rounded-2xl border border-slate-800/80 bg-[#111824] px-6 py-14 text-center">
+                  <Search className="mx-auto h-6 w-6 text-slate-600" />
+                  <h3 className="mt-4 text-sm font-semibold text-slate-200">No matching Workspaces</h3>
+                  <p className="mt-1.5 text-xs text-slate-500">Try another name or clear your search.</p>
+                  <button type="button" onClick={() => setSearchTerm('')} className="mt-5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800">Clear search</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                  {filteredWorkspaces.map(renderWorkspaceCard)}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </div>
 
       {/* Modals */}

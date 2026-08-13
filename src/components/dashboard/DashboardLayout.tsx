@@ -118,7 +118,7 @@ export function DashboardLayout({
 
           <nav className="mt-6 space-y-1" aria-label="Workspace navigation">
             {!isCollapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace</p>}
-            <Link to="/workspaces" title={isCollapsed ? 'Workspaces' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/workspaces' ? 'border-sky-500/30 bg-sky-500/10 text-sky-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+            <Link to="/workspaces" title={isCollapsed ? 'Workspaces' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/workspaces' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300 shadow-[inset_0_0_18px_rgba(34,211,238,0.025)] before:absolute before:left-[-1px] before:h-5 before:w-0.5 before:rounded-full before:bg-cyan-300 before:shadow-[0_0_10px_rgba(103,232,249,0.35)]' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
               <LayoutDashboard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Workspaces</span>
             </Link>
             <button type="button" title={isCollapsed ? 'Settings' : undefined} onClick={() => { setIsSettingsOpen(true); setIsMobileSidebarOpen(false); }} className={`flex h-10 w-full items-center rounded-xl border border-transparent text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-white ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}>
@@ -142,13 +142,17 @@ export function DashboardLayout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between border-b border-slate-800/80 bg-[#0d131d]/90 px-6 backdrop-blur md:flex lg:px-8">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input type="search" value={searchTerm} onChange={(e) => onSearchChange?.(e.target.value)} placeholder="Search workspaces" aria-label="Search Workspaces" className="h-10 w-full rounded-xl border border-slate-800 bg-slate-900/70 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" />
-          </div>
-          {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} className="ml-4 inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-sky-400 px-4 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/15 transition hover:bg-sky-300 active:translate-y-px"><Plus className="h-4 w-4" />Create Workspace</button>}
-        </header>
+        {(onSearchChange || onCreateWorkspaceClick) && (
+          <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between border-b border-slate-800/70 bg-[#0d131d]/90 px-6 backdrop-blur md:flex lg:px-8">
+            {onSearchChange && (
+              <div className="relative w-full max-w-sm">
+                <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input type="search" value={searchTerm} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search Workspaces" aria-label="Search Workspaces" className="h-10 w-full rounded-xl border border-slate-800 bg-slate-900/60 pl-10 pr-4 text-sm text-white placeholder:text-slate-500 transition-colors focus:border-cyan-500/60 focus:outline-none focus:ring-1 focus:ring-cyan-500/30" />
+              </div>
+            )}
+            {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} className="ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-cyan-300 px-4 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 active:translate-y-px"><Plus className="h-4 w-4" />Create Workspace</button>}
+          </header>
+        )}
         <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
 
