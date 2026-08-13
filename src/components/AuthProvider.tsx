@@ -17,6 +17,7 @@ export interface AuthUser {
 interface AuthContextType {
   isLoaded: boolean;
   isSignedIn: boolean;
+  authenticatedUserId: string | null;
   user: AuthUser | null;
   signInWithProvider: (
     provider: 'google' | 'github' | 'email',
@@ -51,7 +52,7 @@ function resolveDisplayName(
 
 function ClerkAuthContextProvider({ children }: { children: React.ReactNode }) {
   const clerk = useClerk();
-  const { isLoaded, isSignedIn } = useClerkAuth();
+  const { isLoaded, isSignedIn, userId } = useClerkAuth();
   const { user: clerkUser } = useClerkUser();
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -94,6 +95,7 @@ function ClerkAuthContextProvider({ children }: { children: React.ReactNode }) {
       value={{
         isLoaded,
         isSignedIn: Boolean(isSignedIn),
+        authenticatedUserId: userId || null,
         user,
         signInWithProvider,
         signUpWithProvider,

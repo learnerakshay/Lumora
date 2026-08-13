@@ -12,6 +12,13 @@ export interface WorkspaceRecord {
   sourcesCount: number;
 }
 
+export interface WorkspaceSourceSummaryRecord {
+  id: string;
+  workspaceId: string;
+  type: string;
+  status: string;
+}
+
 function slugify(text: string): string {
   const base = text
     .toLowerCase()
@@ -50,15 +57,35 @@ function toWorkspaceRecord(workspace: {
 export async function getWorkspaces(userId: string): Promise<WorkspaceRecord[]> {
   const records = await prisma.workspace.findMany({
     where: { userId },
-    include: {
-      _count: {
-        select: { sources: true },
-      },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      icon: true,
+      userId: true,
+      createdAt: true,
+      updatedAt: true,
     },
     orderBy: { updatedAt: 'desc' },
   });
 
   return records.map(toWorkspaceRecord);
+}
+
+export async function getWorkspaceSourceSummaries(
+  userId: string,
+): Promise<WorkspaceSourceSummaryRecord[]> {
+  return prisma.source.findMany({
+    where: { workspace: { userId } },
+    select: {
+      id: true,
+      workspaceId: true,
+      type: true,
+      status: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 }
 
 export async function createWorkspace(data: {

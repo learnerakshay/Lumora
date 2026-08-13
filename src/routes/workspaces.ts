@@ -3,6 +3,7 @@ import multer from 'multer';
 import { randomUUID } from 'node:crypto';
 import {
   getWorkspaces,
+  getWorkspaceSourceSummaries,
   createWorkspace,
   getWorkspaceById,
   updateWorkspace,
@@ -106,6 +107,20 @@ const sourceUploadMiddleware: RequestHandler = (req, res, next) => {
 };
 
 workspaceRouter.use(requireApiAuth);
+
+// One deferred dashboard enrichment request replaces one full sources request
+// per Workspace. The relation filter keeps every result scoped to the user.
+workspaceRouter.get('/source-summaries', async (_req: Request, res: Response) => {
+  try {
+    const summaries = await getWorkspaceSourceSummaries(res.locals.userId);
+    return res.status(200).json(successResponse(summaries));
+  } catch (err) {
+    logger.error('Failed to fetch Workspace source summaries', err);
+    return res
+      .status(500)
+      .json(errorResponse(new Error('Failed to retrieve source summaries')).payload);
+  }
+});
 
 workspaceRouter.param('id', async (req: Request, res: Response, next, workspaceId: string) => {
   try {

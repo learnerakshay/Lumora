@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthProvider';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
@@ -6,6 +6,14 @@ import { getWorkspaceIdentity, WorkspaceIcon } from '../components/dashboard/Wor
 import { CreateWorkspaceModal } from '../components/dashboard/CreateWorkspaceModal';
 import { RenameWorkspaceModal } from '../components/dashboard/RenameWorkspaceModal';
 import { DeleteWorkspaceModal } from '../components/dashboard/DeleteWorkspaceModal';
+import {
+  fetchDashboardSourceSummaries,
+  fetchDashboardWorkspaces,
+  groupDashboardSourceSummaries,
+  shouldLoadDashboardSourceSummaries,
+  type DashboardSourceSummary,
+  type DashboardWorkspace,
+} from '../lib/workspace-dashboard-data';
 import {
   Plus,
   ArrowRight,
@@ -24,26 +32,12 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-interface Workspace {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  icon: string | null;
-  userId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  sourcesCount: number;
-}
+type Workspace = DashboardWorkspace;
 
 type SourceType = 'PDF' | 'WEBSITE' | 'TEXT' | 'YOUTUBE' | 'VTT';
 type SourceStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
-interface WorkspaceSourceSummary {
-  id: string;
-  type: SourceType;
-  status: SourceStatus;
-}
+type WorkspaceSourceSummary = Omit<DashboardSourceSummary, 'workspaceId'>;
 
 const SOURCE_META: Record<SourceType, { label: string; icon: React.ElementType; className: string }> = {
   PDF: { label: 'PDF', icon: FileText, className: 'text-rose-300' },
@@ -85,7 +79,7 @@ function formatRelativeTime(dateString: string): string {
 }
 
 export function WorkspacesPage() {
-  const { user } = useAuth();
+  const { user, authenticatedUserId } = useAuth();
   const navigate = useNavigate();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -94,6 +88,8 @@ export function WorkspacesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'sources'>('newest');
   const [sourceSummaries, setSourceSummaries] = useState<Record<string, WorkspaceSourceSummary[]>>({});
+  const [sourceSummariesLoaded, setSourceSummariesLoaded] = useState(false);
+  const [sourceSummariesFailed, setSourceSummariesFailed] = useState(false);
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -110,64 +106,58 @@ export function WorkspacesPage() {
     }, 4000);
   };
 
-  const hydrateSourceSummaries = async (records: Workspace[]) => {
-    const results = await Promise.allSettled(
-      records.map(async (workspace) => {
-        const response = await fetch(`/api/workspaces/${workspace.id}/sources`);
-        if (!response.ok) return [workspace.id, [] as WorkspaceSourceSummary[]] as const;
-        const payload: unknown = await response.json();
-        const data =
-          typeof payload === 'object' && payload !== null &&
-          'success' in payload && payload.success === true &&
-          'data' in payload && Array.isArray(payload.data)
-            ? payload.data
-            : [];
-        const summaries = data.flatMap((source: unknown) => {
-          if (typeof source !== 'object' || source === null) return [];
-          const record = source as Record<string, unknown>;
-          if (typeof record.id !== 'string' || !isSourceType(record.type) || !isSourceStatus(record.status)) return [];
-          return [{ id: record.id, type: record.type, status: record.status }];
-        });
-        return [workspace.id, summaries] as const;
-      })
-    );
-
-    const next: Record<string, WorkspaceSourceSummary[]> = {};
-    results.forEach((result) => {
-      if (result.status === 'fulfilled') next[result.value[0]] = result.value[1];
-    });
-    setSourceSummaries(next);
-  };
+  const hydrateSourceSummaries = useCallback(async (workspaceIds: string[]) => {
+    try {
+      const records = await fetchDashboardSourceSummaries();
+      const validRecords = records.filter(
+        (record) => isSourceType(record.type) && isSourceStatus(record.status),
+      );
+      const grouped = groupDashboardSourceSummaries(validRecords);
+      const complete = Object.fromEntries(
+        workspaceIds.map((workspaceId) => [workspaceId, grouped[workspaceId] || []]),
+      );
+      setSourceSummaries(complete);
+      setWorkspaces((current) => current.map((workspace) => ({
+        ...workspace,
+        sourcesCount: complete[workspace.id]?.length || 0,
+      })));
+      setSourceSummariesLoaded(true);
+    } catch {
+      // Source-type icons are optional enrichment. Core Workspace cards remain usable.
+      setSourceSummariesFailed(true);
+      setSourceSummariesLoaded(true);
+    }
+  }, []);
 
   // Fetch Workspaces
-  const fetchWorkspaces = async () => {
+  const fetchWorkspaces = useCallback(async () => {
+    if (!authenticatedUserId) return;
     try {
       setLoading(true);
       setError(null);
+      setSourceSummariesLoaded(false);
+      setSourceSummariesFailed(false);
+      const records = await fetchDashboardWorkspaces(authenticatedUserId);
+      setWorkspaces(records);
+      setLoading(false);
 
-      const res = await fetch('/api/workspaces');
-      if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
-      }
-
-      const payload = await res.json();
-      if (payload.success && Array.isArray(payload.data)) {
-        setWorkspaces(payload.data);
-        void hydrateSourceSummaries(payload.data);
+      // Wait until the core list has had a chance to paint before requesting
+      // optional source-type/status enrichment.
+      if (shouldLoadDashboardSourceSummaries(records)) {
+        requestAnimationFrame(() => void hydrateSourceSummaries(records.map(({ id }) => id)));
       } else {
-        throw new Error(payload.error?.message || 'Failed to parse workspace records.');
+        setSourceSummariesLoaded(true);
       }
     } catch (err: any) {
       console.error('Workspaces fetch error:', err);
       setError(err.message || 'Failed to load workspaces.');
-    } finally {
       setLoading(false);
     }
-  };
+  }, [authenticatedUserId, hydrateSourceSummaries]);
 
   useEffect(() => {
-    fetchWorkspaces();
-  }, [user?.id]);
+    void fetchWorkspaces();
+  }, [fetchWorkspaces]);
 
   // Create Workspace
   const handleCreateWorkspace = async (data: {
@@ -345,7 +335,13 @@ export function WorkspacesPage() {
 
         <div className="pointer-events-none relative z-10 mt-4 flex min-h-8 items-center justify-between gap-3 border-t border-slate-800/70 pt-3">
           <div className="flex min-w-0 items-center gap-2">
-            {workspace.sourcesCount === 0 ? (
+            {!sourceSummariesLoaded ? (
+              <span aria-label="Loading source metadata" className="inline-flex items-center gap-2 text-[11px] text-slate-600">
+                <span className="h-3.5 w-16 animate-pulse rounded bg-slate-800/70" />
+              </span>
+            ) : sourceSummariesFailed ? (
+              <span className="text-[11px] text-slate-600">Source details unavailable</span>
+            ) : workspace.sourcesCount === 0 ? (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
                 <FileText className="h-3.5 w-3.5 text-slate-600" />
                 No sources yet
