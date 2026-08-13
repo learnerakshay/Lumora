@@ -191,7 +191,7 @@ export function AIActionMenu({
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-violet-300 transition hover:bg-violet-950/60 hover:text-violet-200 disabled:cursor-not-allowed disabled:text-slate-600"
+        className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium text-violet-300 transition-colors duration-150 hover:bg-violet-950/50 hover:text-violet-200 disabled:cursor-not-allowed disabled:text-slate-600"
       >
         <Sparkles className="h-3.5 w-3.5" />
         <span>AI Actions</span>
@@ -401,7 +401,7 @@ export function AIActionMenu({
               <button
                 type="button"
                 onClick={runAction}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-violet-500 px-3 py-2.5 text-xs font-bold text-white transition hover:bg-violet-400 active:scale-[0.99]"
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-violet-500 px-3 py-2.5 text-xs font-bold text-white transition-colors hover:bg-violet-400"
               >
                 <Play className="h-3.5 w-3.5" />
                 Run {selectedAction.label}

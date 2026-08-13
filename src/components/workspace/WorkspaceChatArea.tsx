@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import {
   Bot,
@@ -20,6 +20,7 @@ import { StoredCitation, StoredMessage } from '../../lib/chat/conversation-store
 import type { ToolStatusUpdate, WebSource } from '../../lib/ai/types';
 import type { SourceRecord } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
+import { splitCitationMarkers } from './chat-presentation';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
@@ -139,14 +140,53 @@ function CodeBlock({
   );
 }
 
-const markdownComponents: Components = {
+function renderCitationChildren(
+  children: React.ReactNode,
+  citations: StoredCitation[],
+  onSelectCitation?: (citation: StoredCitation) => void,
+): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child === 'string') {
+      return splitCitationMarkers(child).map((part, index) => {
+        if (part.type === 'text') return part.value;
+        const citation = citations[part.citationNumber - 1];
+        return (
+          <button
+            key={`${part.citationNumber}-${index}`}
+            type="button"
+            disabled={!citation}
+            onClick={() => citation && onSelectCitation?.(citation)}
+            title={citation?.title || part.value}
+            aria-label={citation ? `Open citation ${part.citationNumber}: ${citation.title}` : part.value}
+            className="mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-colors duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-default"
+          >
+            {part.citationNumber}
+          </button>
+        );
+      });
+    }
+    if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props.children) {
+      return React.cloneElement(child, {
+        children: renderCitationChildren(child.props.children, citations, onSelectCitation),
+      });
+    }
+    return child;
+  });
+}
+
+function createMarkdownComponents(
+  citations: StoredCitation[],
+  onSelectCitation?: (citation: StoredCitation) => void,
+): Components {
+  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, onSelectCitation);
+  return {
   h1: ({ children, ...props }) => <h1 {...props} className="mb-3 mt-6 text-xl font-bold tracking-tight text-white first:mt-0">{children}</h1>,
   h2: ({ children, ...props }) => <h2 {...props} className="mb-2.5 mt-5 text-lg font-bold text-white first:mt-0">{children}</h2>,
   h3: ({ children, ...props }) => <h3 {...props} className="mb-2 mt-4 text-base font-semibold text-slate-100 first:mt-0">{children}</h3>,
-  p: ({ children, ...props }) => <p {...props} className="my-2 leading-7 text-slate-200 first:mt-0 last:mb-0">{children}</p>,
+  p: ({ children, ...props }) => <p {...props} className="my-3 leading-7 text-slate-200 first:mt-0 last:mb-0">{citationChildren(children)}</p>,
   ul: ({ children, ...props }) => <ul {...props} className="my-3 list-disc space-y-1.5 pl-5 marker:text-sky-400">{children}</ul>,
   ol: ({ children, ...props }) => <ol {...props} className="my-3 list-decimal space-y-1.5 pl-5 marker:font-semibold marker:text-sky-400">{children}</ol>,
-  li: ({ children, ...props }) => <li {...props} className="pl-1 leading-7 text-slate-200">{children}</li>,
+  li: ({ children, ...props }) => <li {...props} className="pl-1.5 leading-7 text-slate-200">{citationChildren(children)}</li>,
   blockquote: ({ children, ...props }) => <blockquote {...props} className="my-4 border-l-2 border-sky-500 bg-sky-950/20 px-4 py-2 text-slate-300">{children}</blockquote>,
   a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" className="font-medium text-sky-300 underline decoration-sky-500/40 underline-offset-4 transition hover:text-sky-200">{children}</a>,
   hr: (props) => <hr {...props} className="my-6 border-slate-700/80" />,
@@ -160,7 +200,8 @@ const markdownComponents: Components = {
   td: ({ children, ...props }) => <td {...props} className="border-b border-slate-800 px-3 py-2.5 align-top text-slate-300">{children}</td>,
   pre: ({ children }) => <>{children}</>,
   code: CodeBlock,
-};
+  };
+}
 
 function formatCitationLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
@@ -195,6 +236,10 @@ export function WorkspaceChatArea({
   const stickToBottomRef = useRef(true);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const streamingMarkdownComponents = useMemo(
+    () => createMarkdownComponents(streamingCitations, onSelectCitation),
+    [streamingCitations, onSelectCitation],
+  );
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -252,10 +297,10 @@ export function WorkspaceChatArea({
     <div
       ref={feedRef}
       onScroll={handleScroll}
-      className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3 sm:px-5 md:px-6"
+      className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2.5 sm:px-5 md:px-6"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
-        <div className="mb-3 flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+        <div className="mb-2 flex items-center justify-between gap-3 border-b border-slate-800/70 pb-2.5">
           <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
             <MessageSquare className="h-4 w-4 shrink-0 text-sky-400" />
             <span className="truncate font-semibold text-slate-300">Learning conversation</span>
@@ -306,9 +351,9 @@ export function WorkspaceChatArea({
             return (
               <article
                 key={message.id}
-                className={`flex items-start gap-2.5 text-xs sm:gap-3 md:text-sm ${
+              className={`group/message flex items-start gap-2.5 text-xs sm:gap-3 md:text-sm ${
                   isUser ? 'justify-end' : 'justify-start'
-                } ${startsGroup ? 'pt-5' : 'pt-2'} animate-fade-in`}
+                } ${startsGroup ? 'pt-4' : 'pt-1.5'} animate-fade-in`}
               >
                 {!isUser && (
                   <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-sky-800 bg-sky-950 text-sky-300 shadow-md ${startsGroup ? '' : 'invisible'}`}>
@@ -317,20 +362,20 @@ export function WorkspaceChatArea({
                 )}
 
                 <div
-                  className={`min-w-0 max-w-[calc(100%-2.625rem)] rounded-2xl px-4 py-3.5 sm:max-w-[88%] sm:px-5 sm:py-4 md:max-w-[82%] ${
+                  className={`min-w-0 max-w-[calc(100%-2.625rem)] rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4 ${
                     isUser
-                      ? 'rounded-tr-md bg-sky-600 font-medium text-white shadow-md shadow-sky-900/20'
-                      : 'rounded-tl-md border border-slate-800/90 bg-[#121824] text-slate-200 shadow-xl shadow-black/10'
+                      ? 'rounded-tr-md border border-cyan-500/20 bg-[linear-gradient(145deg,rgba(8,145,178,0.2),rgba(15,23,42,0.78))] font-medium text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.15)] sm:max-w-[78%] md:max-w-[72%]'
+                      : 'w-full rounded-tl-md border border-transparent bg-transparent pl-1 text-slate-200 sm:max-w-[calc(100%-2.75rem)] sm:pr-1'
                   }`}
                 >
                   {isUser ? (
                     <div>
                       <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
-                      <div className="mt-2 flex justify-end gap-1 border-t border-sky-500/30 pt-2">
+                      <div className="mt-2 flex justify-end gap-1 border-t border-cyan-500/15 pt-2 opacity-70 transition-opacity duration-150 sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
                         <button
                           type="button"
                           onClick={() => void handleCopyMessage(message)}
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-sky-100/75 transition hover:bg-sky-700 hover:text-white"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-slate-400 transition-colors hover:bg-cyan-400/10 hover:text-cyan-100"
                           aria-label="Copy user message"
                         >
                           {copiedMessageId === message.id ? (
@@ -344,7 +389,7 @@ export function WorkspaceChatArea({
                           type="button"
                           onClick={() => void handleDeleteQuery(message.id)}
                           disabled={isGenerating || Boolean(deletingMessageId)}
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-sky-100/75 transition hover:bg-sky-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-slate-400 transition-colors hover:bg-rose-400/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label="Delete this query and its response"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -361,15 +406,15 @@ export function WorkspaceChatArea({
                         </div>
                       )}
 
-                      <div className="min-w-0 break-words text-xs md:text-sm">
-                        <Markdown components={markdownComponents}>{message.content}</Markdown>
+                      <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
+                        <Markdown components={createMarkdownComponents(message.citations || [], onSelectCitation)}>{message.content}</Markdown>
                       </div>
 
                       {message.citations && message.citations.length > 0 && (
-                        <div className="mt-4 space-y-2.5 border-t border-slate-800/80 pt-3.5">
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <div className="mt-5 space-y-2 border-t border-slate-800/60 pt-3">
+                          <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                            <span>{message.citations.length} Workspace {message.citations.length === 1 ? 'source' : 'sources'}</span>
+                            <span>Grounded in {message.citations.length} Workspace {message.citations.length === 1 ? 'source' : 'sources'}</span>
                           </div>
                           <div className="flex max-w-full flex-wrap gap-2">
                             {message.citations.map((citation, citationIndex) => {
@@ -386,7 +431,7 @@ export function WorkspaceChatArea({
                                 type="button"
                                 onClick={() => onSelectCitation?.(citation)}
                                 title={citation.snippet}
-                                className={`group flex max-w-full items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-[11px] text-slate-300 transition hover:text-white ${surface}`}
+                                className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white ${surface}`}
                               >
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-950/60">
                                   {source ? <SourceTypeIcon type={source.type} className="h-3 w-3" /> : citation.kind === 'WEB' ? <Globe className="h-3 w-3 text-sky-400" /> : <FileText className="h-3 w-3 text-violet-400" />}
@@ -400,7 +445,7 @@ export function WorkspaceChatArea({
                         </div>
                       )}
 
-                      <div className="mt-3 flex justify-end gap-1 border-t border-slate-800/80 pt-2.5">
+                      <div className="mt-3 flex gap-1 border-t border-slate-800/50 pt-2 opacity-75 transition-opacity duration-150 sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
                         <button
                           type="button"
                           onClick={() => void handleCopyMessage(message)}
@@ -449,11 +494,11 @@ export function WorkspaceChatArea({
           })}
 
           {isGenerating && (
-            <article className="flex items-start gap-2.5 pt-5 text-xs animate-fade-in sm:gap-3 md:text-sm">
+            <article className="flex items-start gap-2.5 pt-4 text-xs animate-fade-in sm:gap-3 md:text-sm">
               <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-sky-800 bg-sky-950 text-sky-300 shadow-md">
                 <Bot className="h-4 w-4" />
               </div>
-              <div className="min-w-0 max-w-[calc(100%-2.625rem)] rounded-2xl rounded-tl-md border border-sky-800/50 bg-[#121824] px-4 py-3.5 text-slate-200 shadow-xl sm:max-w-[88%] sm:px-5 sm:py-4 md:max-w-[82%]">
+              <div className="min-w-0 max-w-[calc(100%-2.625rem)] flex-1 rounded-2xl rounded-tl-md border border-cyan-800/30 bg-cyan-950/[0.07] px-4 py-3.5 text-slate-200 shadow-[0_12px_30px_rgba(0,0,0,0.12)] sm:px-5 sm:py-4">
                 {toolExecutions.length > 0 && (
                   <div
                     className="mb-3 flex flex-wrap gap-2"
@@ -507,7 +552,7 @@ export function WorkspaceChatArea({
                 )}
                 {streamingText ? (
                   <div className="min-w-0 break-words text-xs md:text-sm">
-                    <Markdown components={markdownComponents}>{streamingText}</Markdown>
+                    <Markdown components={streamingMarkdownComponents}>{streamingText}</Markdown>
                     <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-sky-400 align-middle" />
                   </div>
                 ) : (
