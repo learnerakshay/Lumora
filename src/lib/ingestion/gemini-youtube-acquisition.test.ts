@@ -10,6 +10,21 @@ const VIDEO_ID = '-moW9jvvMr4';
 const YOUTUBE_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
 const silentLogger = { info() {}, error() {} };
 
+function capturedLogger() {
+  const entries: Array<{ event: string; meta?: Record<string, unknown> }> = [];
+  return {
+    entries,
+    logger: {
+      info(event: string, meta?: Record<string, unknown>) {
+        entries.push({ event, meta });
+      },
+      error(event: string, _error?: unknown, meta?: Record<string, unknown>) {
+        entries.push({ event, meta });
+      },
+    },
+  };
+}
+
 function validOutput() {
   return JSON.stringify({
     language: 'en',
@@ -249,4 +264,155 @@ test('Gemini acquisition rejects invalid and unordered timestamps', async (conte
       );
     });
   }
+});
+
+test('primary success emits final structured logs and never starts verification', async () => {
+  const logs = capturedLogger();
+  let requests = 0;
+  const result = await acquireGeminiYouTubeTranscript(
+    { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+    {
+      logger: logs.logger,
+      createInteraction: async () => {
+        requests += 1;
+        return { output_text: validOutput() };
+      },
+    },
+  );
+  assert.equal(result.segments.length, 2);
+  assert.equal(requests, 1);
+  assert.equal(
+    logs.entries.filter(({ event }) => event === 'YOUTUBE_PRIMARY_ACQUISITION_STARTED').length,
+    1,
+  );
+  assert.equal(
+    logs.entries.filter(({ event }) => event === 'YOUTUBE_NO_SPEECH_VERIFICATION_STARTED').length,
+    0,
+  );
+  assert.equal(
+    logs.entries.find(({ event }) => event === 'YOUTUBE_PRIMARY_ACQUISITION_RESULT')?.meta?.segmentCount,
+    2,
+  );
+  assert.deepEqual(
+    logs.entries.find(({ event }) => event === 'YOUTUBE_FINAL_ACQUISITION_CLASSIFICATION')?.meta,
+    {
+      videoId: VIDEO_ID,
+      recoveredFromPrimaryEmpty: false,
+      primarySegmentCount: 2,
+      verificationAttempted: false,
+      verificationSegmentCount: null,
+      finalClassification: 'SUCCESS',
+      retryable: false,
+    },
+  );
+});
+
+test('primary empty and successful verification emit one complete recovery sequence', async () => {
+  const logs = capturedLogger();
+  let requests = 0;
+  const result = await acquireGeminiYouTubeTranscript(
+    { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+    {
+      logger: logs.logger,
+      createInteraction: async () => {
+        requests += 1;
+        return {
+          output_text: requests === 1
+            ? JSON.stringify({ language: 'en', segments: [] })
+            : validOutput(),
+        };
+      },
+    },
+  );
+  assert.equal(requests, 2);
+  assert.equal(result.segments.length, 2);
+  assert.equal(
+    logs.entries.filter(({ event }) => event === 'YOUTUBE_NO_SPEECH_VERIFICATION_STARTED').length,
+    1,
+  );
+  assert.equal(
+    logs.entries.find(({ event }) => event === 'YOUTUBE_NO_SPEECH_VERIFICATION_RESULT')?.meta?.segmentCount,
+    2,
+  );
+  assert.deepEqual(
+    logs.entries.find(({ event }) => event === 'YOUTUBE_FINAL_ACQUISITION_CLASSIFICATION')?.meta,
+    {
+      videoId: VIDEO_ID,
+      recoveredFromPrimaryEmpty: true,
+      primarySegmentCount: 0,
+      verificationAttempted: true,
+      verificationSegmentCount: 2,
+      finalClassification: 'SUCCESS',
+      retryable: false,
+    },
+  );
+});
+
+test('verification no-speech and transient outcomes retain their exact final classification', async (context) => {
+  await context.test('confirmed no speech remains non-retryable', async () => {
+    const logs = capturedLogger();
+    let requests = 0;
+    await assert.rejects(
+      acquireGeminiYouTubeTranscript(
+        { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+        {
+          logger: logs.logger,
+          createInteraction: async () => {
+            requests += 1;
+            return { output_text: JSON.stringify({ language: 'en', segments: [] }) };
+          },
+        },
+      ),
+      (error: unknown) =>
+        error instanceof GeminiYouTubeAcquisitionError &&
+        error.classification === 'NO_SPEECH_DETECTED' &&
+        error.retryable === false,
+    );
+    assert.equal(requests, 2);
+    assert.deepEqual(
+      logs.entries.find(({ event }) => event === 'YOUTUBE_FINAL_ACQUISITION_CLASSIFICATION')?.meta,
+      {
+        videoId: VIDEO_ID,
+        recoveredFromPrimaryEmpty: false,
+        primarySegmentCount: 0,
+        verificationAttempted: true,
+        verificationSegmentCount: 0,
+        finalClassification: 'NO_SPEECH_DETECTED',
+        retryable: false,
+      },
+    );
+  });
+
+  await context.test('verification provider failure is not swallowed', async () => {
+    const logs = capturedLogger();
+    let requests = 0;
+    await assert.rejects(
+      acquireGeminiYouTubeTranscript(
+        { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+        {
+          logger: logs.logger,
+          createInteraction: async () => {
+            requests += 1;
+            if (requests === 1) {
+              return { output_text: JSON.stringify({ language: 'en', segments: [] }) };
+            }
+            throw Object.assign(new Error('temporary provider failure'), { status: 503 });
+          },
+        },
+      ),
+      (error: unknown) =>
+        error instanceof GeminiYouTubeAcquisitionError &&
+        error.classification === 'UPSTREAM_FAILURE' &&
+        error.retryable === true,
+    );
+    assert.equal(requests, 2);
+    assert.equal(
+      logs.entries.find(({ event }) => event === 'YOUTUBE_NO_SPEECH_VERIFICATION_RESULT')?.meta?.classification,
+      'UPSTREAM_FAILURE',
+    );
+    assert.equal(
+      logs.entries.find(({ event }) => event === 'YOUTUBE_FINAL_ACQUISITION_CLASSIFICATION')?.meta?.finalClassification,
+      'UPSTREAM_FAILURE',
+    );
+  });
 });

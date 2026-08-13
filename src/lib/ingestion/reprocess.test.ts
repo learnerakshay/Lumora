@@ -108,6 +108,11 @@ test('FAILED YouTube reprocess reaches COMPLETED on one fresh version without du
   assert.equal(state.source.stage, 'CREATED');
   assert.equal(state.source.metadata.errorCode, null);
   assert.deepEqual(state.contents.map(({ version: itemVersion }) => itemVersion), [1, 2]);
+  assert.equal(state.contents[1].originalContent, null);
+  assert.equal(
+    state.contents[1].sourceUrl,
+    'https://www.youtube.com/watch?v=UiMg566PREA',
+  );
   assert.deepEqual(state.attempts.map(({ version: itemVersion }) => itemVersion), [1, 2]);
 
   let finishProcessing!: () => void;

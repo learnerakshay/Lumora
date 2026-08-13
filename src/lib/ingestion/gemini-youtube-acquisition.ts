@@ -296,9 +296,39 @@ export async function acquireGeminiYouTubeTranscript(input: {
   const createInteraction = dependencies.createInteraction
     ?? ((request, options) => client!.interactions.create(request as any, options));
   let verifyingNoSpeech = false;
+  let verificationAttempted = false;
+  let primarySegmentCount: number | null = null;
+  let verificationSegmentCount: number | null = null;
+
+  const logFinalClassification = (
+    finalClassification: 'SUCCESS' | GeminiYouTubeFailureClassification,
+    retryable: boolean,
+  ) => {
+    log.info('YOUTUBE_FINAL_ACQUISITION_CLASSIFICATION', {
+      videoId: input.videoId,
+      recoveredFromPrimaryEmpty:
+        verificationAttempted &&
+        finalClassification === 'SUCCESS' &&
+        (verificationSegmentCount || 0) > 0,
+      primarySegmentCount,
+      verificationAttempted,
+      verificationSegmentCount,
+      finalClassification,
+      retryable,
+    });
+  };
 
   for (let attempt = 1; attempt <= MAX_PRIMARY_ATTEMPTS + 1; attempt += 1) {
     const startedAt = Date.now();
+    if (verifyingNoSpeech) {
+      log.info('YOUTUBE_NO_SPEECH_VERIFICATION_STARTED', {
+        videoId: input.videoId,
+      });
+    } else {
+      log.info('YOUTUBE_PRIMARY_ACQUISITION_STARTED', {
+        videoId: input.videoId,
+      });
+    }
     log.info('Gemini YouTube acquisition started', {
       videoId: input.videoId,
       model: GEMINI_YOUTUBE_MODEL,
@@ -342,6 +372,24 @@ export async function acquireGeminiYouTubeTranscript(input: {
         timeoutFailure,
       ]);
       const result = parseAndValidateOutput(interaction.output_text);
+      if (verifyingNoSpeech) {
+        verificationSegmentCount = result.segments.length;
+        log.info('YOUTUBE_NO_SPEECH_VERIFICATION_RESULT', {
+          videoId: input.videoId,
+          segmentCount: verificationSegmentCount,
+          durationMs: Date.now() - startedAt,
+          providerResult: 'SUCCESS',
+          classification: 'SUCCESS',
+        });
+      } else {
+        primarySegmentCount = result.segments.length;
+        log.info('YOUTUBE_PRIMARY_ACQUISITION_RESULT', {
+          videoId: input.videoId,
+          segmentCount: primarySegmentCount,
+          durationMs: Date.now() - startedAt,
+          classification: 'SUCCESS',
+        });
+      }
       log.info('Gemini YouTube acquisition succeeded', {
         videoId: input.videoId,
         model: GEMINI_YOUTUBE_MODEL,
@@ -350,9 +398,31 @@ export async function acquireGeminiYouTubeTranscript(input: {
         segmentCount: result.segments.length,
         language: result.language,
       });
+      logFinalClassification('SUCCESS', false);
       return result;
     } catch (error) {
       const failure = classifyProviderError(error);
+      const segmentCount = failure.classification === 'NO_SPEECH_DETECTED'
+        ? 0
+        : null;
+      if (verifyingNoSpeech) {
+        verificationSegmentCount = segmentCount;
+        log.info('YOUTUBE_NO_SPEECH_VERIFICATION_RESULT', {
+          videoId: input.videoId,
+          segmentCount: verificationSegmentCount,
+          durationMs: Date.now() - startedAt,
+          providerResult: 'ERROR',
+          classification: failure.classification,
+        });
+      } else {
+        primarySegmentCount = segmentCount;
+        log.info('YOUTUBE_PRIMARY_ACQUISITION_RESULT', {
+          videoId: input.videoId,
+          segmentCount: primarySegmentCount,
+          durationMs: Date.now() - startedAt,
+          classification: failure.classification,
+        });
+      }
       log.error('Gemini YouTube acquisition failed', undefined, {
         videoId: input.videoId,
         model: GEMINI_YOUTUBE_MODEL,
@@ -366,6 +436,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
         failure.classification === 'NO_SPEECH_DETECTED' &&
         !verifyingNoSpeech
       ) {
+        verificationAttempted = true;
         verifyingNoSpeech = true;
         continue;
       }
@@ -374,6 +445,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
         !failure.retryable ||
         attempt === MAX_PRIMARY_ATTEMPTS
       ) {
+        logFinalClassification(failure.classification, failure.retryable);
         throw failure;
       }
       await new Promise((resolve) => setTimeout(resolve, retryBackoffMs));
