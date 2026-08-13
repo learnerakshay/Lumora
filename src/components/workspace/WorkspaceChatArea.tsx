@@ -36,7 +36,7 @@ interface WorkspaceChatAreaProps {
   processingSourceCount: number;
   sources: SourceRecord[];
   hasIndexedSources: boolean;
-  onSelectCitation?: (citation: StoredCitation) => void;
+  onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void;
   onSubmitMessage: (prompt: string) => void;
   onClearHistory: () => void;
   onDeleteQuery: (userMessageId: string) => Promise<boolean>;
@@ -143,7 +143,7 @@ function CodeBlock({
 function renderCitationChildren(
   children: React.ReactNode,
   citations: StoredCitation[],
-  onSelectCitation?: (citation: StoredCitation) => void,
+  onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
 ): React.ReactNode {
   return React.Children.map(children, (child) => {
     if (typeof child === 'string') {
@@ -155,7 +155,7 @@ function renderCitationChildren(
             key={`${part.citationNumber}-${index}`}
             type="button"
             disabled={!citation}
-            onClick={() => citation && onSelectCitation?.(citation)}
+            onClick={() => citation && onSelectCitation?.(citation, citations)}
             title={citation?.title || part.value}
             aria-label={citation ? `Open citation ${part.citationNumber}: ${citation.title}` : part.value}
             className="mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-colors duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-default"
@@ -176,7 +176,7 @@ function renderCitationChildren(
 
 function createMarkdownComponents(
   citations: StoredCitation[],
-  onSelectCitation?: (citation: StoredCitation) => void,
+  onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
 ): Components {
   const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, onSelectCitation);
   return {
@@ -429,7 +429,7 @@ export function WorkspaceChatArea({
                               return <button
                                 key={citation.id || citationIndex}
                                 type="button"
-                                onClick={() => onSelectCitation?.(citation)}
+                                onClick={() => onSelectCitation?.(citation, message.citations)}
                                 title={citation.snippet}
                                 className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white ${surface}`}
                               >

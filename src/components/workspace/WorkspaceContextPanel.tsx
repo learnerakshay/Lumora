@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BookOpen, ExternalLink, Quote, X } from 'lucide-react';
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
+import { citationEvidenceKey } from './workspace-interactions';
 
 interface WorkspaceContextPanelProps {
   citations: StoredCitation[];
   sources: SourceRecord[];
   onSelectCitation: (citation: StoredCitation) => void;
   onClose?: () => void;
+  activeCitationId?: string | null;
 }
 
 function formatLocation(citation: StoredCitation) {
@@ -25,7 +27,21 @@ export function WorkspaceContextPanel({
   sources,
   onSelectCitation,
   onClose,
+  activeCitationId,
 }: WorkspaceContextPanelProps) {
+  const evidenceRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    if (!activeCitationId) return;
+    const card = evidenceRefs.current[activeCitationId];
+    if (!card) return;
+    const frame = requestAnimationFrame(() => {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeCitationId, citations]);
+
   return (
     <aside aria-label="Response context" className="flex h-full w-full flex-col border-l border-slate-800/80 bg-[#0e141f] xl:w-[310px]">
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-800/70 px-4">
@@ -63,13 +79,17 @@ export function WorkspaceContextPanel({
             </div>
             {citations.map((citation, index) => {
               const source = sources.find((item) => item.id === citation.sourceId);
+              const evidenceKey = citationEvidenceKey(citation);
+              const isActive = evidenceKey === activeCitationId;
               return (
                 <button
                   key={citation.id || `${citation.sourceId}-${index}`}
+                  ref={(element) => { evidenceRefs.current[evidenceKey] = element; }}
                   type="button"
                   onClick={() => onSelectCitation(citation)}
+                  aria-current={isActive ? 'true' : undefined}
                   style={{ animationDelay: `${Math.min(index, 5) * 80}ms` }}
-                  className="animate-fade-in group w-full rounded-2xl border border-slate-800/75 bg-[#111925] p-3.5 text-left shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-[background-color,border-color,box-shadow] duration-200 hover:border-cyan-700/55 hover:bg-[#141d2a] hover:shadow-[0_12px_26px_rgba(0,0,0,0.14)]"
+                  className={`animate-fade-in group w-full rounded-2xl border bg-[#111925] p-3.5 text-left shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-[background-color,border-color,box-shadow] duration-200 hover:border-cyan-700/55 hover:bg-[#141d2a] hover:shadow-[0_12px_26px_rgba(0,0,0,0.14)] ${isActive ? 'border-cyan-400/70 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_0_24px_rgba(34,211,238,0.12)]' : 'border-slate-800/75'}`}
                 >
                   <div className="flex items-start gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70">

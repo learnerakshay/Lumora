@@ -14,6 +14,7 @@ import {
 import { SourceRecord, SourceType } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
+import { sourceRefreshDisabled } from './workspace-interactions';
 
 interface WorkspaceSourcesSidebarProps {
   workspace: {
@@ -24,15 +25,17 @@ interface WorkspaceSourcesSidebarProps {
   };
   sources: SourceRecord[];
   loading: boolean;
+  refreshing?: boolean;
   onSelectSourceDetails: (source: SourceRecord) => void;
   onDeleteSource: (sourceId: string) => void;
-  onRefreshSources?: () => void;
+  onRefreshSources?: () => void | Promise<void>;
 }
 
 export function WorkspaceSourcesSidebar({
   workspace,
   sources,
   loading,
+  refreshing = false,
   onSelectSourceDetails,
   onDeleteSource,
   onRefreshSources,
@@ -147,12 +150,14 @@ export function WorkspaceSourcesSidebar({
           {onRefreshSources && (
             <button
               type="button"
-              onClick={onRefreshSources}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-              title="Refresh Sources"
+              onClick={() => void onRefreshSources()}
+              disabled={sourceRefreshDisabled(loading, refreshing)}
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white disabled:cursor-wait disabled:text-slate-600 disabled:hover:bg-transparent"
+              title={refreshing ? 'Refreshing sources…' : 'Refresh sources'}
               aria-label="Refresh sources"
+              aria-busy={refreshing}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${loading || refreshing ? 'animate-spin' : ''}`} />
             </button>
           )}
         </div>

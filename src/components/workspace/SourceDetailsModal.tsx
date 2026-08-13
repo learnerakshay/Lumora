@@ -334,7 +334,7 @@ export function SourceDetailsModal({
               }
             >
               <RefreshCw className={`w-3.5 h-3.5 ${reprocessing || isProcessing ? 'animate-spin' : ''}`} />
-              <span>{isProcessing ? 'Processing...' : 'Reprocess'}</span>
+              <span>{reprocessing ? 'Reprocessing…' : isProcessing ? 'Processing…' : 'Reprocess'}</span>
             </button>
 
             <button

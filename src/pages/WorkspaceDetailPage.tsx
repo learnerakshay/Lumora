@@ -24,6 +24,7 @@ import { SourceDetailsModal } from '../components/workspace/SourceDetailsModal';
 import { SettingsModal } from '../components/dashboard/SettingsModal';
 import { WorkspaceContextPanel } from '../components/workspace/WorkspaceContextPanel';
 import { AlertCircle, X } from 'lucide-react';
+import { citationEvidenceKey } from '../components/workspace/workspace-interactions';
 
 interface WorkspaceData {
   id: string;
@@ -46,6 +47,7 @@ export function WorkspaceDetailPage() {
 
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [loadingSources, setLoadingSources] = useState(true);
+  const [refreshingSources, setRefreshingSources] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -70,6 +72,9 @@ export function WorkspaceDetailPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [contextCitations, setContextCitations] = useState<StoredCitation[] | null>(null);
+  const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
+  const sourceRefreshRef = useRef(false);
 
   // Fetch Workspace Detail
   const fetchWorkspace = useCallback(async () => {
@@ -100,7 +105,7 @@ export function WorkspaceDetailPage() {
 
   // Fetch Workspace Sources
   const fetchSources = useCallback(async () => {
-    if (!workspaceId) return;
+    if (!workspaceId) return false;
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/sources`);
       if (!res.ok) throw new Error('Failed to fetch sources');
@@ -112,13 +117,29 @@ export function WorkspaceDetailPage() {
           const fresh = payload.data.find((s: SourceRecord) => s.id === selectedSourceIdRef.current);
           if (fresh) setSelectedSourceDetails(fresh);
         }
+        return true;
       }
+      throw new Error(payload.error?.message || 'Failed to fetch sources');
     } catch (err: any) {
       setActivityError(err.message || 'Unable to refresh Workspace sources.');
+      return false;
     } finally {
       setLoadingSources(false);
     }
   }, [workspaceId]);
+
+  const handleRefreshSources = useCallback(async () => {
+    if (sourceRefreshRef.current) return;
+    sourceRefreshRef.current = true;
+    setRefreshingSources(true);
+    try {
+      const refreshed = await fetchSources();
+      if (refreshed) setActivityError(null);
+    } finally {
+      sourceRefreshRef.current = false;
+      setRefreshingSources(false);
+    }
+  }, [fetchSources]);
 
   // Fetch Workspace Chat Messages
   const fetchMessages = useCallback(async (): Promise<void> => {
@@ -564,18 +585,6 @@ export function WorkspaceDetailPage() {
     }
   };
 
-  const handleSelectCitation = (cit: StoredCitation) => {
-    // Locate source in current sources list
-    const matchedSource = sources.find(
-      (s) => s.id === cit.sourceId
-    );
-    if (matchedSource) {
-      setSelectedSourceDetails(matchedSource);
-    } else if (cit.url) {
-      window.open(cit.url, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   // Handle Workspace Update (Rename / Edit Description)
   const handleUpdateWorkspace = async (updatedData: { name?: string; description?: string }) => {
     if (!workspace) return;
@@ -626,6 +635,16 @@ export function WorkspaceDetailPage() {
     .reverse()
     .find((message) => message.role === 'ASSISTANT' && message.citations?.length)
     ?.citations || streamingCitations;
+  const displayedContextCitations = contextCitations || latestCitations;
+
+  const handleSelectCitation = (
+    citation: StoredCitation,
+    evidence: StoredCitation[] = latestCitations,
+  ) => {
+    setContextCitations(evidence);
+    setActiveCitationId(citationEvidenceKey(citation));
+    setIsContextOpen(true);
+  };
 
   const hasPersistedGeneration = messages.some(
     (message) => message.status === 'SENDING',
@@ -688,9 +707,10 @@ export function WorkspaceDetailPage() {
           workspace={workspace}
           sources={visibleSources}
           loading={loadingSources}
+          refreshing={refreshingSources}
           onSelectSourceDetails={setSelectedSourceDetails}
           onDeleteSource={handleSourceDeleted}
-          onRefreshSources={fetchSources}
+          onRefreshSources={handleRefreshSources}
         />
       </div>
 
@@ -715,12 +735,13 @@ export function WorkspaceDetailPage() {
               workspace={workspace}
               sources={visibleSources}
               loading={loadingSources}
+              refreshing={refreshingSources}
               onSelectSourceDetails={(source) => {
                 setIsMobileSidebarOpen(false);
                 setSelectedSourceDetails(source);
               }}
               onDeleteSource={handleSourceDeleted}
-              onRefreshSources={fetchSources}
+              onRefreshSources={handleRefreshSources}
             />
           </div>
         </div>
@@ -790,9 +811,10 @@ export function WorkspaceDetailPage() {
 
       <div className="hidden h-full shrink-0 xl:block">
         <WorkspaceContextPanel
-          citations={latestCitations}
+          citations={displayedContextCitations}
           sources={visibleSources}
-          onSelectCitation={handleSelectCitation}
+          onSelectCitation={(citation) => handleSelectCitation(citation, displayedContextCitations)}
+          activeCitationId={activeCitationId}
         />
       </div>
 
@@ -801,12 +823,12 @@ export function WorkspaceDetailPage() {
           <button type="button" aria-label="Close context overlay" className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setIsContextOpen(false)} />
           <div className="relative z-10 h-full w-[340px] max-w-[90vw] shadow-2xl">
             <WorkspaceContextPanel
-              citations={latestCitations}
+              citations={displayedContextCitations}
               sources={visibleSources}
               onSelectCitation={(citation) => {
-                setIsContextOpen(false);
-                handleSelectCitation(citation);
+                handleSelectCitation(citation, displayedContextCitations);
               }}
+              activeCitationId={activeCitationId}
               onClose={() => setIsContextOpen(false)}
             />
           </div>
