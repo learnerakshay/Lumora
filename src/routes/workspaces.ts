@@ -299,6 +299,7 @@ workspaceRouter.post(
     }
     const sourceType = type as SourceType;
 
+    const validationStartedAt = Date.now();
     const existingSources = await getWorkspaceSources(workspaceId);
     const validation = validateSourceInput({
       workspaceId,
@@ -308,6 +309,12 @@ workspaceRouter.post(
       rawContent,
       file: req.file || null,
       existingSources,
+    });
+    logger.info('Ingestion source validation completed', {
+      sourceType,
+      durationMs: Date.now() - validationStartedAt,
+      valid: validation.valid,
+      remoteSource: Boolean(url),
     });
 
     if (!validation.valid) {

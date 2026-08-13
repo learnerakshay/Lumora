@@ -105,7 +105,7 @@ test('parsed Vercel JSON reaches extraction with the exact videoId and returns r
   }]);
   assert.deepEqual(JSON.parse(result.body()), {
     language: 'en',
-    cues: [{ text: 'Production cue', offset: 1.25, duration: 2.5, lang: 'en' }],
+    cues: [{ text: 'Production cue', offset: 1_250, duration: 2_500, lang: 'en' }],
   });
 });
 
@@ -211,6 +211,6 @@ test('existing Render proxy provider consumes the native relay response contract
   assert.equal(result.provider, 'proxy');
   assert.equal(result.language, 'en');
   assert.deepEqual(result.cues, [
-    { text: 'Relay contract', offset: 0, duration: 1.5, lang: 'en' },
+    { text: 'Relay contract', offset: 0, duration: 1_500, lang: 'en' },
   ]);
 });

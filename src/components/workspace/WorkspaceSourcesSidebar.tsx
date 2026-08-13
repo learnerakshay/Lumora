@@ -14,6 +14,7 @@ import {
 import { SourceRecord, SourceType } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
+import { getYouTubeFailureMessage } from './youtube-source-ux';
 import { sourceRefreshDisabled } from './workspace-interactions';
 
 interface WorkspaceSourcesSidebarProps {
@@ -250,7 +251,11 @@ export function WorkspaceSourcesSidebar({
           </div>
         ) : (
           /* Source Cards List */
-          filteredSources.map((source) => (
+          filteredSources.map((source) => {
+            const youtubeFailure = source.type === 'YOUTUBE' && source.status === 'FAILED'
+              ? getYouTubeFailureMessage(source.metadata)
+              : null;
+            return (
             <article
               key={source.id}
               className={`group relative rounded-2xl border border-l-2 bg-slate-900/55 p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-black/15 ${sourceAccent[source.type]}`}
@@ -356,8 +361,14 @@ export function WorkspaceSourcesSidebar({
                   })}
                 </span>
               </div>
+              {youtubeFailure && (
+                <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-rose-300/80">
+                  {youtubeFailure.title}
+                </p>
+              )}
             </article>
-          ))
+            );
+          })
         )}
       </div>
 

@@ -345,7 +345,8 @@ async function parseYouTubeSource(
   let storedTranscript: {
     kind: string;
     language: string | null;
-    provider?: 'direct' | 'proxy';
+    provider?: 'direct' | 'proxy' | 'gemini';
+    strategy?: 'transcript_fast_path' | 'gemini_native';
     cues: Array<{ text: string; offset: number; duration: number; lang?: string }>;
   } | null = null;
   if (input.originalContent?.startsWith('{"kind":"youtube-transcript-v1"')) {
@@ -357,13 +358,17 @@ async function parseYouTubeSource(
   }
 
   let cues = storedTranscript?.cues || [];
-  let provider: 'persisted' | 'direct' | 'proxy' = 'persisted';
+  let provider: 'persisted' | 'direct' | 'proxy' | 'gemini' = 'persisted';
+  let strategy = storedTranscript?.strategy || null;
+  let acquisitionDurationMs: number | null = null;
   let providerLanguage: string | null = storedTranscript?.language || null;
 
   if (cues.length === 0) {
     const transcript = await fetchYouTubeTranscript(videoId);
     cues = transcript.cues;
     provider = transcript.provider;
+    strategy = transcript.strategy;
+    acquisitionDurationMs = transcript.acquisitionDurationMs;
     providerLanguage = transcript.language;
   }
   await input.onParsing?.();
@@ -376,6 +381,7 @@ async function parseYouTubeSource(
     kind: 'youtube-transcript-v1',
     language,
     provider: provider === 'persisted' ? storedTranscript?.provider || null : provider,
+    strategy,
     cues: cues.map((cue) => ({
       text: cue.text,
       offset: cue.offset,
@@ -408,6 +414,8 @@ async function parseYouTubeSource(
       url: sourceUrl,
       language,
       transcriptProvider: provider,
+      transcriptStrategy: strategy,
+      acquisitionDurationMs,
       cueCount: preserved.cues.length,
       cues: preserved.cues,
       parsedAt: new Date().toISOString(),

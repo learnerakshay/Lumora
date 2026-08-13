@@ -26,7 +26,9 @@ export interface YouTubeTranscriptCue {
 }
 
 export interface YouTubeTranscriptResult {
-  provider: 'direct' | 'proxy';
+  provider: 'direct' | 'proxy' | 'gemini';
+  strategy: 'transcript_fast_path' | 'gemini_native';
+  acquisitionDurationMs: number;
   language: string | null;
   cues: YouTubeTranscriptCue[];
 }
@@ -36,6 +38,7 @@ export interface YouTubeTranscriptProviderConfig {
   timeoutMs: number;
   proxyUrl?: string;
   proxyToken?: string;
+  maxAttempts?: number;
 }
 
 export interface YouTubeTranscriptProviderDependencies {
@@ -43,6 +46,15 @@ export interface YouTubeTranscriptProviderDependencies {
   validateEndpoint?: typeof validatePublicHttpsUrl;
   directFetch?: (videoId: string) => Promise<YouTubeTranscriptCue[]>;
   geminiAcquire?: typeof acquireGeminiYouTubeTranscript;
+  runtimeConfig?: {
+    geminiApiKey?: string;
+    fastPath?: YouTubeTranscriptProviderConfig;
+  };
+  logger?: Pick<typeof logger, 'info'>;
+}
+
+function transcriptTextLength(cues: YouTubeTranscriptCue[]): number {
+  return cues.reduce((total, cue) => total + cue.text.length, 0);
 }
 
 async function fetchGeminiTranscript(
@@ -50,6 +62,7 @@ async function fetchGeminiTranscript(
   apiKey: string | undefined,
   dependencies: YouTubeTranscriptProviderDependencies,
 ): Promise<YouTubeTranscriptResult> {
+  const startedAt = Date.now();
   if (!apiKey) {
     throw new IngestionFailure({
       message: 'GEMINI_API_KEY is not configured for YouTube acquisition',
@@ -66,7 +79,9 @@ async function fetchGeminiTranscript(
       youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
     });
     return {
-      provider: 'direct',
+      provider: 'gemini',
+      strategy: 'gemini_native',
+      acquisitionDurationMs: Date.now() - startedAt,
       language: acquisition.language,
       cues: acquisition.segments.map((segment) => ({
         text: segment.text,
@@ -83,10 +98,10 @@ async function fetchGeminiTranscript(
     ) {
       throw new IngestionFailure({
         message: `Gemini YouTube acquisition failed: ${error.classification}`,
-        errorCode: 'TRANSCRIPT_UNAVAILABLE',
+        errorCode: error.classification,
         userMessage: error.classification === 'NO_SPEECH_DETECTED'
-          ? 'No discernible speech was detected in this YouTube video.'
-          : 'This YouTube video is unavailable or not public.',
+          ? 'No usable spoken content was detected in this video.'
+          : 'This video could not be accessed.',
         provider: 'gemini',
         cause: error,
       });
@@ -157,6 +172,7 @@ async function fetchDirectTranscript(
   config: YouTubeTranscriptProviderConfig,
   dependencies: YouTubeTranscriptProviderDependencies,
 ): Promise<YouTubeTranscriptResult> {
+  const startedAt = Date.now();
   const directFetch = dependencies.directFetch || YoutubeTranscript.fetchTranscript.bind(YoutubeTranscript);
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -197,6 +213,8 @@ async function fetchDirectTranscript(
     const validated = validateCues(cues, 'direct');
     return {
       provider: 'direct',
+      strategy: 'transcript_fast_path',
+      acquisitionDurationMs: Date.now() - startedAt,
       language: validated.find((cue) => cue.lang)?.lang || null,
       cues: validated,
     };
@@ -285,7 +303,9 @@ async function fetchProxyTranscript(
     });
   }
   const fetchImpl = dependencies.fetchImpl || fetch;
-  for (let attempt = 1; attempt <= MAX_PROXY_ATTEMPTS; attempt += 1) {
+  const maximumAttempts = config.maxAttempts ?? MAX_PROXY_ATTEMPTS;
+  const startedAt = Date.now();
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
     try {
@@ -301,7 +321,7 @@ async function fetchProxyTranscript(
       });
 
       if (!response.ok) {
-        if (attempt < MAX_PROXY_ATTEMPTS && retryableProviderStatus(response.status)) {
+        if (attempt < maximumAttempts && retryableProviderStatus(response.status)) {
           await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
           continue;
         }
@@ -352,6 +372,8 @@ async function fetchProxyTranscript(
       const cues = validateCues(payload?.cues, 'proxy');
       return {
         provider: 'proxy',
+        strategy: 'transcript_fast_path',
+        acquisitionDurationMs: Date.now() - startedAt,
         language:
           typeof payload?.language === 'string'
             ? payload.language
@@ -361,7 +383,7 @@ async function fetchProxyTranscript(
     } catch (error: any) {
       if (error instanceof IngestionFailure) throw error;
       if (error?.name === 'AbortError' || controller.signal.aborted) {
-        if (attempt < MAX_PROXY_ATTEMPTS) continue;
+        if (attempt < maximumAttempts) continue;
         throw new IngestionFailure({
           message: 'YouTube transcript proxy timed out',
           errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
@@ -371,7 +393,7 @@ async function fetchProxyTranscript(
           cause: error,
         });
       }
-      if (attempt < MAX_PROXY_ATTEMPTS) continue;
+      if (attempt < maximumAttempts) continue;
       throw new IngestionFailure({
         message: `YouTube transcript proxy request failed: ${error?.message || 'network error'}`,
         errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
@@ -399,12 +421,106 @@ export async function fetchYouTubeTranscript(
   config?: YouTubeTranscriptProviderConfig,
   dependencies: YouTubeTranscriptProviderDependencies = {},
 ): Promise<YouTubeTranscriptResult> {
-  if (!config) {
-    const env = getServerEnv();
-    return fetchGeminiTranscript(videoId, env.GEMINI_API_KEY, dependencies);
+  if (config) {
+    return config.provider === 'proxy'
+      ? fetchProxyTranscript(videoId, config, dependencies)
+      : fetchDirectTranscript(videoId, config, dependencies);
   }
 
-  return config.provider === 'proxy'
-    ? fetchProxyTranscript(videoId, config, dependencies)
-    : fetchDirectTranscript(videoId, config, dependencies);
+  const log = dependencies.logger || logger;
+  const runtime = dependencies.runtimeConfig || (() => {
+    const env = getServerEnv();
+    return {
+      geminiApiKey: env.GEMINI_API_KEY,
+      fastPath: env.YOUTUBE_TRANSCRIPT_PROVIDER === 'proxy'
+        ? {
+            provider: 'proxy' as const,
+            timeoutMs: env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
+            proxyUrl: env.YOUTUBE_TRANSCRIPT_PROXY_URL,
+            proxyToken: env.YOUTUBE_TRANSCRIPT_PROXY_TOKEN,
+            maxAttempts: 1,
+          }
+        : undefined,
+    };
+  })();
+
+  if (runtime.fastPath) {
+    const fastPathStartedAt = Date.now();
+    log.info('YOUTUBE_ACQUISITION_STRATEGY_STARTED', {
+      videoId,
+      strategy: 'transcript_fast_path',
+      provider: runtime.fastPath.provider,
+    });
+    try {
+      const result = runtime.fastPath.provider === 'proxy'
+        ? await fetchProxyTranscript(videoId, runtime.fastPath, dependencies)
+        : await fetchDirectTranscript(videoId, runtime.fastPath, dependencies);
+      log.info('YOUTUBE_ACQUISITION_STRATEGY_RESULT', {
+        videoId,
+        strategy: result.strategy,
+        provider: result.provider,
+        durationMs: Date.now() - fastPathStartedAt,
+        segmentCount: result.cues.length,
+        textLength: transcriptTextLength(result.cues),
+        classification: 'SUCCESS',
+      });
+      return result;
+    } catch (error) {
+      const classification = error instanceof IngestionFailure
+        ? error.errorCode
+        : 'UNKNOWN_ERROR';
+      log.info('YOUTUBE_ACQUISITION_STRATEGY_RESULT', {
+        videoId,
+        strategy: 'transcript_fast_path',
+        provider: runtime.fastPath.provider,
+        durationMs: Date.now() - fastPathStartedAt,
+        segmentCount: 0,
+        textLength: 0,
+        classification,
+      });
+      log.info('YOUTUBE_ACQUISITION_FALLBACK', {
+        videoId,
+        fromStrategy: 'transcript_fast_path',
+        toStrategy: 'gemini_native',
+        reason: classification,
+      });
+    }
+  }
+
+  const geminiStartedAt = Date.now();
+  log.info('YOUTUBE_ACQUISITION_STRATEGY_STARTED', {
+    videoId,
+    strategy: 'gemini_native',
+    provider: 'gemini',
+  });
+  try {
+    const result = await fetchGeminiTranscript(
+      videoId,
+      runtime.geminiApiKey,
+      dependencies,
+    );
+    log.info('YOUTUBE_ACQUISITION_STRATEGY_RESULT', {
+      videoId,
+      strategy: result.strategy,
+      provider: result.provider,
+      durationMs: Date.now() - geminiStartedAt,
+      segmentCount: result.cues.length,
+      textLength: transcriptTextLength(result.cues),
+      classification: 'SUCCESS',
+    });
+    return result;
+  } catch (error) {
+    log.info('YOUTUBE_ACQUISITION_STRATEGY_RESULT', {
+      videoId,
+      strategy: 'gemini_native',
+      provider: 'gemini',
+      durationMs: Date.now() - geminiStartedAt,
+      segmentCount: 0,
+      textLength: 0,
+      classification: error instanceof IngestionFailure
+        ? error.errorCode
+        : 'UNKNOWN_ERROR',
+    });
+    throw error;
+  }
 }

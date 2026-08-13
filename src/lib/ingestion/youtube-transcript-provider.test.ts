@@ -131,7 +131,8 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
       },
     });
     assert.equal(receivedUrl, 'https://www.youtube.com/watch?v=-moW9jvvMr4');
-    assert.equal(result.provider, 'direct');
+    assert.equal(result.provider, 'gemini');
+    assert.equal(result.strategy, 'gemini_native');
     assert.equal(result.language, 'en');
     assert.deepEqual(result.cues, [
       { text: 'Opening', offset: 1_250, duration: 2_500, lang: 'en' },
@@ -149,9 +150,9 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
       }),
       (error: unknown) =>
         error instanceof IngestionFailure &&
-        error.errorCode === 'TRANSCRIPT_UNAVAILABLE' &&
+        error.errorCode === 'NO_SPEECH_DETECTED' &&
         error.retryable === false &&
-        /No discernible speech/i.test(error.userMessage),
+        /No usable spoken content/i.test(error.userMessage),
     );
   } finally {
     for (const [key, value] of Object.entries(originalEnv)) {
@@ -159,6 +160,111 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
       else process.env[key] = value;
     }
   }
+});
+
+test('configured transcript fast path succeeds without calling Gemini', async () => {
+  let geminiCalls = 0;
+  let proxyCalls = 0;
+  const result = await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+    runtimeConfig: {
+      geminiApiKey: 'test-gemini-key',
+      fastPath: {
+        provider: 'proxy',
+        timeoutMs: 5_000,
+        proxyUrl: 'https://transcript-proxy.example.com/v1/transcript',
+        proxyToken: 'server-secret',
+        maxAttempts: 1,
+      },
+    },
+    validateEndpoint: async (value) => new URL(value),
+    fetchImpl: async () => {
+      proxyCalls += 1;
+      return new Response(JSON.stringify({
+        language: 'en',
+        cues: [{ text: 'Fast transcript', offset: 0, duration: 1_500, lang: 'en' }],
+      }), { status: 200 });
+    },
+    geminiAcquire: async () => {
+      geminiCalls += 1;
+      return { language: 'en', segments: [] };
+    },
+  });
+
+  assert.equal(result.strategy, 'transcript_fast_path');
+  assert.equal(result.provider, 'proxy');
+  assert.equal(proxyCalls, 1);
+  assert.equal(geminiCalls, 0);
+});
+
+test('unavailable or unusable transcript fast path falls back to Gemini once', async (context) => {
+  for (const scenario of [
+    { name: 'unavailable', response: new Response('', { status: 404 }) },
+    { name: 'empty', response: new Response(JSON.stringify({ cues: [] }), { status: 200 }) },
+  ]) {
+    await context.test(scenario.name, async () => {
+      let proxyCalls = 0;
+      let geminiCalls = 0;
+      const result = await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+        runtimeConfig: {
+          geminiApiKey: 'test-gemini-key',
+          fastPath: {
+            provider: 'proxy',
+            timeoutMs: 5_000,
+            proxyUrl: 'https://transcript-proxy.example.com/v1/transcript',
+            proxyToken: 'server-secret',
+            maxAttempts: 1,
+          },
+        },
+        validateEndpoint: async (value) => new URL(value),
+        fetchImpl: async () => {
+          proxyCalls += 1;
+          return scenario.response.clone();
+        },
+        geminiAcquire: async () => {
+          geminiCalls += 1;
+          return {
+            language: 'en',
+            segments: [{ text: 'Gemini fallback', startSeconds: 0, endSeconds: 2 }],
+          };
+        },
+      });
+
+      assert.equal(result.strategy, 'gemini_native');
+      assert.equal(result.provider, 'gemini');
+      assert.equal(proxyCalls, 1);
+      assert.equal(geminiCalls, 1);
+    });
+  }
+});
+
+test('acquisition strategy logs timings, counts, and text length without transcript content', async () => {
+  const entries: Array<{ event: string; meta?: Record<string, unknown> }> = [];
+  const transcriptText = 'Sensitive transcript text';
+  await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+    runtimeConfig: {
+      geminiApiKey: 'test-gemini-key',
+      fastPath: {
+        provider: 'proxy',
+        timeoutMs: 5_000,
+        proxyUrl: 'https://transcript-proxy.example.com/v1/transcript',
+        proxyToken: 'server-secret',
+        maxAttempts: 1,
+      },
+    },
+    validateEndpoint: async (value) => new URL(value),
+    fetchImpl: async () => new Response(JSON.stringify({
+      language: 'en',
+      cues: [{ text: transcriptText, offset: 0, duration: 1_000, lang: 'en' }],
+    }), { status: 200 }),
+    logger: { info: (event, meta) => entries.push({ event, meta }) },
+  });
+
+  const result = entries.find((entry) => entry.event === 'YOUTUBE_ACQUISITION_STRATEGY_RESULT');
+  assert.equal(result?.meta?.strategy, 'transcript_fast_path');
+  assert.equal(result?.meta?.segmentCount, 1);
+  assert.equal(result?.meta?.textLength, transcriptText.length);
+  assert.equal(typeof result?.meta?.durationMs, 'number');
+  assert.doesNotMatch(JSON.stringify(entries), new RegExp(transcriptText));
 });
 
 test('proxy YouTube provider authenticates server-side and rejects incomplete cues', async () => {

@@ -138,8 +138,9 @@ function validateAndNormalizeTranscript(value: unknown): NormalizedCue[] {
     }
     return {
       text,
-      offset: (cue as TranscriptSegment).offset,
-      duration: (cue as TranscriptSegment).duration,
+      // youtube-transcript-plus reports seconds; Lumora's persisted cue contract uses ms.
+      offset: Math.round((cue as TranscriptSegment).offset * 1_000),
+      duration: Math.round((cue as TranscriptSegment).duration * 1_000),
       lang,
     };
   });

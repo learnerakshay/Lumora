@@ -585,7 +585,7 @@ BLOB_READ_WRITE_TOKEN=""
 | `INGESTION_STALE_AFTER_MS` | Yes | Lease window before a nonterminal attempt is recovered; default 15 minutes |
 | `INGESTION_RECOVERY_INTERVAL_MS` | Yes | Database recovery sweep interval; default 60 seconds |
 | `INGESTION_MAX_RECOVERY_ATTEMPTS` | Yes | Bounded automatic retries after interrupted attempts; default 2 |
-| `YOUTUBE_TRANSCRIPT_PROVIDER` | Yes | `direct` locally, or `proxy` for datacenter-safe production extraction |
+| `YOUTUBE_TRANSCRIPT_PROVIDER` | Yes | `proxy` enables the caption fast path; `direct` keeps the Gemini-native baseline |
 | `YOUTUBE_TRANSCRIPT_PROXY_URL` | Proxy only | Trusted HTTPS endpoint accepting `POST { videoId }` |
 | `YOUTUBE_TRANSCRIPT_PROXY_TOKEN` | Proxy only | Server-only bearer token for the transcript proxy |
 | `YOUTUBE_TRANSCRIPT_TIMEOUT_MS` | Yes | Per-attempt transcript-provider timeout between 5 and 60 seconds |
@@ -649,7 +649,9 @@ YouTube transcript requests are commonly blocked from datacenter egress. Vercel
 serves the repository's protected `/api/youtube-transcript` function before the
 existing catch-all `/api/*` rewrite to Render. Configure the same strong random
 secret as `YOUTUBE_TRANSCRIPT_RELAY_TOKEN` on Vercel and
-`YOUTUBE_TRANSCRIPT_PROXY_TOKEN` on Render. The contract is:
+`YOUTUBE_TRANSCRIPT_PROXY_TOKEN` on Render. Lumora makes one relay fast-path
+attempt; unavailable, empty, malformed, blocked, or transient relay results fall
+back automatically to Gemini-native video understanding. The contract is:
 
 ```text
 POST {YOUTUBE_TRANSCRIPT_PROXY_URL}

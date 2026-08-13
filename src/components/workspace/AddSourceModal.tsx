@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { SourceType, SourceRecord } from '../../lib/source-store';
 import { extractYouTubeVideoId } from '../../lib/ingestion/youtube-url';
+import { YOUTUBE_INGESTION_GUIDANCE } from './youtube-source-ux';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -347,7 +348,7 @@ export function AddSourceModal({
             )}
 
             {selectedType === 'YOUTUBE' && (
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <label className="text-[11px] font-medium text-slate-400">YouTube Video URL</label>
                 <input
                   type="url"
@@ -356,6 +357,10 @@ export function AddSourceModal({
                   placeholder="https://www.youtube.com/watch?v=..."
                   className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
                 />
+                <p className="flex items-start gap-1.5 text-[10px] leading-relaxed text-slate-500">
+                  <Info aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+                  <span>{YOUTUBE_INGESTION_GUIDANCE}</span>
+                </p>
               </div>
             )}
 

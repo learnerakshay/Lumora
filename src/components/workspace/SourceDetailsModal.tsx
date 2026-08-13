@@ -13,6 +13,7 @@ import {
 import { SourceRecord } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
+import { getYouTubeFailureMessage } from './youtube-source-ux';
 
 interface SourceDetailsModalProps {
   source: SourceRecord | null;
@@ -73,6 +74,9 @@ export function SourceDetailsModal({
       : '—';
 
   const errorMessage = source.metadata?.errorMessage || null;
+  const youtubeFailure = source.type === 'YOUTUBE' && isFailed
+    ? getYouTubeFailureMessage(source.metadata)
+    : null;
   const targetUrl = source.url || source.metadata?.url || null;
   const displaySize = source.fileSize || source.metadata?.fileSize || 'Auto Ingest';
 
@@ -263,11 +267,18 @@ export function SourceDetailsModal({
               />
             </div>
 
-            {errorMessage && (
+            {youtubeFailure ? (
+              <div className="rounded-lg border border-rose-900/60 bg-rose-950/40 p-2.5 text-[11px] leading-relaxed text-rose-300">
+                <p className="font-medium">{youtubeFailure.title}</p>
+                {youtubeFailure.detail && (
+                  <p className="mt-0.5 text-rose-300/70">{youtubeFailure.detail}</p>
+                )}
+              </div>
+            ) : errorMessage ? (
               <p className="text-[11px] text-rose-400 bg-rose-950/40 p-2.5 rounded-lg border border-rose-900/60 leading-relaxed font-mono">
                 Error: {errorMessage}
               </p>
-            )}
+            ) : null}
           </div>
 
           {/* Metadata Grid */}
