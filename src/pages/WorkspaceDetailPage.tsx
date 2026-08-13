@@ -5,15 +5,16 @@ import { StoredMessage, StoredCitation } from '../lib/chat/conversation-store';
 import {
   ConversationOperationGate,
   ConversationStreamGuard,
+  ChatTransportInterruptedError,
   parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
   replaceCompletedAssistant,
   shouldApplyMessageSnapshot,
+  shouldRecoverInterruptedChatStream,
 } from '../lib/chat/conversation-lifecycle';
 import type { ToolStatusUpdate, WebSource } from '../lib/ai/types';
 import type { AIActionRequest } from '../lib/ai/actions/types';
-import { getAIActionMetadata } from '../lib/ai/actions/catalog';
 import { WorkspaceSourcesSidebar } from '../components/workspace/WorkspaceSourcesSidebar';
 import { WorkspaceHeader } from '../components/workspace/WorkspaceHeader';
 import { WorkspaceCenter } from '../components/workspace/WorkspaceCenter';
@@ -25,6 +26,11 @@ import { SettingsModal } from '../components/dashboard/SettingsModal';
 import { WorkspaceContextPanel } from '../components/workspace/WorkspaceContextPanel';
 import { AlertCircle, X } from 'lucide-react';
 import { citationEvidenceKey } from '../components/workspace/workspace-interactions';
+import {
+  getGenerationStatusLabel,
+  getPersistedGenerationStatus,
+  type GenerationStatusInput,
+} from '../components/workspace/chat-presentation';
 
 interface WorkspaceData {
   id: string;
@@ -58,7 +64,7 @@ export function WorkspaceDetailPage() {
   const [streamingCitations, setStreamingCitations] = useState<StoredCitation[]>([]);
   const [toolExecutions, setToolExecutions] = useState<ToolStatusUpdate[]>([]);
   const [streamingWebSources, setStreamingWebSources] = useState<WebSource[]>([]);
-  const [activeActionLabel, setActiveActionLabel] = useState<string | null>(null);
+  const [activeGenerationStatus, setActiveGenerationStatus] = useState<GenerationStatusInput | null>(null);
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const conversationRevisionRef = useRef(0);
@@ -261,16 +267,17 @@ export function WorkspaceDetailPage() {
     setStreamingCitations([]);
     setToolExecutions([]);
     setStreamingWebSources([]);
-    setActiveActionLabel(
-      isRegeneration
-        ? 'Regenerating response'
-        : action
-          ? getAIActionMetadata(action.actionId)?.label || 'AI Action'
-          : null,
-    );
+    setActiveGenerationStatus({
+      actionId: action?.actionId,
+      mode,
+      phase: isRegeneration ? 'REGENERATING' : 'GENERATING',
+    });
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    let streamConnected = false;
+    let terminalEventReceived = false;
+    let completedResponse = false;
 
     try {
       const res = await fetch(`/api/workspaces/${capturedWorkspaceId}/chat/stream`, {
@@ -308,11 +315,16 @@ export function WorkspaceDetailPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
-      let terminalEventReceived = false;
-      let completedResponse = false;
+      streamConnected = true;
 
       while (true) {
-        const { done, value } = await reader.read();
+        let streamRead: ReadableStreamReadResult<Uint8Array>;
+        try {
+          streamRead = await reader.read();
+        } catch {
+          throw new ChatTransportInterruptedError();
+        }
+        const { done, value } = streamRead;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -443,7 +455,7 @@ export function WorkspaceDetailPage() {
         }
       }
       if (!terminalEventReceived && !abortController.signal.aborted) {
-        throw new Error('The AI response stream ended before completion.');
+        throw new ChatTransportInterruptedError();
       }
       if (terminalEventReceived && !completedResponse) {
         throw new Error('The AI response did not reach a persisted completed state.');
@@ -452,10 +464,16 @@ export function WorkspaceDetailPage() {
         void fetchMessages();
       }
     } catch (err: any) {
-      if (isCurrentOperation() && err.name !== 'AbortError') {
+      const recoverTransport = shouldRecoverInterruptedChatStream(err, {
+        streamConnected,
+        terminalEventReceived,
+        transportAborted: abortController.signal.aborted,
+      });
+      if (isCurrentOperation() && err.name !== 'AbortError' && !recoverTransport) {
         setActivityError(err.message || 'Error communicating with RAG response stream.');
       }
-      if (!isRegeneration && isCurrentOperation()) {
+      if (isCurrentOperation() && (recoverTransport || !isRegeneration)) {
+        if (recoverTransport) setActivityError(null);
         await fetchMessages();
       }
     } finally {
@@ -465,7 +483,7 @@ export function WorkspaceDetailPage() {
         setStreamingCitations([]);
         setToolExecutions([]);
         setStreamingWebSources([]);
-        setActiveActionLabel(null);
+        setActiveGenerationStatus(null);
         setRegeneratingMessageId(null);
         streamGuardRef.current.invalidate(capturedWorkspaceId);
       }
@@ -528,7 +546,7 @@ export function WorkspaceDetailPage() {
         setStreamingCitations([]);
         setToolExecutions([]);
         setStreamingWebSources([]);
-        setActiveActionLabel(null);
+        setActiveGenerationStatus(null);
       }
     }
   };
@@ -650,6 +668,15 @@ export function WorkspaceDetailPage() {
     (message) => message.status === 'SENDING',
   );
   const chatIsGenerating = isGenerating || hasPersistedGeneration;
+  const persistedGenerationStatus = getPersistedGenerationStatus(messages);
+  const generationStatusLabel = chatIsGenerating
+    ? getGenerationStatusLabel(
+        activeGenerationStatus || persistedGenerationStatus || {
+          mode: 'DETAILED',
+          phase: 'GENERATING',
+        },
+      )
+    : null;
 
   if (loadingWorkspace && !workspace) {
     return (
@@ -769,7 +796,7 @@ export function WorkspaceDetailPage() {
             streamingCitations={streamingCitations}
             toolExecutions={toolExecutions}
             streamingWebSources={streamingWebSources}
-            activeActionLabel={activeActionLabel}
+            generationStatusLabel={generationStatusLabel}
             regeneratingMessageId={regeneratingMessageId}
             error={activityError || historyError}
             sources={visibleSources}

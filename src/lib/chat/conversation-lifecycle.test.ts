@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { StoredMessage } from './conversation-store';
 import {
+  ChatTransportInterruptedError,
   ConversationOperationGate,
   ConversationStreamGuard,
   parseConversationHistoryResponse,
@@ -9,6 +10,7 @@ import {
   removeDeletedMessages,
   replaceCompletedAssistant,
   shouldApplyMessageSnapshot,
+  shouldRecoverInterruptedChatStream,
 } from './conversation-lifecycle';
 
 function message(
@@ -275,4 +277,38 @@ test('missing terminal done is recovered from persisted history without duplicat
     recovered[1],
   );
   assert.deepEqual(repeated.map(({ id }) => id), ['user-1', 'assistant-1']);
+});
+
+test('visibility-driven transport interruption recovers persisted state without cancellation', () => {
+  const recoveryState = {
+    streamConnected: true,
+    terminalEventReceived: false,
+    transportAborted: false,
+  };
+  assert.equal(
+    shouldRecoverInterruptedChatStream(
+      new ChatTransportInterruptedError(),
+      recoveryState,
+    ),
+    true,
+  );
+});
+
+test('explicit Stop and server terminal errors are not transport recovery events', () => {
+  assert.equal(
+    shouldRecoverInterruptedChatStream(new ChatTransportInterruptedError(), {
+      streamConnected: true,
+      terminalEventReceived: false,
+      transportAborted: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRecoverInterruptedChatStream(new Error('server terminal error'), {
+      streamConnected: true,
+      terminalEventReceived: true,
+      transportAborted: false,
+    }),
+    false,
+  );
 });

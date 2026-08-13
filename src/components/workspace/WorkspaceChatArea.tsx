@@ -29,7 +29,7 @@ interface WorkspaceChatAreaProps {
   streamingCitations: StoredCitation[];
   toolExecutions?: ToolStatusUpdate[];
   streamingWebSources?: WebSource[];
-  activeActionLabel?: string | null;
+  generationStatusLabel?: string | null;
   regeneratingMessageId?: string | null;
   error?: string | null;
   sourceCount: number;
@@ -219,7 +219,7 @@ export function WorkspaceChatArea({
   streamingCitations,
   toolExecutions = [],
   streamingWebSources = [],
-  activeActionLabel,
+  generationStatusLabel,
   regeneratingMessageId,
   error,
   sourceCount,
@@ -563,9 +563,7 @@ export function WorkspaceChatArea({
                       ))}
                     </div>
                     <span>
-                      {activeActionLabel
-                        ? `Running ${activeActionLabel} with validated context…`
-                        : 'Finding relevant context and preparing a grounded response…'}
+                      {generationStatusLabel || 'Finding relevant context and preparing a grounded response…'}
                     </span>
                   </div>
                 )}

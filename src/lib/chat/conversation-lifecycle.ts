@@ -62,6 +62,27 @@ export function shouldApplyMessageSnapshot(
   return requestedAtRevision === currentRevision;
 }
 
+export class ChatTransportInterruptedError extends Error {
+  constructor(message = 'The chat response transport ended before a terminal event.') {
+    super(message);
+    this.name = 'ChatTransportInterruptedError';
+  }
+}
+
+export function shouldRecoverInterruptedChatStream(
+  error: unknown,
+  state: {
+    streamConnected: boolean;
+    terminalEventReceived: boolean;
+    transportAborted: boolean;
+  },
+): boolean {
+  if (!state.streamConnected || state.terminalEventReceived || state.transportAborted) {
+    return false;
+  }
+  return error instanceof ChatTransportInterruptedError;
+}
+
 export function reconcileCompletedTurn(
   messages: StoredMessage[],
   temporaryUserMessageId: string,
