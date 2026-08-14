@@ -16,6 +16,7 @@ import type {
   ToolStatusUpdate,
   WebSource,
 } from './types';
+import { responseModeInstructions } from '../chat/response-mode-contract';
 
 const MAX_TOOL_ROUNDS = 4;
 
@@ -59,7 +60,7 @@ Web search is unavailable. ${
             : 'No verified Workspace or web evidence is available. Do not answer factual questions from general model knowledge; clearly report insufficient verified knowledge.'
       }`;
   return {
-    instructions: `${input.instructions}${searchPolicy}`,
+    instructions: `${input.instructions}\n\n${responseModeInstructions(input.mode)}${searchPolicy}`,
     history: input.history,
     query: input.query,
     userId: input.userId,

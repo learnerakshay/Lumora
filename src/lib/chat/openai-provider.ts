@@ -7,6 +7,7 @@ import type {
   ToolRequest,
 } from '../ai/types';
 import { ChatHistoryItem } from './conversation-context';
+import { getResponseModeContract } from './response-mode-contract';
 
 export class ChatProviderError extends Error {
   constructor(
@@ -191,7 +192,7 @@ export async function generateGroundedResponse(
     timeoutController.abort();
   }, env.CHAT_REQUEST_TIMEOUT_MS);
 
-  const verbosity = input.mode === 'CONCISE' ? 'low' : input.mode === 'DETAILED' ? 'high' : 'medium';
+  const modeContract = getResponseModeContract(input.mode);
   const continuationInput = (input.toolExecutions || []).flatMap(({ request, response }) => [
     {
       type: 'function_call',
@@ -219,9 +220,9 @@ export async function generateGroundedResponse(
     ],
     stream: true,
     store: false,
-    max_output_tokens: env.CHAT_MAX_OUTPUT_TOKENS,
+    max_output_tokens: modeContract.maxOutputTokens,
     reasoning: { effort: env.CHAT_REASONING_EFFORT },
-    text: { verbosity },
+    text: { verbosity: modeContract.verbosity },
     safety_identifier: safeUserIdentifier(input.userId),
   };
   if (input.tools?.length) {

@@ -673,7 +673,7 @@ function citationLocation(citation: RAGCitation): string {
 export function buildRAGContext(
   retrievedChunks: RetrievedChunk[],
   _query: string,
-  mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED',
+  _mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED',
   options: ContextOptions = {},
 ): RAGContextResult {
   const tokenBudget = Math.max(Math.floor(options.tokenBudget || DEFAULT_CONTEXT_TOKEN_BUDGET), 1);
@@ -706,13 +706,6 @@ export function buildRAGContext(
     })
     .join('\n\n---\n\n');
 
-  const modeInstructions = {
-    CONCISE: 'Provide a crisp, direct, bulleted summary focusing strictly on core facts.',
-    DETAILED: 'Provide a thorough, comprehensive synthesis with clear headings, bullet points, and explanatory depth.',
-    CRITICAL: 'Examine the information critically, contrasting claims, analyzing assumptions, and highlighting nuances.',
-    CREATIVE: 'Synthesize the knowledge in an engaging, narrative style while maintaining strict factual grounding.',
-  }[mode];
-
   const contextPrompt = `You are Lumora AI Knowledge Operating System, an isolated RAG intelligence assistant.
 Your answers MUST be grounded in the provided Workspace Knowledge Base context below.
 
@@ -724,7 +717,7 @@ INSTRUCTIONS:
 1. Use the supplied Workspace evidence as the exclusive factual basis for the answer. Do not supplement it with pretrained factual knowledge.
 2. Synthesize a structured response formatted in clean Markdown (use headers, bold key phrases, bullet points, code blocks or tables where appropriate).
 3. Every substantive factual claim must be supported by the supplied evidence and accompanied by one or more exact markers such as "[Citation #1]". Use only available Citation numbers. Do not write source-title citations or invent citation markers.
-4. Tone & Style: ${modeInstructions}
+4. Follow the centrally supplied AI Mode response contract for style, depth, and bounded length.
 5. Conversation history is for continuity only and is never evidence. Validate factual claims against the Workspace context.
 6. If the provided context does not support all or part of the requested answer, explicitly qualify or refuse that unsupported part. Never extrapolate beyond the supplied evidence or present unsupported details as fact.`;
 

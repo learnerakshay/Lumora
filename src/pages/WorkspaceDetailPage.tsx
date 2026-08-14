@@ -22,10 +22,15 @@ import { WorkspaceChatArea } from '../components/workspace/WorkspaceChatArea';
 import { WorkspacePromptComposer, AnswerMode } from '../components/workspace/WorkspacePromptComposer';
 import { AddSourceModal } from '../components/workspace/AddSourceModal';
 import { SourceDetailsModal } from '../components/workspace/SourceDetailsModal';
+import { DeleteSourceModal } from '../components/workspace/DeleteSourceModal';
 import { SettingsModal } from '../components/dashboard/SettingsModal';
 import { WorkspaceContextPanel } from '../components/workspace/WorkspaceContextPanel';
 import { AlertCircle, X } from 'lucide-react';
-import { citationEvidenceKey } from '../components/workspace/workspace-interactions';
+import {
+  availableCitations,
+  citationEvidenceKey,
+  resolveCitationNavigation,
+} from '../components/workspace/workspace-interactions';
 import {
   getGenerationStatusLabel,
   getPersistedGenerationStatus,
@@ -83,6 +88,8 @@ export function WorkspaceDetailPage() {
   const [isAddSourceOpen, setIsAddSourceOpen] = useState(false);
   const [initialSourceType, setInitialSourceType] = useState<SourceType>('PDF');
   const [selectedSourceDetails, setSelectedSourceDetails] = useState<SourceRecord | null>(null);
+  const [focusedSourceCitation, setFocusedSourceCitation] = useState<StoredCitation | null>(null);
+  const [sourcePendingDeletion, setSourcePendingDeletion] = useState<SourceRecord | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isContextOpen, setIsContextOpen] = useState(false);
@@ -130,7 +137,7 @@ export function WorkspaceDetailPage() {
         setSources(payload.data);
         if (selectedSourceIdRef.current) {
           const fresh = payload.data.find((s: SourceRecord) => s.id === selectedSourceIdRef.current);
-          if (fresh) setSelectedSourceDetails(fresh);
+          setSelectedSourceDetails(fresh || null);
         }
         return true;
       }
@@ -673,11 +680,37 @@ export function WorkspaceDetailPage() {
     setSelectedSourceDetails(updatedSource);
   };
 
+  const handleOpenSourceDetails = (source: SourceRecord) => {
+    setFocusedSourceCitation(null);
+    setSelectedSourceDetails(source);
+  };
+
   const handleSourceDeleted = (sourceId: string) => {
     setSources((prev) => prev.filter((s) => s.id !== sourceId));
+    setContextCitations((current) =>
+      current ? current.filter((citation) => citation.sourceId !== sourceId) : current,
+    );
+    setActiveCitationId(null);
+    setFocusedSourceCitation((current) =>
+      current?.sourceId === sourceId ? null : current,
+    );
     if (selectedSourceDetails?.id === sourceId) {
       setSelectedSourceDetails(null);
     }
+  };
+
+  const handleConfirmDeleteSource = async (source: SourceRecord) => {
+    const response = await fetch(
+      `/api/workspaces/${workspace!.id}/sources/${source.id}`,
+      { method: 'DELETE' },
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success) {
+      throw new Error(
+        payload?.error?.message || 'Lumora could not delete this source. Please try again.',
+      );
+    }
+    handleSourceDeleted(source.id);
   };
 
   const hasIndexedSources = sources.some(
@@ -689,15 +722,30 @@ export function WorkspaceDetailPage() {
     .reverse()
     .find((message) => message.role === 'ASSISTANT' && message.citations?.length)
     ?.citations || streamingCitations;
-  const displayedContextCitations = contextCitations || latestCitations;
+  const displayedContextCitations = availableCitations(
+    contextCitations || latestCitations,
+    visibleSources,
+  );
 
   const handleSelectCitation = (
     citation: StoredCitation,
     evidence: StoredCitation[] = latestCitations,
   ) => {
-    setContextCitations(evidence);
+    const activeEvidence = availableCitations(evidence, visibleSources);
+    const navigation = resolveCitationNavigation(citation, visibleSources);
+    setContextCitations(activeEvidence);
+    if (navigation.kind === 'unavailable') {
+      setActiveCitationId(null);
+      return;
+    }
     setActiveCitationId(citationEvidenceKey(citation));
     setIsContextOpen(true);
+    if (navigation.kind === 'pdf' || navigation.kind === 'website') {
+      window.open(navigation.href, '_blank', 'noopener,noreferrer');
+    } else if (navigation.kind === 'text') {
+      setFocusedSourceCitation(citation);
+      setSelectedSourceDetails(navigation.source);
+    }
   };
 
   const hasPersistedGeneration = messages.some(
@@ -771,8 +819,8 @@ export function WorkspaceDetailPage() {
           sources={visibleSources}
           loading={loadingSources}
           refreshing={refreshingSources}
-          onSelectSourceDetails={setSelectedSourceDetails}
-          onDeleteSource={handleSourceDeleted}
+          onSelectSourceDetails={handleOpenSourceDetails}
+          onRequestDeleteSource={setSourcePendingDeletion}
           onRefreshSources={handleRefreshSources}
         />
       </div>
@@ -801,9 +849,9 @@ export function WorkspaceDetailPage() {
               refreshing={refreshingSources}
               onSelectSourceDetails={(source) => {
                 setIsMobileSidebarOpen(false);
-                setSelectedSourceDetails(source);
+                handleOpenSourceDetails(source);
               }}
-              onDeleteSource={handleSourceDeleted}
+              onRequestDeleteSource={setSourcePendingDeletion}
               onRefreshSources={handleRefreshSources}
             />
           </div>
@@ -820,7 +868,7 @@ export function WorkspaceDetailPage() {
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenAddSource={() => handleOpenAddSource()}
           onToggleContext={() => setIsContextOpen(true)}
-          citationCount={latestCitations.length}
+          citationCount={availableCitations(latestCitations, visibleSources).length}
         />
         {usageLimit && (
           <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
@@ -913,9 +961,19 @@ export function WorkspaceDetailPage() {
       <SourceDetailsModal
         source={selectedSourceDetails}
         isOpen={Boolean(selectedSourceDetails)}
-        onClose={() => setSelectedSourceDetails(null)}
+        onClose={() => {
+          setSelectedSourceDetails(null);
+          setFocusedSourceCitation(null);
+        }}
         onUpdate={handleSourceUpdated}
-        onDelete={handleSourceDeleted}
+        onRequestDelete={setSourcePendingDeletion}
+        focusedCitation={focusedSourceCitation}
+      />
+
+      <DeleteSourceModal
+        source={sourcePendingDeletion}
+        onClose={() => setSourcePendingDeletion(null)}
+        onConfirmDelete={handleConfirmDeleteSource}
       />
 
       <SettingsModal

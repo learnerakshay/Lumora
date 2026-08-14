@@ -143,6 +143,7 @@ function CodeBlock({
 function renderCitationChildren(
   children: React.ReactNode,
   citations: StoredCitation[],
+  availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
 ): React.ReactNode {
   return React.Children.map(children, (child) => {
@@ -150,15 +151,16 @@ function renderCitationChildren(
       return splitCitationMarkers(child).map((part, index) => {
         if (part.type === 'text') return part.value;
         const citation = citations[part.citationNumber - 1];
+        const isAvailable = Boolean(citation && availableSourceIds.has(citation.sourceId));
         return (
           <button
             key={`${part.citationNumber}-${index}`}
             type="button"
-            disabled={!citation}
-            onClick={() => citation && onSelectCitation?.(citation, citations)}
-            title={citation?.title || part.value}
-            aria-label={citation ? `Open citation ${part.citationNumber}: ${citation.title}` : part.value}
-            className="mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-colors duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-default"
+            disabled={!isAvailable}
+            onClick={() => isAvailable && citation && onSelectCitation?.(citation, citations)}
+            title={isAvailable ? citation!.title : 'Cited source is no longer available'}
+            aria-label={isAvailable ? `Open citation ${part.citationNumber}: ${citation!.title}` : `Citation ${part.citationNumber}: source unavailable`}
+            className="mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-colors duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500"
           >
             {part.citationNumber}
           </button>
@@ -167,7 +169,7 @@ function renderCitationChildren(
     }
     if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props.children) {
       return React.cloneElement(child, {
-        children: renderCitationChildren(child.props.children, citations, onSelectCitation),
+        children: renderCitationChildren(child.props.children, citations, availableSourceIds, onSelectCitation),
       });
     }
     return child;
@@ -176,9 +178,10 @@ function renderCitationChildren(
 
 function createMarkdownComponents(
   citations: StoredCitation[],
+  availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
 ): Components {
-  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, onSelectCitation);
+  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, availableSourceIds, onSelectCitation);
   return {
   h1: ({ children, ...props }) => <h1 {...props} className="mb-3 mt-6 text-xl font-bold tracking-tight text-white first:mt-0">{children}</h1>,
   h2: ({ children, ...props }) => <h2 {...props} className="mb-2.5 mt-5 text-lg font-bold text-white first:mt-0">{children}</h2>,
@@ -236,9 +239,13 @@ export function WorkspaceChatArea({
   const stickToBottomRef = useRef(true);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const availableSourceIds = useMemo(
+    () => new Set(sources.map(({ id }) => id)),
+    [sources],
+  );
   const streamingMarkdownComponents = useMemo(
-    () => createMarkdownComponents(streamingCitations, onSelectCitation),
-    [streamingCitations, onSelectCitation],
+    () => createMarkdownComponents(streamingCitations, availableSourceIds, onSelectCitation),
+    [streamingCitations, availableSourceIds, onSelectCitation],
   );
 
   useEffect(() => {
@@ -407,38 +414,44 @@ export function WorkspaceChatArea({
                       )}
 
                       <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
-                        <Markdown components={createMarkdownComponents(message.citations || [], onSelectCitation)}>{message.content}</Markdown>
+                        <Markdown components={createMarkdownComponents(message.citations || [], availableSourceIds, onSelectCitation)}>{message.content}</Markdown>
                       </div>
 
                       {message.citations && message.citations.length > 0 && (
                         <div className="mt-5 space-y-2 border-t border-slate-800/60 pt-3">
                           <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                            <span>Grounded in {message.citations.length} Workspace {message.citations.length === 1 ? 'source' : 'sources'}</span>
+                            <span>
+                              Grounded in {message.citations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length} available Workspace {message.citations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length === 1 ? 'source' : 'sources'}
+                              {message.citations.some(({ sourceId }) => !availableSourceIds.has(sourceId)) ? ' · historical source unavailable' : ''}
+                            </span>
                           </div>
                           <div className="flex max-w-full flex-wrap gap-2">
                             {message.citations.map((citation, citationIndex) => {
                               const source = sources.find((item) => item.id === citation.sourceId);
-                              const surface = source?.type === 'PDF'
+                              const surface = !source
+                                ? 'border-slate-800 bg-slate-900/60 text-slate-500'
+                                : source.type === 'PDF'
                                 ? 'border-rose-900/70 bg-rose-950/25 hover:border-rose-700/70'
-                                : source?.type === 'YOUTUBE'
+                                : source.type === 'YOUTUBE'
                                   ? 'border-red-900/70 bg-red-950/25 hover:border-red-700/70'
-                                  : source?.type === 'TEXT'
+                                  : source.type === 'TEXT'
                                     ? 'border-violet-900/70 bg-violet-950/25 hover:border-violet-700/70'
                                     : 'border-sky-900/70 bg-sky-950/25 hover:border-sky-700/70';
                               return <button
                                 key={citation.id || citationIndex}
                                 type="button"
-                                onClick={() => onSelectCitation?.(citation, message.citations)}
-                                title={citation.snippet}
-                                className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white ${surface}`}
+                                onClick={() => source && onSelectCitation?.(citation, message.citations)}
+                                disabled={!source}
+                                title={source ? citation.snippet : 'This source has been deleted or is unavailable.'}
+                                className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white disabled:cursor-not-allowed disabled:hover:text-slate-500 ${surface}`}
                               >
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-950/60">
-                                  {source ? <SourceTypeIcon type={source.type} className="h-3 w-3" /> : citation.kind === 'WEB' ? <Globe className="h-3 w-3 text-sky-400" /> : <FileText className="h-3 w-3 text-violet-400" />}
+                                  {source ? <SourceTypeIcon type={source.type} className="h-3 w-3" /> : <FileText className="h-3 w-3 text-slate-600" />}
                                 </span>
                                 <span className="max-w-[12rem] truncate font-medium sm:max-w-[16rem]">{citation.title}</span>
-                                <span className="shrink-0 text-[10px] text-slate-500">{formatCitationLocation(citation)}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0 text-slate-500 transition group-hover:text-sky-400" />
+                                <span className="shrink-0 text-[10px] text-slate-500">{source ? formatCitationLocation(citation) : 'Source unavailable'}</span>
+                                {source && <ExternalLink className="h-3 w-3 shrink-0 text-slate-500 transition group-hover:text-sky-400" />}
                               </button>;
                             })}
                           </div>

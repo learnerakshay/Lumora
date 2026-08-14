@@ -186,6 +186,32 @@ test('empty registry preserves the direct no-tool generation path', async () => 
   assert.deepEqual(orchestrated.orchestration.toolExecutions, []);
 });
 
+test('AI Actions inherit each selected Mode contract without Action-specific prompt variants', async () => {
+  for (const mode of ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const) {
+    for (const action of ['SUMMARIZE', 'COMPARE']) {
+      let received: GenerateChatInput | undefined;
+      const orchestrator = new AIOrchestrator(
+        new ToolRegistry(),
+        async (input) => {
+          received = input;
+          input.onTextDelta('Completed action response.');
+          return result({ text: 'Completed action response.' });
+        },
+      );
+      await orchestrator.run({
+        ...baseInput(),
+        mode,
+        instructions:
+          `ACTIVE AI ACTION: ${action}. Use realistic multi-source PDF, Website, and Plain Text evidence.`,
+        query: `${action} the relevant Workspace evidence.`,
+      });
+      assert.match(received!.instructions, new RegExp(`ACTIVE AI ACTION: ${action}`));
+      assert.match(received!.instructions, new RegExp(`${mode} RESPONSE CONTRACT`, 'i'));
+      assert.match(received!.instructions, /finish cleanly within the response budget/i);
+    }
+  }
+});
+
 test('orchestrator recognizes bounded AI action material without Workspace retrieval', async () => {
   let received: GenerateChatInput | undefined;
   const generate = async (input: GenerateChatInput) => {

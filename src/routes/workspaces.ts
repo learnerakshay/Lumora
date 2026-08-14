@@ -15,6 +15,7 @@ import {
   createReprocessingVersion,
   updateWorkspaceSource,
   deleteWorkspaceSource,
+  getWorkspaceSourceArtifact,
   SourceType,
 } from '../lib/source-store';
 import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
@@ -585,6 +586,39 @@ workspaceRouter.delete('/:id/sources/:sourceId', async (req: Request, res: Respo
     return res
       .status(500)
       .json(errorResponse(new Error('Failed to delete workspace source')).payload);
+  }
+});
+
+// GET /api/workspaces/:id/sources/:sourceId/content
+// Serves the original uploaded PDF inline after the normal authenticated,
+// Workspace-scoped router checks have succeeded.
+workspaceRouter.get('/:id/sources/:sourceId/content', async (req: Request, res: Response) => {
+  try {
+    const record = await getWorkspaceSourceArtifact(
+      res.locals.workspace.id,
+      req.params.sourceId,
+    );
+    if (!record || record.type !== 'PDF' || !record.artifact.artifactData) {
+      const response = errorResponse(
+        AppError.notFound('PDF source content is unavailable', 'SOURCE_CONTENT_UNAVAILABLE'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
+
+    const encodedFileName = encodeURIComponent(
+      record.artifact.artifactFileName || `${record.title}.pdf`,
+    );
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedFileName}`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(200).send(Buffer.from(record.artifact.artifactData));
+  } catch (error) {
+    logger.error('Failed to serve source content', error, {
+      workspaceId: res.locals.workspace?.id,
+      sourceId: req.params.sourceId,
+    });
+    const response = errorResponse(new Error('Failed to retrieve source content'));
+    return res.status(response.statusCode).json(response.payload);
   }
 });
 

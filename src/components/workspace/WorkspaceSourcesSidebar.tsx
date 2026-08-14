@@ -28,7 +28,7 @@ interface WorkspaceSourcesSidebarProps {
   loading: boolean;
   refreshing?: boolean;
   onSelectSourceDetails: (source: SourceRecord) => void;
-  onDeleteSource: (sourceId: string) => void;
+  onRequestDeleteSource: (source: SourceRecord) => void;
   onRefreshSources?: () => void | Promise<void>;
 }
 
@@ -38,7 +38,7 @@ export function WorkspaceSourcesSidebar({
   loading,
   refreshing = false,
   onSelectSourceDetails,
-  onDeleteSource,
+  onRequestDeleteSource,
   onRefreshSources,
 }: WorkspaceSourcesSidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,32 +59,10 @@ export function WorkspaceSourcesSidebar({
     };
   }, [activeMenuSourceId]);
 
-  const handleRemoveSource = async (e: React.MouseEvent, source: SourceRecord) => {
+  const handleRemoveSource = (e: React.MouseEvent, source: SourceRecord) => {
     e.stopPropagation();
     setActiveMenuSourceId(null);
-
-    if (
-      !confirm(
-        `Remove "${source.title}" and its indexed learning content?`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/workspaces/${workspace.id}/sources/${source.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.error?.message || 'Failed to delete source from workspace.');
-      }
-
-      onDeleteSource(source.id);
-    } catch (err: any) {
-      alert(err.message || 'Error deleting source.');
-    }
+    onRequestDeleteSource(source);
   };
 
   const filterTypes: { type: SourceType | 'ALL'; label: string }[] = [

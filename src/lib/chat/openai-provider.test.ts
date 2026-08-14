@@ -156,6 +156,68 @@ test('rejects a stream that closes without a completion event', async () => {
   }
 });
 
+test('provider requests use the selected Mode token ceiling and verbosity', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<Record<string, any>> = [];
+  globalThis.fetch = async (_url, request) => {
+    requests.push(JSON.parse(String(request?.body)));
+    return streamResponse([
+      { type: 'response.output_text.delta', sequence_number: 1, delta: 'Complete.' },
+      {
+        type: 'response.completed',
+        sequence_number: 2,
+        response: { id: `response-${requests.length}`, status: 'completed' },
+      },
+    ]);
+  };
+  try {
+    for (const mode of ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const) {
+      await generateGroundedResponse({ ...input(), mode });
+    }
+    assert.deepEqual(
+      requests.map(({ max_output_tokens }) => max_output_tokens),
+      [2_048, 6_144, 5_120, 5_120],
+    );
+    assert.deepEqual(
+      requests.map(({ text }) => text.verbosity),
+      ['low', 'high', 'medium', 'medium'],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Detailed mode accepts a long completed multi-source summary stream', async () => {
+  const originalFetch = globalThis.fetch;
+  const longSummary = new Array(750)
+    .fill('grounded synthesis')
+    .join(' ');
+  let requestedBudget = 0;
+  globalThis.fetch = async (_url, request) => {
+    requestedBudget = JSON.parse(String(request?.body)).max_output_tokens;
+    return streamResponse([
+      { type: 'response.output_text.delta', sequence_number: 1, delta: longSummary },
+      {
+        type: 'response.completed',
+        sequence_number: 2,
+        response: {
+          id: 'response-detailed-multi-source',
+          status: 'completed',
+          usage: { input_tokens: 6_000, output_tokens: 2_500, total_tokens: 8_500 },
+        },
+      },
+    ]);
+  };
+  try {
+    const completed = await generateGroundedResponse(input());
+    assert.equal(requestedBudget, 6_144);
+    assert.equal(completed.text, longSummary);
+    assert.deepEqual(completed.usage, { inputTokens: 6_000, outputTokens: 2_500 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('processes a final buffered completion event without a trailing SSE delimiter', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>

@@ -55,7 +55,6 @@ const serverEnvSchema = z
       .enum(['none', 'low', 'medium', 'high', 'xhigh'])
       .default('medium'),
     CHAT_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(60_000),
-    CHAT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(16_384).default(2_048),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
   })

@@ -9,8 +9,10 @@ import {
   RefreshCw,
   Layers,
   Cpu,
+  Quote,
 } from 'lucide-react';
 import { SourceRecord } from '../../lib/source-store';
+import type { StoredCitation } from '../../lib/chat/conversation-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
 import { getYouTubeFailureMessage } from './youtube-source-ux';
@@ -23,7 +25,8 @@ interface SourceDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updated: SourceRecord) => void;
-  onDelete: (sourceId: string) => void;
+  onRequestDelete: (source: SourceRecord) => void;
+  focusedCitation?: StoredCitation | null;
 }
 
 export function SourceDetailsModal({
@@ -31,13 +34,13 @@ export function SourceDetailsModal({
   isOpen,
   onClose,
   onUpdate,
-  onDelete,
+  onRequestDelete,
+  focusedCitation = null,
 }: SourceDetailsModalProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
 
@@ -150,31 +153,6 @@ export function SourceDetailsModal({
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Remove "${source.title}" and its indexed learning content?`)) {
-      return;
-    }
-    try {
-      setDeleting(true);
-      setError(null);
-      const res = await fetch(`/api/workspaces/${source.workspaceId}/sources/${source.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.error?.message || 'Failed to delete source.');
-      }
-
-      onDelete(source.id);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'Error deleting source.');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
       <div role="dialog" aria-modal="true" aria-labelledby="source-details-title" className="flex max-h-[96dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
@@ -212,6 +190,19 @@ export function SourceDetailsModal({
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
               <span>{error}</span>
             </div>
+          )}
+
+          {focusedCitation?.sourceId === source.id && (
+            <section aria-labelledby="cited-passage-title" className="rounded-xl border border-cyan-800/60 bg-cyan-950/20 p-4">
+              <div className="flex items-center gap-2 text-cyan-300">
+                <Quote className="h-4 w-4" />
+                <h3 id="cited-passage-title" className="text-[11px] font-semibold uppercase tracking-wider">Cited passage</h3>
+              </div>
+              <p className="mt-2 text-[10px] font-medium text-cyan-200/70">
+                {focusedCitation.page ? `Page ${focusedCitation.page}` : focusedCitation.textOrigin || 'Source passage'}
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-200">{focusedCitation.snippet}</p>
+            </section>
           )}
 
           {/* Title Area with Edit toggle */}
@@ -370,16 +361,11 @@ export function SourceDetailsModal({
 
             <button
               type="button"
-              onClick={handleDelete}
-              disabled={deleting}
+              onClick={() => onRequestDelete(source)}
               className="px-3 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/80 text-xs font-medium transition-colors flex items-center space-x-1.5"
             >
-              {deleting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              )}
-              <span>Remove</span>
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Delete Source</span>
             </button>
           </div>
 

@@ -560,7 +560,6 @@ YOUTUBE_TRANSCRIPT_RELAY_TOKEN="REPLACE_WITH_SHARED_RANDOM_SECRET"
 CHAT_MODEL="REPLACE_WITH_SUPPORTED_CHAT_MODEL"
 CHAT_REASONING_EFFORT="medium"
 CHAT_REQUEST_TIMEOUT_MS="60000"
-CHAT_MAX_OUTPUT_TOKENS="2048"
 
 # Optional Tavily web intelligence
 TAVILY_API_KEY="tvly-REPLACE_ME"
@@ -593,7 +592,6 @@ BLOB_READ_WRITE_TOKEN=""
 | `CHAT_MODEL` | Yes | Must match one of the models accepted by `src/lib/env.ts` |
 | `CHAT_REASONING_EFFORT` | Yes | `none`, `low`, `medium`, `high`, or `xhigh` |
 | `CHAT_REQUEST_TIMEOUT_MS` | Yes | Provider timeout between 1,000 and 300,000 ms |
-| `CHAT_MAX_OUTPUT_TOKENS` | Yes | Bounded between 128 and 16,384 |
 | `TAVILY_API_KEY` | No | Enables external web intelligence |
 | `BLOB_READ_WRITE_TOKEN` | No | Reserved; current source artifacts are persisted in PostgreSQL |
 

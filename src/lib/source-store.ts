@@ -274,6 +274,28 @@ export async function getSourceArtifact(
   };
 }
 
+export async function getWorkspaceSourceArtifact(
+  workspaceId: string,
+  sourceId: string,
+): Promise<{
+  title: string;
+  type: SourceType;
+  artifact: PersistedSourceArtifact;
+} | null> {
+  const source = await prisma.source.findFirst({
+    where: { id: sourceId, workspaceId },
+    select: { id: true, title: true, type: true, currentVersion: true },
+  });
+  if (!source) return null;
+  const artifact = await getSourceArtifact(source.id, source.currentVersion);
+  if (!artifact) return null;
+  return {
+    title: source.title,
+    type: source.type as SourceType,
+    artifact,
+  };
+}
+
 export async function persistParsedSourceArtifact(data: {
   sourceId: string;
   version: number;
