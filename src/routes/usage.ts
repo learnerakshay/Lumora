@@ -11,6 +11,7 @@ usageRouter.use(requireApiAuth);
 usageRouter.get('/', async (_req, res) => {
   try {
     const summary = await getUsageSummary(res.locals.userId);
+    res.setHeader('Cache-Control', 'private, no-store');
     return res.status(200).json(successResponse(summary));
   } catch (error) {
     logger.error('Failed to retrieve usage summary', error, {

@@ -1,3 +1,5 @@
+import { API_PATHS } from './api-paths';
+
 export type DashboardSourceType = 'PDF' | 'WEBSITE' | 'TEXT' | 'YOUTUBE' | 'VTT';
 export type DashboardSourceStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
@@ -39,7 +41,7 @@ export function fetchDashboardWorkspaces(
   const existing = workspaceRequests.get(authenticatedUserId);
   if (existing) return existing;
 
-  const pending = request('/api/workspaces')
+  const pending = request(API_PATHS.workspaces)
     .then((response) => readApiData<DashboardWorkspace[]>(response, 'Failed to load Workspaces.'))
     .then((records) => {
       if (!Array.isArray(records)) throw new Error('Invalid Workspace response.');
@@ -58,7 +60,7 @@ export function fetchDashboardWorkspaces(
 export async function fetchDashboardSourceSummaries(
   request: typeof fetch = fetch,
 ): Promise<DashboardSourceSummary[]> {
-  const response = await request('/api/workspaces/source-summaries');
+  const response = await request(`${API_PATHS.workspaces}/source-summaries`);
   const records = await readApiData<DashboardSourceSummary[]>(
     response,
     'Failed to load source summaries.',

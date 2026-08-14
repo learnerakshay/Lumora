@@ -12,6 +12,8 @@ import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
 import { ingestionCoordinator } from './src/lib/ingestion/coordinator';
+import { API_PATHS } from './src/lib/api-paths';
+import { apiNotFoundHandler } from './src/lib/api-not-found';
 
 async function startServer() {
   const env = getServerEnv();
@@ -27,8 +29,8 @@ async function startServer() {
   app.use(express.json({ limit: '3mb' }));
 
   // Workspace API routes
-  app.use('/api/workspaces', workspaceRouter);
-  app.use('/api/usage', usageRouter);
+  app.use(API_PATHS.workspaces, workspaceRouter);
+  app.use(API_PATHS.usage, usageRouter);
 
   // Health check API
   app.get('/api/health', async (_req, res) => {
@@ -58,6 +60,11 @@ async function startServer() {
       }),
     );
   });
+
+  // API requests must never fall through to the SPA document. Besides making
+  // missing routes machine-readable, this catches frontend/backend deployment
+  // skew instead of presenting index.html as a successful API response.
+  app.use('/api', apiNotFoundHandler);
 
   // Vite middleware for dev / static for prod
   if (NODE_ENV !== 'production') {

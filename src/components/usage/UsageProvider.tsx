@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { useAuth } from '../AuthProvider';
 import type { UsageSummary } from '../../lib/usage/types';
+import { API_PATHS } from '../../lib/api-paths';
 
 interface UsageContextValue {
   summary: UsageSummary | null;
@@ -33,7 +34,9 @@ export function UsageProvider({ children }: { children: React.ReactNode }) {
     if (!isLoaded || !isSignedIn) return;
     setLoading(true);
     try {
-      const response = await fetch('/api/usage');
+      const response = await fetch(API_PATHS.usage, {
+        headers: { Accept: 'application/json' },
+      });
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success || !payload.data) {
         throw new Error(payload?.error?.message || 'Unable to load usage.');
