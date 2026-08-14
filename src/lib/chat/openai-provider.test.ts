@@ -63,7 +63,11 @@ test('streams a completed response and ignores duplicate sequence events', async
       {
         type: 'response.completed',
         sequence_number: 3,
-        response: { id: 'resp_1', status: 'completed' },
+        response: {
+          id: 'resp_1',
+          status: 'completed',
+          usage: { input_tokens: 120, output_tokens: 30, total_tokens: 150 },
+        },
       },
     ]);
   };
@@ -75,6 +79,7 @@ test('streams a completed response and ignores duplicate sequence events', async
     assert.equal(result.text, 'Grounded [Citation #1]');
     assert.deepEqual(deltas, ['Grounded ', '[Citation #1]']);
     assert.equal(result.responseId, 'resp_1');
+    assert.deepEqual(result.usage, { inputTokens: 120, outputTokens: 30 });
     assert.notEqual(requestBody.safety_identifier, 'user_123');
     assert.deepEqual(requestBody.input, [{ role: 'user', content: 'Question' }]);
   } finally {

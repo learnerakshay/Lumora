@@ -15,11 +15,13 @@
     "test:retrieval": "tsx --test src/lib/retrieval/*.test.ts",
     "test:chat": "tsx --test src/lib/chat/*.test.ts",
     "test:ai": "tsx --test src/lib/ai/*.test.ts",
-    "test": "npm run test:ingestion && npm run test:retrieval && npm run test:chat && npm run test:ai",
+    "test:usage": "tsx --test src/lib/usage/*.test.ts src/components/usage/*.test.ts",
+    "test": "npm run test:ingestion && npm run test:retrieval && npm run test:chat && npm run test:ai && npm run test:usage",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "demo:set-plan": "tsx scripts/set-demo-plan.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",

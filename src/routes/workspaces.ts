@@ -67,6 +67,13 @@ import { AppError } from '../lib/errors';
 import { successResponse, errorResponse } from '../lib/api-response';
 import { logger } from '../lib/logger';
 import { getServerEnv } from '../lib/env';
+import {
+  checkAndReserve,
+  commitUsage,
+  discardUsage,
+  shouldCommitChatUsage,
+} from '../lib/usage/service';
+import { usageLimitError } from '../lib/usage/errors';
 
 export const workspaceRouter = Router();
 
@@ -273,6 +280,7 @@ workspaceRouter.post(
   sourceUploadMiddleware,
   async (req: Request, res: Response) => {
   const sourceRequestStartedAt = Date.now();
+  let usageEventId: string | null = null;
   try {
     const workspaceId = res.locals.workspace.id;
     const { title, type, url, rawContent } = req.body || {};
@@ -365,6 +373,13 @@ workspaceRouter.post(
       }
     }
 
+    const reservation = await checkAndReserve(res.locals.userId, 'INGESTION');
+    if ('details' in reservation) {
+      const response = errorResponse(usageLimitError(reservation.details));
+      return res.status(response.statusCode).json(response.payload);
+    }
+    usageEventId = reservation.usageEventId;
+
     const displaySize = artifactSize
       ? `${(artifactSize / 1024).toFixed(1)} KB`
       : originalContent
@@ -402,16 +417,31 @@ workspaceRouter.post(
       remoteSource: Boolean(finalUrl),
     });
 
-    ingestionCoordinator.dispatch({
+    const dispatched = ingestionCoordinator.dispatch({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: sourceType,
       version: source.currentVersion,
+      usageEventId,
     });
+    if (!dispatched) {
+      await discardUsage(usageEventId);
+      usageEventId = null;
+      throw new Error('The source ingestion job could not be started.');
+    }
+    usageEventId = null;
 
     return res.status(201).json(successResponse(source));
   } catch (err: any) {
+    if (usageEventId) {
+      await discardUsage(usageEventId).catch((discardError) => {
+        logger.error('Failed to discard source usage reservation', discardError, {
+          workspaceId: res.locals.workspace?.id,
+          usageEventId,
+        });
+      });
+    }
     logger.error('Failed to create workspace source', err);
     return res
       .status(500)
@@ -422,6 +452,7 @@ workspaceRouter.post(
 
 // POST /api/workspaces/:id/sources/:sourceId/reprocess (Retry capability)
 workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, res: Response) => {
+  let usageEventId: string | null = null;
   try {
     const workspaceId = res.locals.workspace.id;
     const { sourceId } = req.params;
@@ -432,17 +463,31 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
       return res.status(404).json(errorResponse(new Error('Source not found')).payload);
     }
 
+    const reservation = await checkAndReserve(res.locals.userId, 'INGESTION');
+    if ('details' in reservation) {
+      const response = errorResponse(usageLimitError(reservation.details));
+      return res.status(response.statusCode).json(response.payload);
+    }
+    usageEventId = reservation.usageEventId;
+
     const version = await createReprocessingVersion(sourceId, {
       staleAfterMs: getServerEnv().INGESTION_STALE_AFTER_MS,
     });
 
-    ingestionCoordinator.dispatch({
+    const dispatched = ingestionCoordinator.dispatch({
       sourceId: source.id,
       workspaceId,
       title: source.title,
       type: source.type,
       version,
+      usageEventId,
     });
+    if (!dispatched) {
+      await discardUsage(usageEventId);
+      usageEventId = null;
+      throw new Error('The source reprocessing job could not be started.');
+    }
+    usageEventId = null;
 
     return res.status(200).json(
       successResponse({
@@ -454,6 +499,15 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
       })
     );
   } catch (err: any) {
+    if (usageEventId) {
+      await discardUsage(usageEventId).catch((discardError) => {
+        logger.error('Failed to discard reprocessing usage reservation', discardError, {
+          workspaceId: res.locals.workspace?.id,
+          sourceId: req.params.sourceId,
+          usageEventId,
+        });
+      });
+    }
     logger.error('Failed to reprocess source', err);
     if (
       err?.message === 'Source is already being processed' ||
@@ -807,6 +861,26 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     (typeof submittedMessage === 'string' ? submittedMessage.trim() : '');
   const retrievalQuery = actionPlan?.retrievalQuery || queryText;
   const modelQuery = actionPlan?.modelPrompt || queryText;
+  const meteredActionType = actionPlan ? 'AI_ACTION' : 'CHAT';
+  const usageReservation = await checkAndReserve(
+    res.locals.userId,
+    meteredActionType,
+  );
+  if ('details' in usageReservation) {
+    await releaseReservation();
+    const response = errorResponse(usageLimitError(usageReservation.details));
+    return res.status(response.statusCode).json(response.payload);
+  }
+  let usageEventId: string | null = usageReservation.usageEventId;
+  let providerCompletionMetadata:
+    | {
+        provider: string;
+        model: string;
+        inputTokens?: number;
+        outputTokens?: number;
+      }
+    | undefined;
+  let assistantPersisted = false;
   const operationId =
     typeof requestedOperationId === 'string' ? requestedOperationId : randomUUID();
   const generationController = new AbortController();
@@ -824,6 +898,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       generationController,
     )
   ) {
+    await discardUsage(usageEventId);
+    usageEventId = null;
+    await releaseReservation();
     const response = errorResponse(
       new AppError('This chat operation is already active.', 409, 'CHAT_OPERATION_CONFLICT'),
     );
@@ -977,6 +1054,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             content: insufficientContext,
             mode,
           });
+      await discardUsage(usageEventId);
+      usageEventId = null;
       regenerationReserved = false;
       sendEvent({
         type: 'done',
@@ -1041,6 +1120,16 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         sendEvent({ type: 'tool_status', ...status });
       },
     });
+    providerCompletionMetadata = {
+      provider: generated.provider,
+      model: generated.model,
+      ...(generated.usage
+        ? {
+            inputTokens: generated.usage.inputTokens,
+            outputTokens: generated.usage.outputTokens,
+          }
+        : {}),
+    };
     if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
     lifecyclePhase = 'citation_validation';
@@ -1084,6 +1173,9 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           mode,
           citations: persistedCitations,
         });
+    assistantPersisted = true;
+    await commitUsage(usageEventId, providerCompletionMetadata);
+    usageEventId = null;
     regenerationReserved = false;
     logger.info('Grounded response completed and persisted', {
       workspaceId,
@@ -1117,6 +1209,29 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       res.locals.userId,
       operationId,
     );
+    if (usageEventId) {
+      try {
+        if (
+          shouldCommitChatUsage({
+            providerCompleted: Boolean(providerCompletionMetadata),
+            assistantPersisted,
+            intentionalCancellation,
+          })
+        ) {
+          await commitUsage(usageEventId, providerCompletionMetadata);
+        } else {
+          await discardUsage(usageEventId);
+        }
+        usageEventId = null;
+      } catch (usageError) {
+        logger.error('Failed to settle chat usage reservation', usageError, {
+          workspaceId,
+          operationId,
+          usageEventId,
+          providerCompleted: Boolean(providerCompletionMetadata),
+        });
+      }
+    }
     const failure = classifyChatLifecycleFailure(
       err,
       lifecyclePhase,
@@ -1158,6 +1273,15 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         : {}),
     });
   } finally {
+    if (usageEventId && !providerCompletionMetadata) {
+      await discardUsage(usageEventId).catch((usageError) => {
+        logger.error('Failed to discard unsettled chat usage reservation', usageError, {
+          workspaceId,
+          operationId,
+          usageEventId,
+        });
+      });
+    }
     try {
       await releaseReservation();
     } catch (releaseError) {

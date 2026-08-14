@@ -45,6 +45,11 @@ interface OpenAIStreamEvent {
     error?: { code?: string; message?: string };
     incomplete_details?: { reason?: string };
     output?: OpenAIFunctionCallItem[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+    };
   };
   item?: OpenAIFunctionCallItem;
   error?: { code?: string; message?: string };
@@ -75,6 +80,10 @@ export interface GenerateChatResult {
   model: string;
   responseId: string;
   toolRequests: ToolRequest[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
 }
 
 function safeUserIdentifier(userId: string): string {
@@ -238,6 +247,7 @@ export async function generateGroundedResponse(
     let text = '';
     let completed = false;
     let responseId = '';
+    let usage: GenerateChatResult['usage'];
     let refusalSeen = false;
     const toolRequests = new Map<string, ToolRequest>();
 
@@ -311,6 +321,15 @@ export async function generateGroundedResponse(
           );
         }
         responseId = event.response.id;
+        if (
+          Number.isInteger(event.response.usage?.input_tokens) &&
+          Number.isInteger(event.response.usage?.output_tokens)
+        ) {
+          usage = {
+            inputTokens: event.response.usage!.input_tokens!,
+            outputTokens: event.response.usage!.output_tokens!,
+          };
+        }
         completed = true;
         return;
       }
@@ -417,6 +436,7 @@ export async function generateGroundedResponse(
       model: env.CHAT_MODEL,
       responseId,
       toolRequests: [...toolRequests.values()],
+      ...(usage ? { usage } : {}),
     };
   } catch (error) {
     if (timedOut) {

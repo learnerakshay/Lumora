@@ -22,6 +22,7 @@ export interface IngestionOptions {
   title: string;
   type: SourceType;
   version?: number;
+  usageEventId?: string;
 }
 
 function requiresRemoteFetch(
@@ -46,6 +47,9 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   tokenCount: number;
   claimed: boolean;
   error?: string;
+  provider?: string;
+  model?: string;
+  inputTokens?: number;
 }> {
   const artifact = await getSourceArtifact(options.sourceId, options.version);
   if (!artifact) {
@@ -241,6 +245,14 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     await enterStage('COMPLETED', {
       chunkCount: committedIndex.chunkCount,
       tokenCount,
+      provider: options.type === 'YOUTUBE' ? 'gemini+openai' : 'openai',
+      model:
+        options.type === 'YOUTUBE'
+          ? `gemini-3.6-flash + ${embeddingBatch.contract.model}`
+          : embeddingBatch.contract.model,
+      ...(embeddingBatch.inputTokens !== undefined
+        ? { inputTokens: embeddingBatch.inputTokens }
+        : {}),
       textLength: parsed.cleanText.length,
       parserVersion: parsed.parserVersion,
       indexId: committedIndex.indexId,
@@ -267,6 +279,14 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       claimed: true,
       chunkCount: committedIndex.chunkCount,
       tokenCount,
+      provider: options.type === 'YOUTUBE' ? 'gemini+openai' : 'openai',
+      model:
+        options.type === 'YOUTUBE'
+          ? `gemini-3.6-flash + ${embeddingBatch.contract.model}`
+          : embeddingBatch.contract.model,
+      ...(embeddingBatch.inputTokens !== undefined
+        ? { inputTokens: embeddingBatch.inputTokens }
+        : {}),
     };
   } catch (error: any) {
     const classification = classifyIngestionError(error);

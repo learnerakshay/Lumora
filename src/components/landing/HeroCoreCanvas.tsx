@@ -185,54 +185,6 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       },
     );
 
-    const dustCount = mobile ? 64 : 220;
-    const dustPositions = new Float32Array(dustCount * 3);
-    for (let index = 0; index < dustCount; index += 1) {
-      const radius = 2.1 + Math.random() * 2.7;
-      const angle = Math.random() * Math.PI * 2;
-      const elevation = (Math.random() - 0.5) * 3.2;
-      dustPositions[index * 3] = Math.cos(angle) * radius;
-      dustPositions[index * 3 + 1] = elevation;
-      dustPositions[index * 3 + 2] = Math.sin(angle) * radius;
-    }
-    const dustGeometry = new THREE.BufferGeometry();
-    dustGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(dustPositions, 3),
-    );
-    const dustMaterial = new THREE.PointsMaterial({
-      color: 0x38bdf8,
-      size: mobile ? 0.025 : 0.032,
-      transparent: true,
-      opacity: 0.42,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const dust = new THREE.Points(dustGeometry, dustMaterial);
-    system.add(dust);
-
-    const accentDustCount = mobile ? 18 : 54;
-    const accentDustPositions = new Float32Array(accentDustCount * 3);
-    for (let index = 0; index < accentDustCount; index += 1) {
-      const radius = 1.75 + Math.random() * 2.2;
-      const angle = Math.random() * Math.PI * 2;
-      accentDustPositions[index * 3] = Math.cos(angle) * radius;
-      accentDustPositions[index * 3 + 1] = (Math.random() - 0.5) * 2.8;
-      accentDustPositions[index * 3 + 2] = Math.sin(angle) * radius;
-    }
-    const accentDustGeometry = new THREE.BufferGeometry();
-    accentDustGeometry.setAttribute('position', new THREE.BufferAttribute(accentDustPositions, 3));
-    const accentDustMaterial = new THREE.PointsMaterial({
-      color: 0xa78bfa,
-      size: mobile ? 0.018 : 0.024,
-      transparent: true,
-      opacity: 0.28,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const accentDust = new THREE.Points(accentDustGeometry, accentDustMaterial);
-    system.add(accentDust);
-
     let targetX = 0;
     let targetY = 0;
     let hoverTarget = 0;
@@ -308,17 +260,11 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
         core.rotation.z += 0.0009 * activity;
         nodeCloud.rotation.y -= 0.00058 * activity;
         edges.rotation.y = nodeCloud.rotation.y;
-        dust.rotation.y += 0.0003 * activity;
-        dust.rotation.x = Math.sin(elapsed * 0.09) * 0.08;
-        accentDust.rotation.y -= 0.00022 * activity;
-        accentDust.rotation.z = Math.sin(elapsed * 0.07) * 0.06;
         const breath = 1 + Math.sin(elapsed * 0.72) * 0.045;
         innerCore.scale.setScalar(breath);
         halo.scale.setScalar(1 + Math.sin(elapsed * 0.41 + 1.2) * 0.07);
         haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012 + hoverAmount * 0.035;
         nodeMaterial.opacity = 0.9 + hoverAmount * 0.1;
-        dustMaterial.opacity = 0.42 + hoverAmount * 0.16;
-        accentDustMaterial.opacity = 0.28 + hoverAmount * 0.16;
         system.rotation.y += (targetX - system.rotation.y) * 0.075;
         system.rotation.x += (-targetY - system.rotation.x) * 0.075;
         system.position.x += (targetX * 0.16 - system.position.x) * 0.06;
@@ -416,10 +362,6 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       signals.forEach(({ mesh }) => {
         (mesh.material as THREE.Material).dispose();
       });
-      dustGeometry.dispose();
-      dustMaterial.dispose();
-      accentDustGeometry.dispose();
-      accentDustMaterial.dispose();
       renderer.dispose();
     };
   }, []);
@@ -428,7 +370,7 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     <div
       ref={mountRef}
       aria-hidden="true"
-      className="relative flex h-full min-h-[330px] w-full items-center justify-center sm:min-h-[440px] lg:min-h-[500px]"
+      className="relative flex h-full min-h-[300px] w-full items-center justify-center sm:min-h-[370px] lg:min-h-[410px]"
     />
   );
 }

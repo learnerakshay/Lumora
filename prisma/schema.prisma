@@ -72,6 +72,50 @@ enum CitationKind {
   CALCULATION
 }
 
+enum Plan {
+  FREE
+  CORE
+  MAX
+}
+
+enum UsageActionType {
+  INGESTION
+  CHAT
+  AI_ACTION
+  SKILL_INTELLIGENCE
+  LEARNING_PATH
+}
+
+enum UsageEventStatus {
+  PENDING
+  COMMITTED
+}
+
+model User {
+  id          String       @id
+  plan        Plan         @default(FREE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  usageEvents UsageEvent[]
+}
+
+model UsageEvent {
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType       UsageActionType
+  status           UsageEventStatus
+  provider         String?
+  model            String?
+  inputTokens      Int?
+  outputTokens     Int?
+  estimatedCostUsd Float?
+  createdAt        DateTime         @default(now())
+  committedAt      DateTime?
+
+  @@index([userId, actionType, createdAt])
+}
+
 model Workspace {
   id          String    @id @default(cuid())
   name        String

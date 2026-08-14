@@ -7,6 +7,7 @@ import { prisma } from './src/lib/prisma';
 import { logger } from './src/lib/logger';
 import { errorResponse, successResponse } from './src/lib/api-response';
 import { workspaceRouter } from './src/routes/workspaces';
+import { usageRouter } from './src/routes/usage';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
@@ -27,6 +28,7 @@ async function startServer() {
 
   // Workspace API routes
   app.use('/api/workspaces', workspaceRouter);
+  app.use('/api/usage', usageRouter);
 
   // Health check API
   app.get('/api/health', async (_req, res) => {

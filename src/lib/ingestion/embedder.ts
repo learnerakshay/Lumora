@@ -16,6 +16,7 @@ export interface EmbeddingContract {
 export interface EmbeddingBatchResult {
   vectors: number[][];
   contract: EmbeddingContract;
+  inputTokens?: number;
 }
 
 export interface EmbeddingProgress {
@@ -30,6 +31,7 @@ export interface EmbeddingProgress {
 interface OpenAIEmbeddingResponse {
   data?: Array<{ index?: number; embedding?: number[] }>;
   error?: { message?: string };
+  usage?: { prompt_tokens?: number; total_tokens?: number };
 }
 
 export function getEmbeddingContract(): EmbeddingContract {
@@ -89,7 +91,7 @@ async function requestEmbeddingBatch(
   contract: EmbeddingContract,
   apiKey: string,
   fetchImpl: typeof fetch,
-): Promise<{ vectors: number[][]; attempts: number }> {
+): Promise<{ vectors: number[][]; attempts: number; inputTokens?: number }> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -154,7 +156,12 @@ async function requestEmbeddingBatch(
         validateEmbeddingVector(item.embedding, contract, `embedding ${index}`);
         return item.embedding;
       });
-      return { vectors, attempts: attempt };
+      const inputTokens = Number.isInteger(payload.usage?.prompt_tokens)
+        ? payload.usage!.prompt_tokens
+        : Number.isInteger(payload.usage?.total_tokens)
+          ? payload.usage!.total_tokens
+          : undefined;
+      return { vectors, attempts: attempt, inputTokens };
     } catch (error) {
       const retryableNetworkFailure =
         error instanceof TypeError ||
@@ -205,6 +212,8 @@ export async function generateEmbeddingsBatch(
   const env = getServerEnv();
   const contract = getEmbeddingContract();
   const vectors: number[][] = [];
+  let inputTokens = 0;
+  let hasCompleteUsage = true;
   const batchCount = Math.ceil(texts.length / MAX_BATCH_SIZE);
 
   for (let offset = 0; offset < texts.length; offset += MAX_BATCH_SIZE) {
@@ -217,6 +226,11 @@ export async function generateEmbeddingsBatch(
       fetchImpl,
     );
     vectors.push(...result.vectors);
+    if (result.inputTokens === undefined) {
+      hasCompleteUsage = false;
+    } else {
+      inputTokens += result.inputTokens;
+    }
     await onProgress?.(vectors.length, texts.length, {
       processed: vectors.length,
       total: texts.length,
@@ -227,5 +241,9 @@ export async function generateEmbeddingsBatch(
     });
   }
 
-  return { vectors, contract };
+  return {
+    vectors,
+    contract,
+    ...(hasCompleteUsage ? { inputTokens } : {}),
+  };
 }

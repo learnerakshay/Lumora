@@ -147,54 +147,6 @@ export function LivingKnowledgeCanvas() {
       });
     });
 
-    // Ambient Orbiting Particles
-    const particleCount = isMobile ? 48 : 190;
-    const particleGeo = new THREE.BufferGeometry();
-    const pos = new Float32Array(particleCount * 3);
-
-    for (let i = 0; i < particleCount; i++) {
-      const r = 1.2 + Math.random() * 2;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI;
-      pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      pos[i * 3 + 2] = r * Math.cos(phi);
-    }
-
-    particleGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const particleMat = new THREE.PointsMaterial({
-      color: 0x2dd4bf,
-      size: 0.035,
-      transparent: true,
-      opacity: 0.6,
-      blending: THREE.AdditiveBlending,
-    });
-    const particles = new THREE.Points(particleGeo, particleMat);
-    mainGroup.add(particles);
-
-    const accentCount = isMobile ? 12 : 42;
-    const accentPos = new Float32Array(accentCount * 3);
-    for (let i = 0; i < accentCount; i++) {
-      const r = 1.45 + Math.random() * 1.8;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI;
-      accentPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      accentPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-      accentPos[i * 3 + 2] = r * Math.cos(phi);
-    }
-    const accentGeo = new THREE.BufferGeometry();
-    accentGeo.setAttribute('position', new THREE.BufferAttribute(accentPos, 3));
-    const accentMat = new THREE.PointsMaterial({
-      color: 0xa78bfa,
-      size: isMobile ? 0.022 : 0.028,
-      transparent: true,
-      opacity: 0.3,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const accentParticles = new THREE.Points(accentGeo, accentMat);
-    mainGroup.add(accentParticles);
-
     // Resize Observer
     const resizeObserver = new ResizeObserver(() => {
       if (!container) return;
@@ -220,10 +172,6 @@ export function LivingKnowledgeCanvas() {
         coreMesh.rotation.x = elapsedTime * 0.1;
         innerMesh.rotation.y = -elapsedTime * 0.3;
 
-        particles.rotation.y = elapsedTime * 0.08;
-        particles.rotation.x = Math.sin(elapsedTime * 0.08) * 0.08;
-        accentParticles.rotation.y = -elapsedTime * 0.045;
-        accentParticles.rotation.z = Math.sin(elapsedTime * 0.06) * 0.09;
         const coreBreath = 1 + Math.sin(elapsedTime * 0.72) * 0.045;
         innerMesh.scale.setScalar(coreBreath);
         coreMat.opacity = 0.32 + Math.sin(elapsedTime * 0.43) * 0.08;
@@ -284,10 +232,6 @@ export function LivingKnowledgeCanvas() {
       coreMat.dispose();
       innerGeo.dispose();
       innerMat.dispose();
-      particleGeo.dispose();
-      particleMat.dispose();
-      accentGeo.dispose();
-      accentMat.dispose();
       flowGeometries.forEach((geometry) => geometry.dispose());
       flowMaterials.forEach((material) => material.dispose());
       renderer.dispose();

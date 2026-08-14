@@ -23,7 +23,7 @@ export function CtaSection() {
         {
           opacity: 1,
           y: 0,
-          duration: 0.9,
+          duration: 0.38,
           ease: 'power3.out',
           scrollTrigger: {
             trigger: ctaRef.current,
@@ -45,18 +45,6 @@ export function CtaSection() {
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute bottom-0 left-1/2 h-[400px] w-[min(900px,90vw)] -translate-x-1/2 rounded-full bg-gradient-to-t from-sky-500/15 via-blue-500/8 to-transparent blur-[140px]" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-sky-950/20 via-transparent to-transparent pointer-events-none" />
-        {Array.from({ length: 18 }, (_, index) => (
-          <span
-            key={index}
-            className="cta-particle absolute h-1 w-1 rounded-full bg-sky-300"
-            style={{
-              left: `${8 + ((index * 17) % 84)}%`,
-              top: `${12 + ((index * 29) % 68)}%`,
-              '--particle-delay': `${index * -0.37}s`,
-              '--particle-duration': `${5.5 + (index % 5) * 0.8}s`,
-            } as React.CSSProperties}
-          />
-        ))}
       </div>
 
       <div ref={contentRef} className="max-w-4xl mx-auto space-y-8 relative z-10">

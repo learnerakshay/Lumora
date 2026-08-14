@@ -28,21 +28,7 @@ export function HeroSection() {
 
   const cardInteractionProps = (connectionIndex: number) => ({
     onPointerEnter: () => setActiveConnection(connectionIndex),
-    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.pointerType === 'touch') return;
-      const bounds = event.currentTarget.getBoundingClientRect();
-      event.currentTarget.style.setProperty(
-        '--magnetic-x',
-        `${(event.clientX - bounds.left - bounds.width / 2) / 18}px`,
-      );
-      event.currentTarget.style.setProperty(
-        '--magnetic-y',
-        `${(event.clientY - bounds.top - bounds.height / 2) / 18}px`,
-      );
-    },
-    onPointerLeave: (event: React.PointerEvent<HTMLDivElement>) => {
-      event.currentTarget.style.setProperty('--magnetic-x', '0px');
-      event.currentTarget.style.setProperty('--magnetic-y', '0px');
+    onPointerLeave: () => {
       setActiveConnection(null);
     },
   });
@@ -52,97 +38,53 @@ export function HeroSection() {
     if (prefersReducedMotion) return;
 
     const ctx = gsap.context(() => {
-      const tl = gsap.timeline({ defaults: { ease: 'power3.out', duration: 1.0 } });
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out', duration: 0.36 } });
 
       tl.fromTo(
         badgeRef.current,
-        { y: 12, opacity: 0, scale: 0.96 },
-        { y: 0, opacity: 1, scale: 1, delay: 0.08, duration: 0.65 },
+        { y: 10, opacity: 0 },
+        { y: 0, opacity: 1, delay: 0.05, duration: 0.32 },
       )
         .fromTo(
           headlineRef.current,
-          { y: 30, opacity: 0 },
+          { y: 18, opacity: 0 },
           { y: 0, opacity: 1 },
-          '-=0.34',
+          '-=0.18',
         )
         .fromTo(
           sublineRef.current,
-          { y: 20, opacity: 0 },
+          { y: 14, opacity: 0 },
           { y: 0, opacity: 1 },
-          '-=0.7'
+          '-=0.2'
         )
         .fromTo(
           coreRef.current,
-          { opacity: 0, scale: 0.94, filter: 'blur(8px)' },
-          { opacity: 1, scale: 1, filter: 'blur(0px)', duration: 1.3 },
-          '-=0.45',
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 0.38 },
+          '-=0.18',
         )
         .fromTo(
           ctaRef.current,
-          { y: 20, opacity: 0 },
+          { y: 12, opacity: 0 },
           { y: 0, opacity: 1 },
-          '-=0.7'
+          '-=0.24'
         )
         .fromTo(
           cardsRef.current ? cardsRef.current.children : [],
-          { scale: 0.85, opacity: 0, y: 15 },
-          { scale: 1, opacity: 1, y: 0, stagger: 0.12, duration: 0.8 },
-          '-=0.5'
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, stagger: 0.06, duration: 0.34 },
+          '-=0.2'
         );
     }, heroRef);
 
     return () => ctx.revert();
   }, []);
 
-  useEffect(() => {
-    const hero = heroRef.current;
-    const cards = cardsRef.current;
-    if (!hero || !cards) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    const depths = [1, 0.72, 0.9, 0.78];
-    let pointerX = 0;
-    let pointerY = 0;
-    let frame = 0;
-
-    const updateCards = () => {
-      Array.from(cards.children).forEach((card, index) => {
-        const element = card as HTMLElement;
-        const depth = depths[index] ?? 0.6;
-        element.style.setProperty('--scene-x', `${pointerX * depth * 9}px`);
-        element.style.setProperty('--scene-y', `${pointerY * depth * 7}px`);
-      });
-      frame = 0;
-    };
-
-    const onPointerMove = (event: PointerEvent) => {
-      const bounds = hero.getBoundingClientRect();
-      pointerX = Math.max(-1, Math.min(1, ((event.clientX - bounds.left) / bounds.width - 0.5) * 2));
-      pointerY = Math.max(-1, Math.min(1, ((event.clientY - bounds.top) / bounds.height - 0.5) * 2));
-      if (!frame) frame = requestAnimationFrame(updateCards);
-    };
-
-    const onPointerLeave = () => {
-      pointerX = 0;
-      pointerY = 0;
-      if (!frame) frame = requestAnimationFrame(updateCards);
-    };
-
-    hero.addEventListener('pointermove', onPointerMove, { passive: true });
-    hero.addEventListener('pointerleave', onPointerLeave, { passive: true });
-
-    return () => {
-      cancelAnimationFrame(frame);
-      hero.removeEventListener('pointermove', onPointerMove);
-      hero.removeEventListener('pointerleave', onPointerLeave);
-    };
-  }, []);
-
   return (
     <section
       id="overview"
       ref={heroRef}
-      className="landing-section relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 pb-16 pt-12 sm:px-6 sm:pb-20 lg:px-8"
+      className="landing-section relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 pb-10 pt-10 sm:px-6 sm:pb-14 lg:px-8"
     >
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="landing-aurora absolute left-1/2 top-[18%] h-[520px] w-[min(86vw,920px)] -translate-x-1/2 rounded-full bg-gradient-to-tr from-sky-500/15 via-cyan-500/8 to-blue-500/12 opacity-70 blur-[120px]" />
@@ -154,7 +96,7 @@ export function HeroSection() {
         {/* Eyebrow badge */}
         <div ref={badgeRef} className="inline-flex items-center space-x-2 rounded-full border border-sky-800/60 bg-sky-950/65 px-3.5 py-1.5 text-xs font-medium tracking-wide text-sky-300 shadow-[0_0_32px_rgba(14,165,233,0.08)]">
           <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-          <span>Lumora — AI Knowledge Operating System</span>
+          <span>Built for focused, source-grounded learning</span>
         </div>
 
         {/* Main Headline */}
@@ -191,7 +133,7 @@ export function HeroSection() {
               to="/sign-in"
               className="landing-primary-cta group inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/25 hover:bg-sky-300"
             >
-              <span>Try Lumora</span>
+              <span>Try Lumora now</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           )}
@@ -203,9 +145,9 @@ export function HeroSection() {
       </div>
 
       {/* Hero Canvas & Floating Source Cards Layout */}
-      <div className="relative z-10 mx-auto mt-2 w-full max-w-6xl sm:mt-4">
+      <div className="relative z-10 mx-auto -mt-2 w-full max-w-6xl sm:mt-0">
         {/* Three.js Lumora Core Canvas */}
-        <div ref={coreRef} className="h-[340px] w-full sm:h-[430px] lg:h-[470px]">
+        <div ref={coreRef} className="h-[300px] w-full sm:h-[370px] lg:h-[410px]">
           <HeroCoreCanvas onHoverChange={setCoreHovered} />
         </div>
 
@@ -239,21 +181,6 @@ export function HeroSection() {
                   pathLength="1"
                   style={{ '--connection-delay': `${index * -0.9}s` } as React.CSSProperties}
                 />
-                {[0, 1].map((particle) => (
-                  <circle
-                    key={`${particle}-${isActive}`}
-                    className="hero-connection-particle"
-                    r={isActive ? 2.4 : 1.8}
-                    filter="url(#hero-connection-glow)"
-                  >
-                    <animateMotion
-                      dur={isActive ? '1.8s' : `${3.6 + index * 0.16}s`}
-                      begin={`${particle * -1.75 - index * 0.22}s`}
-                      repeatCount="indefinite"
-                      path={path}
-                    />
-                  </circle>
-                ))}
               </g>
             );
           })}

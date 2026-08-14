@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { getWorkspaceIdentity, WorkspaceIcon } from '../dashboard/WorkspaceIcon';
+import { UsageIndicator } from '../usage/UsageIndicator';
 
 interface WorkspaceHeaderProps {
   workspace: {
@@ -133,6 +134,7 @@ export function WorkspaceHeader({
 
       {/* Right Actions & User Profile */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <UsageIndicator compact />
         <button
           type="button"
           onClick={onOpenAddSource}

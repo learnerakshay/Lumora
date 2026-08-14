@@ -14,6 +14,9 @@ import {
 import { SourceType, SourceRecord } from '../../lib/source-store';
 import { extractYouTubeVideoId } from '../../lib/ingestion/youtube-url';
 import { YOUTUBE_INGESTION_GUIDANCE } from './youtube-source-ux';
+import { UsageLimitNotice } from '../usage/UsageLimitNotice';
+import { usageLimitFromPayload } from '../../lib/usage/client';
+import type { UsageLimitDetails } from '../../lib/usage/types';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -77,11 +80,13 @@ export function AddSourceModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     setSelectedType(initialType === 'VTT' ? 'PDF' : initialType);
     setError(null);
+    setUsageLimit(null);
   }, [initialType, isOpen]);
 
   if (!isOpen) return null;
@@ -179,6 +184,11 @@ export function AddSourceModal({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        const limitError = usageLimitFromPayload(errJson);
+        if (limitError) {
+          setUsageLimit(limitError.details);
+          return;
+        }
         throw new Error(errJson.error?.message || 'Failed to add source.');
       }
 
@@ -202,6 +212,7 @@ export function AddSourceModal({
     setTextContent('');
     setSelectedFile(null);
     setError(null);
+    setUsageLimit(null);
     onClose();
   };
 
@@ -244,6 +255,7 @@ export function AddSourceModal({
                     onClick={() => {
                       setSelectedType(opt.type);
                       setError(null);
+                      setUsageLimit(null);
                     }}
                     aria-pressed={isSelected}
                     className={`flex flex-col p-3 rounded-xl border text-left transition-all relative ${
@@ -275,6 +287,12 @@ export function AddSourceModal({
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-300">Source details</label>
             </div>
+
+            {usageLimit && (
+              <div className="overflow-hidden rounded-xl border border-amber-400/20">
+                <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
+              </div>
+            )}
 
             {error && (
               <div role="alert" className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">

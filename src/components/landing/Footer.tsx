@@ -14,7 +14,7 @@ export function Footer() {
           </Link>
           <span className="hidden sm:inline text-slate-700">|</span>
           <span className="text-slate-500">
-            © {new Date().getFullYear()} Lumora. AI Knowledge Operating System.
+            © {new Date().getFullYear()} Lumora. AI Knowledge Workspace.
           </span>
         </div>
 
@@ -38,25 +38,25 @@ export function Footer() {
             <Twitter className="w-3.5 h-3.5" />
             <span>X (Twitter)</span>
           </a>
-          <button
-            onClick={() => alert('Lumora Privacy Policy: All workspace data is isolated and encrypted.')}
+          <Link
+            to="/privacy"
             className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             Privacy
-          </button>
-          <button
-            onClick={() => alert('Lumora Terms of Service: Standard Developer License.')}
+          </Link>
+          <Link
+            to="/terms"
             className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             Terms
-          </button>
-          <a
-            href="mailto:support@lumora.ai"
+          </Link>
+          <Link
+            to="/contact"
             className="flex items-center space-x-1 rounded-md transition-all hover:-translate-y-0.5 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             <Mail className="w-3.5 h-3.5" />
             <span>Contact</span>
-          </a>
+          </Link>
         </div>
       </div>
     </footer>

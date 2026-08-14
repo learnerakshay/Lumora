@@ -6,6 +6,7 @@ export interface ApiResponse<T = any> {
   error?: {
     code: string;
     message: string;
+    details?: Record<string, unknown>;
   };
   timestamp: string;
 }
@@ -29,6 +30,7 @@ export function errorResponse(error: unknown): { statusCode: number; payload: Ap
         error: {
           code: error.code,
           message: error.message,
+          ...(error.details ? { details: error.details } : {}),
         },
         timestamp,
       },

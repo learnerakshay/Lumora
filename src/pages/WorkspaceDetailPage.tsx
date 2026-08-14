@@ -31,6 +31,13 @@ import {
   getPersistedGenerationStatus,
   type GenerationStatusInput,
 } from '../components/workspace/chat-presentation';
+import { UsageLimitNotice } from '../components/usage/UsageLimitNotice';
+import { notifyUsageChanged } from '../components/usage/UsageProvider';
+import {
+  UsageLimitReachedError,
+  usageLimitFromPayload,
+} from '../lib/usage/client';
+import type { UsageLimitDetails } from '../lib/usage/types';
 
 interface WorkspaceData {
   id: string;
@@ -57,6 +64,7 @@ export function WorkspaceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
 
   // Streaming State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -81,6 +89,7 @@ export function WorkspaceDetailPage() {
   const [contextCitations, setContextCitations] = useState<StoredCitation[] | null>(null);
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
   const sourceRefreshRef = useRef(false);
+  const sourceStatusRef = useRef<Map<string, SourceRecord['status']>>(new Map());
 
   // Fetch Workspace Detail
   const fetchWorkspace = useCallback(async () => {
@@ -208,6 +217,21 @@ export function WorkspaceDetailPage() {
     return () => clearInterval(interval);
   }, [sources, fetchSources]);
 
+  useEffect(() => {
+    const previous = sourceStatusRef.current;
+    if (
+      sources.some(
+        (source) =>
+          source.status === 'COMPLETED' && previous.get(source.id) !== 'COMPLETED',
+      )
+    ) {
+      notifyUsageChanged();
+    }
+    sourceStatusRef.current = new Map(
+      sources.map((source) => [source.id, source.status]),
+    );
+  }, [sources]);
+
   // A persisted SENDING assistant record means server-side generation is still
   // active after a reload or transport interruption. Poll only until it reaches
   // its durable SUCCESS/ERROR terminal state.
@@ -263,6 +287,7 @@ export function WorkspaceDetailPage() {
     }
     setIsGenerating(true);
     setActivityError(null);
+    setUsageLimit(null);
     setStreamingText('');
     setStreamingCitations([]);
     setToolExecutions([]);
@@ -298,6 +323,11 @@ export function WorkspaceDetailPage() {
 
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
+        const limitError = usageLimitFromPayload(payload);
+        if (limitError) {
+          setUsageLimit(limitError.details);
+          throw limitError;
+        }
         const responseError =
           typeof payload?.error?.message === 'string'
             ? payload.error.message
@@ -427,6 +457,7 @@ export function WorkspaceDetailPage() {
               }
               conversationRevisionRef.current += 1;
               completedResponse = true;
+              notifyUsageChanged();
             } else if (data.type === 'error') {
               terminalEventReceived = true;
               if (!isCurrentOperation()) continue;
@@ -469,7 +500,12 @@ export function WorkspaceDetailPage() {
         terminalEventReceived,
         transportAborted: abortController.signal.aborted,
       });
-      if (isCurrentOperation() && err.name !== 'AbortError' && !recoverTransport) {
+      if (
+        isCurrentOperation() &&
+        err.name !== 'AbortError' &&
+        !(err instanceof UsageLimitReachedError) &&
+        !recoverTransport
+      ) {
         setActivityError(err.message || 'Error communicating with RAG response stream.');
       }
       if (isCurrentOperation() && (recoverTransport || !isRegeneration)) {
@@ -786,6 +822,9 @@ export function WorkspaceDetailPage() {
           onToggleContext={() => setIsContextOpen(true)}
           citationCount={latestCitations.length}
         />
+        {usageLimit && (
+          <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
+        )}
 
         {/* Center View: Shows Onboarding or Chat Thread */}
         {visibleSources.length > 0 ? (

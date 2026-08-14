@@ -30,7 +30,7 @@ export function LumoraBrand({
             Lumora
           </span>
           <span className="-mt-0.5 whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.2em] text-slate-400">
-            Knowledge OS
+            AI Knowledge Workspace
           </span>
         </span>
       )}

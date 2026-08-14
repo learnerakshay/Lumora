@@ -27,7 +27,7 @@ export function HowItWorksSection() {
         .fromTo(
           headingRef.current,
           { opacity: 0, y: 22 },
-          { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' },
+          { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out' },
         )
         .fromTo(
           flowRef.current ? flowRef.current.children : [],
@@ -35,8 +35,8 @@ export function HowItWorksSection() {
           {
             opacity: 1,
             y: 0,
-            stagger: 0.2,
-            duration: 0.78,
+            stagger: 0.08,
+            duration: 0.38,
             ease: 'power3.out',
           },
           '-=0.35',
@@ -48,7 +48,7 @@ export function HowItWorksSection() {
             scaleX: 1,
             opacity: 1,
             transformOrigin: 'left center',
-            duration: 1.15,
+            duration: 0.38,
             ease: 'power2.inOut',
           },
           '-=1.05',
@@ -139,11 +139,7 @@ export function HowItWorksSection() {
 
           {/* STEP 2: UNDERSTAND */}
           <div className="landing-card group relative flex flex-col justify-between space-y-6 rounded-2xl border border-sky-500/40 bg-[#101826]/95 p-6 shadow-xl shadow-sky-950/20">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-sky-500 text-slate-950 text-[10px] font-bold uppercase tracking-wider">
-              Core Processing
-            </div>
-
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-teal-400 font-mono tracking-widest uppercase">
                   STEP 02
@@ -162,7 +158,7 @@ export function HowItWorksSection() {
 
               {/* Knowledge preparation visual */}
               <div className="my-4 p-5 bg-gradient-to-b from-[#182030] to-[#0d131f] border border-sky-500/30 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
-                <div className="landing-icon flex h-12 w-12 items-center justify-center rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-400">
+                <div className="landing-icon workflow-core-icon flex h-12 w-12 items-center justify-center rounded-xl border border-sky-400/40 bg-sky-500/10 text-sky-400">
                   <Cpu className="w-6 h-6" />
                 </div>
                 <div>

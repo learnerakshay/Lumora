@@ -282,7 +282,7 @@ export function WorkspacesPage() {
       <article
         key={workspace.id}
         style={{ '--identity-color': identity.color, '--identity-rgb': identity.rgb } as React.CSSProperties}
-        className="workspace-card group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-[#111824] p-4 shadow-[0_14px_36px_rgba(0,0,0,0.16)] transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-[#131c29] hover:shadow-[0_20px_48px_rgba(0,0,0,0.28)] focus-within:ring-2 focus-within:ring-[rgb(var(--identity-rgb)/0.24)] sm:p-[18px]"
+        className="workspace-card group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border p-4 transition-[transform,border-color,background-color,box-shadow] duration-200 focus-within:ring-2 focus-within:ring-[rgb(var(--identity-rgb)/0.24)] sm:p-[18px]"
       >
         <button
           type="button"
@@ -448,7 +448,10 @@ export function WorkspacesPage() {
               </p>
 
               <div className="lumora-zero-enter lumora-zero-enter-2 relative mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-5 text-left sm:grid-cols-3 sm:gap-4 sm:text-center">
-                <div className="absolute bottom-auto left-5 top-5 h-[calc(100%-2.5rem)] w-px bg-gradient-to-b from-cyan-400/45 via-slate-700/70 to-slate-800/40 sm:left-[16.66%] sm:right-[16.66%] sm:top-5 sm:h-px sm:w-auto sm:bg-gradient-to-r" />
+                <div aria-hidden="true" className="workspace-step-connector absolute left-5 top-5 h-[calc(100%-2.5rem)] w-px overflow-hidden bg-gradient-to-b from-cyan-400/45 via-slate-700/70 to-slate-800/40 sm:left-[16.66%] sm:right-[16.66%] sm:h-px sm:w-auto sm:bg-gradient-to-r">
+                  <span className="workspace-step-signal workspace-step-signal-vertical" />
+                  <span className="workspace-step-signal workspace-step-signal-horizontal" />
+                </div>
                 {[
                   ['1', 'Create Workspace', 'Set up a focused knowledge space'],
                   ['2', 'Add Sources', 'Bring in the material you trust'],
@@ -478,7 +481,7 @@ export function WorkspacesPage() {
             </div>
           </section>
         ) : (
-          <div className="space-y-7">
+          <div className="workspace-library-canvas relative isolate space-y-7">
             <section className="flex flex-col gap-5 border-b border-slate-800/70 pb-7 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-medium text-cyan-400">Welcome back, {user?.fullName?.split(' ')[0] || 'learner'}</p>
@@ -491,13 +494,13 @@ export function WorkspacesPage() {
                   value={sortBy}
                   onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
                   aria-label="Sort Workspaces"
-                  className="h-9 rounded-xl border border-slate-800 bg-[#111824] px-3 text-xs font-medium text-slate-300 outline-none transition-colors focus:border-cyan-500/60"
+                  className="workspace-toolbar-control h-9 px-3 text-xs font-medium text-slate-300 outline-none"
                 >
                   <option value="newest">Recently Updated</option>
                   <option value="oldest">Oldest First</option>
                   <option value="sources">Most Sources</option>
                 </select>
-                <button type="button" onClick={fetchWorkspaces} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-[#111824] text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-200" title="Refresh Workspaces" aria-label="Refresh Workspaces">
+                <button type="button" onClick={fetchWorkspaces} className="workspace-toolbar-control flex h-9 w-9 items-center justify-center text-slate-500 hover:text-slate-200" title="Refresh Workspaces" aria-label="Refresh Workspaces">
                   <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-cyan-300' : ''}`} />
                 </button>
               </div>
@@ -505,7 +508,7 @@ export function WorkspacesPage() {
 
             <div className="relative md:hidden">
               <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search Workspaces" aria-label="Search Workspaces" className="h-10 w-full rounded-xl border border-slate-800 bg-[#111824] pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none" />
+              <input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search Workspaces" aria-label="Search Workspaces" className="workspace-toolbar-control h-10 w-full pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:outline-none" />
             </div>
 
             {showContinueSection && (
@@ -521,11 +524,11 @@ export function WorkspacesPage() {
             )}
 
             <section aria-labelledby="library-heading" className="space-y-4">
-              <div className="flex items-center gap-2">
-                <h2 id="library-heading" className="text-base font-semibold tracking-tight text-slate-100">
+              <div className="flex items-center gap-2.5">
+                <h2 id="library-heading" className="text-[17px] font-semibold tracking-[-0.018em] text-slate-100">
                   {showContinueSection ? 'All Workspaces' : 'Workspace library'}
                 </h2>
-                <span className="rounded-full border border-slate-800 bg-slate-900/70 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                <span className="inline-flex min-w-6 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-cyan-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_0_16px_rgba(34,211,238,0.035)]">
                   {filteredWorkspaces.length}
                 </span>
               </div>

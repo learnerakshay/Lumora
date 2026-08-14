@@ -27,8 +27,8 @@ export function FeaturesSection() {
     const ctx = gsap.context(() => {
       const timeline = gsap.timeline({ scrollTrigger: { trigger: sectionRef.current, start: 'top 75%', once: true } });
       timeline
-        .fromTo(headingRef.current, { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' })
-        .fromTo(gridRef.current ? gridRef.current.children : [], { opacity: 0, y: 25 }, { opacity: 1, y: 0, stagger: 0.075, duration: 0.58, ease: 'power2.out' }, '-=0.28');
+        .fromTo(headingRef.current, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out' })
+        .fromTo(gridRef.current ? gridRef.current.children : [], { opacity: 0, y: 18 }, { opacity: 1, y: 0, stagger: 0.055, duration: 0.34, ease: 'power2.out' }, '-=0.16');
     }, sectionRef);
     return () => ctx.revert();
   }, []);
@@ -45,7 +45,7 @@ export function FeaturesSection() {
         </div>
 
         <div ref={gridRef} className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature, idx) => {
+          {FEATURES.map((feature) => {
             const Icon = feature.icon;
             return (
               <div key={feature.title} className="landing-card group flex min-h-48 flex-col rounded-2xl border border-slate-800/90 bg-[#101826]/95 p-6 shadow-lg">
@@ -56,15 +56,6 @@ export function FeaturesSection() {
                   <h3 className="text-base font-bold text-white transition-colors group-hover:text-sky-300">{feature.title}</h3>
                   <p className="text-xs leading-relaxed text-slate-400">{feature.description}</p>
                 </div>
-                {feature.title === 'Grounded Workspace Chat' ? (
-                  <div className="landing-chat-demo relative z-10 mt-auto pt-4" aria-hidden="true">
-                    <div className="rounded-lg border border-sky-900/70 bg-slate-950/70 px-2.5 py-2 text-[9px] text-slate-300">Summarize the strongest finding</div>
-                    <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-2">
-                      <div className="flex min-w-0 items-center gap-2 text-[9px] text-slate-300"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" /><span className="min-w-0 flex-1 overflow-hidden text-left"><span className="landing-stream-copy">The evidence converges on one key insight.</span><span className="landing-stream-cursor" /></span></div>
-                      <div className="mt-2 flex items-center gap-1.5"><span className="rounded border border-sky-900 px-1.5 py-0.5 text-[8px] text-sky-300">Research.pdf</span><span className="rounded border border-slate-700 px-1.5 py-0.5 text-[8px] text-slate-400">Page 3</span></div>
-                    </div>
-                  </div>
-                ) : <div className="landing-signal relative z-10 mt-auto" style={{ '--signal-delay': `${idx * -0.18}s` } as React.CSSProperties} aria-hidden="true" />}
               </div>
             );
           })}

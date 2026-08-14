@@ -28,22 +28,21 @@ export function LivingKnowledgeSection() {
         .fromTo(
           headingRef.current,
           { opacity: 0, y: 24 },
-          { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' },
+          { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out' },
         )
         .fromTo(
           diagramRef.current?.querySelectorAll('.living-input') || [],
           { opacity: 0, x: -24 },
-          { opacity: 1, x: 0, stagger: 0.13, duration: 0.55 },
+          { opacity: 1, x: 0, stagger: 0.07, duration: 0.34 },
           '-=0.2',
         )
         .fromTo(
           diagramRef.current?.querySelector('.living-core'),
-          { opacity: 0, scale: 0.9, filter: 'blur(6px)' },
+          { opacity: 0, y: 12 },
           {
             opacity: 1,
-            scale: 1,
-            filter: 'blur(0px)',
-            duration: 0.9,
+            y: 0,
+            duration: 0.38,
             ease: 'power3.out',
           },
           '-=0.38',
@@ -54,8 +53,8 @@ export function LivingKnowledgeSection() {
           {
             opacity: 1,
             x: 0,
-            stagger: 0.13,
-            duration: 0.55,
+            stagger: 0.07,
+            duration: 0.34,
             ease: 'power2.out',
           },
           '-=0.35',
@@ -67,8 +66,8 @@ export function LivingKnowledgeSection() {
         {
           y: 0,
           opacity: 1,
-          stagger: 0.12,
-          duration: 0.75,
+          stagger: 0.07,
+          duration: 0.36,
           ease: 'power3.out',
           scrollTrigger: {
             trigger: cardsRef.current,
@@ -103,21 +102,6 @@ export function LivingKnowledgeSection() {
 
         {/* Center Canvas Showcase Layout */}
         <div ref={diagramRef} className="living-diagram relative grid grid-cols-1 items-center gap-8 overflow-hidden rounded-2xl border border-sky-900/25 bg-[#0b1320]/60 p-6 backdrop-blur-sm sm:p-10 lg:grid-cols-12">
-          <div aria-hidden="true" className="living-diagram-atmosphere">
-            {Array.from({ length: 12 }, (_, index) => (
-              <span
-                key={index}
-                style={{
-                  '--star-index': index,
-                  '--star-x': `${4 + index * 8.1}%`,
-                  '--star-y': `${7 + ((index * 31) % 86)}%`,
-                  '--star-size': `${1 + (index % 2)}px`,
-                  '--star-opacity': 0.2 + (index % 4) * 0.1,
-                  '--star-duration': `${8 + (index % 5) * 1.4}s`,
-                } as React.CSSProperties}
-              />
-            ))}
-          </div>
           {/* Left Column: Input Stream Labels */}
           <div className="relative z-10 lg:col-span-3 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-sky-400 font-mono">

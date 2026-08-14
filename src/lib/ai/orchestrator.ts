@@ -165,6 +165,9 @@ export class AIOrchestrator {
     const toolExecutions: ToolExecutionRecord[] = [];
     let accumulatedText = '';
     let lastResult: GenerateChatResult | undefined;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let hasCompleteUsage = true;
     const hasWorkspaceContext = input.hasWorkspaceContext !== false;
     const preparedContext = prepareAIContext(
       input,
@@ -181,6 +184,12 @@ export class AIOrchestrator {
           input.onTextDelta(delta);
         },
       });
+      if (lastResult.usage) {
+        totalInputTokens += lastResult.usage.inputTokens;
+        totalOutputTokens += lastResult.usage.outputTokens;
+      } else {
+        hasCompleteUsage = false;
+      }
 
       if (lastResult.toolRequests.length === 0) {
         const hybridMetadata = intelligenceMetadata(
@@ -190,6 +199,14 @@ export class AIOrchestrator {
         return {
           ...lastResult,
           text: accumulatedText,
+          ...(hasCompleteUsage
+            ? {
+                usage: {
+                  inputTokens: totalInputTokens,
+                  outputTokens: totalOutputTokens,
+                },
+              }
+            : { usage: undefined }),
           orchestration: {
             toolRounds: round,
             toolExecutions,

@@ -43,7 +43,7 @@ export function Navbar() {
 
   // The Workspace dashboard provides its own authenticated app navigation.
   // Keep the existing header on the learning Workspace route unchanged.
-  if (location.pathname.startsWith('/workspaces')) return null;
+  if (location.pathname.startsWith('/workspaces') || location.pathname === '/usage') return null;
 
   return (
     <header
@@ -68,7 +68,7 @@ export function Navbar() {
                   Lumora
                 </span>
                 <span className="-mt-1 font-mono text-[10px] uppercase tracking-widest text-slate-400">
-                  Knowledge OS
+                  AI Knowledge Workspace
                 </span>
               </span>
             </span>

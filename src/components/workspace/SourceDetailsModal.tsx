@@ -14,6 +14,9 @@ import { SourceRecord } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
 import { getYouTubeFailureMessage } from './youtube-source-ux';
+import { UsageLimitNotice } from '../usage/UsageLimitNotice';
+import { usageLimitFromPayload } from '../../lib/usage/client';
+import type { UsageLimitDetails } from '../../lib/usage/types';
 
 interface SourceDetailsModalProps {
   source: SourceRecord | null;
@@ -36,12 +39,14 @@ export function SourceDetailsModal({
   const [reprocessing, setReprocessing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
 
   useEffect(() => {
     if (!source) return;
     setNewTitle(source.title);
     setIsEditingTitle(false);
     setError(null);
+    setUsageLimit(null);
   }, [source]);
 
   if (!isOpen || !source) return null;
@@ -109,6 +114,7 @@ export function SourceDetailsModal({
     try {
       setReprocessing(true);
       setError(null);
+      setUsageLimit(null);
       const res = await fetch(
         `/api/workspaces/${source.workspaceId}/sources/${source.id}/reprocess`,
         {
@@ -116,7 +122,15 @@ export function SourceDetailsModal({
         }
       );
 
-      if (!res.ok) throw new Error('Lumora could not start processing this source again.');
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const limitError = usageLimitFromPayload(payload);
+        if (limitError) {
+          setUsageLimit(limitError.details);
+          return;
+        }
+        throw new Error(payload?.error?.message || 'Lumora could not start processing this source again.');
+      }
 
       onUpdate({
         ...source,
@@ -187,6 +201,12 @@ export function SourceDetailsModal({
 
         {/* Content */}
         <div className="space-y-5 overflow-y-auto p-4 sm:p-6">
+          {usageLimit && (
+            <div className="overflow-hidden rounded-xl border border-amber-400/20">
+              <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
+            </div>
+          )}
+
           {error && (
             <div role="alert" className="flex items-center space-x-2 p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />

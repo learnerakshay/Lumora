@@ -90,3 +90,37 @@ test('stale detection uses the configured bounded lease window', () => {
     false,
   );
 });
+
+test('coordinator commits successful ingestion and discards failed ingestion reservations', async () => {
+  const committed: string[] = [];
+  const discarded: string[] = [];
+  const successCoordinator = new IngestionCoordinator({
+    process: (async () => ({
+      ...completedResult(),
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      inputTokens: 42,
+    })) as any,
+    commitUsage: (async (id) => { committed.push(id); }) as any,
+    discardUsage: (async (id) => { discarded.push(id); }) as any,
+  });
+  successCoordinator.dispatch({ ...job, usageEventId: 'usage-success' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(committed, ['usage-success']);
+  assert.deepEqual(discarded, []);
+
+  const failureCoordinator = new IngestionCoordinator({
+    process: (async () => ({
+      success: false,
+      claimed: true,
+      chunkCount: 0,
+      tokenCount: 0,
+      error: 'provider failed',
+    })) as any,
+    commitUsage: (async (id) => { committed.push(id); }) as any,
+    discardUsage: (async (id) => { discarded.push(id); }) as any,
+  });
+  failureCoordinator.dispatch({ ...job, usageEventId: 'usage-failure' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(discarded, ['usage-failure']);
+});
