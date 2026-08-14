@@ -3,18 +3,17 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthProvider';
 import { SettingsModal } from './SettingsModal';
 import { UsageIndicator } from '../usage/UsageIndicator';
+import { LumoraBrand } from '../landing/LumoraBrand';
 import {
   ChevronLeft,
   ChevronRight,
   Gauge,
   LayoutDashboard,
-  Layers,
   LogOut,
   Menu,
   Plus,
   Search,
   Settings,
-  Sparkles,
   X,
 } from 'lucide-react';
 
@@ -93,7 +92,7 @@ export function DashboardLayout({
     <div className="flex min-h-screen flex-col bg-[#0b0f17] text-[#f0f4f8] antialiased md:flex-row">
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800/80 bg-[#101621]/95 px-4 py-3 backdrop-blur md:hidden">
         <Link to="/workspaces" className="flex items-center gap-2 rounded-lg">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-400"><Sparkles className="h-4 w-4" /></span>
+          <LumoraBrand compact markOnly />
           <span className="font-semibold tracking-tight text-white">Lumora</span>
         </Link>
         <div className="flex items-center gap-2">
@@ -113,7 +112,7 @@ export function DashboardLayout({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
           <div className={`flex h-12 items-center ${isCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
             <Link to="/workspaces" onClick={() => setIsMobileSidebarOpen(false)} className="flex min-w-0 items-center gap-2.5 rounded-lg">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-400"><Layers className="h-5 w-5" /></span>
+              <LumoraBrand compact markOnly />
               {!isCollapsed && <span className="min-w-0"><span className="block text-base font-semibold tracking-tight text-white">Lumora</span><span className="block truncate text-[10px] text-slate-500">Your learning, organized</span></span>}
             </Link>
             <button type="button" onClick={() => setIsMobileSidebarOpen(false)} aria-label="Close navigation" className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white md:hidden"><X className="h-4 w-4" /></button>

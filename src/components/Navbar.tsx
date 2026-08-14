@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { LogOut, User, Sparkles, Github, Twitter, Menu, X as CloseIcon } from 'lucide-react';
+import { LogOut, User, Github, Twitter, Menu, X as CloseIcon } from 'lucide-react';
 import { LumoraBrand } from './landing/LumoraBrand';
 import { scrollToLandingSection } from './landing/LandingSmoothScroll';
 
@@ -56,23 +56,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Brand Logo */}
         <Link to="/" className="group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-          {isPublicPresentation ? (
-            <LumoraBrand compact />
-          ) : (
-            <span className="flex items-center space-x-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-400 transition-all group-hover:border-sky-400/60 group-hover:bg-sky-500/20">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <span className="flex flex-col">
-                <span className="text-lg font-bold tracking-tight text-white transition-colors group-hover:text-sky-300">
-                  Lumora
-                </span>
-                <span className="-mt-1 font-mono text-[10px] uppercase tracking-widest text-slate-400">
-                  AI Knowledge Workspace
-                </span>
-              </span>
-            </span>
-          )}
+          <LumoraBrand compact />
         </Link>
 
         {/* Desktop Nav Links (Public) */}

@@ -10,6 +10,12 @@ interface Star {
   drift: number;
 }
 
+interface SparkBurst {
+  x: number;
+  y: number;
+  startedAt: number;
+}
+
 function createStars(width: number, height: number, count: number): Star[] {
   return Array.from({ length: count }, (_, index) => {
     const seed = index + 1;
@@ -45,6 +51,7 @@ export function AuthStarField() {
     let pointerActive = false;
     let pointerX = -1000;
     let pointerY = -1000;
+    let bursts: SparkBurst[] = [];
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
@@ -88,6 +95,31 @@ export function AuthStarField() {
         context.fillStyle = `rgba(125, 211, 252, ${Math.max(0.06, star.opacity + twinkle + proximity * 0.38)})`;
         context.fill();
       });
+
+      bursts = bursts.filter((burst) => {
+        const progress = (time - burst.startedAt) / 760;
+        if (progress >= 1) return false;
+
+        const eased = 1 - Math.pow(1 - Math.max(0, progress), 3);
+        const alpha = (1 - eased) * 0.42;
+        context.beginPath();
+        context.arc(burst.x, burst.y, 8 + eased * 34, 0, Math.PI * 2);
+        context.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+        context.lineWidth = 1;
+        context.stroke();
+
+        for (let index = 0; index < 6; index += 1) {
+          const angle = (index / 6) * Math.PI * 2 + Math.PI / 6;
+          const distance = 6 + eased * (15 + (index % 2) * 5);
+          const x = burst.x + Math.cos(angle) * distance;
+          const y = burst.y + Math.sin(angle) * distance;
+          context.beginPath();
+          context.arc(x, y, 1.25 * (1 - eased * 0.55), 0, Math.PI * 2);
+          context.fillStyle = `rgba(125, 211, 252, ${(1 - eased) * 0.7})`;
+          context.fill();
+        }
+        return true;
+      });
     };
 
     const animate = (time: number) => {
@@ -112,6 +144,18 @@ export function AuthStarField() {
       pointerActive = false;
     };
 
+    const onPointerDown = (event: PointerEvent) => {
+      if (reducedMotion) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest('.auth-board')) return;
+      const rect = container.getBoundingClientRect();
+      bursts.push({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        startedAt: performance.now(),
+      });
+    };
+
     const resizeObserver = new ResizeObserver(() => {
       resize();
       if (reducedMotion) draw();
@@ -126,12 +170,14 @@ export function AuthStarField() {
       container.addEventListener('pointermove', onPointerMove, { passive: true });
       container.addEventListener('pointerleave', onPointerLeave, { passive: true });
     }
+    if (!reducedMotion) container.addEventListener('pointerdown', onPointerDown, { passive: true });
 
     return () => {
       window.cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerleave', onPointerLeave);
+      container.removeEventListener('pointerdown', onPointerDown);
     };
   }, []);
 

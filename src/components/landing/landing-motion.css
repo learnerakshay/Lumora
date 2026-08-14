@@ -44,11 +44,14 @@
 }
 
 .lumora-brand-image {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0.98;
-  transform: scale(1.7) translateY(8%);
+  transform: rotate(0deg);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   transition:
     transform 600ms var(--landing-ease),
     filter 450ms ease;
@@ -64,7 +67,7 @@
 
 .lumora-brand:hover .lumora-brand-image {
   filter: saturate(1.12) brightness(1.08);
-  transform: scale(1.7) translateY(8%);
+  transform: rotate(0deg);
 }
 
 .landing-aurora {
@@ -582,12 +585,12 @@
 }
 
 .auth-hero-mark .lumora-brand-image {
-  transform: scale(1.42) translateY(8%);
+  transform: rotate(0deg);
   animation: auth-mark-rotate 18s linear infinite;
 }
 
 .auth-hero-mark:hover .lumora-brand-image {
-  transform: scale(1.42) translateY(8%);
+  transform: rotate(0deg);
 }
 
 .auth-secondary-button,
@@ -855,7 +858,7 @@
 
 @keyframes auth-mark-rotate {
   to {
-    transform: scale(1.42) translateY(8%) rotate(360deg);
+    transform: rotate(360deg);
   }
 }
 

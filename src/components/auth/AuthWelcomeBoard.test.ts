@@ -27,5 +27,8 @@ test('auth motion is restrained and has reduced-motion coverage', () => {
   assert.match(motionCss, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(starFieldSource, /prefers-reduced-motion: reduce/);
   assert.match(starFieldSource, /hover: hover.*pointer: fine/);
+  assert.match(starFieldSource, /pointerdown/);
+  assert.match(starFieldSource, /\/ 760/);
+  assert.match(starFieldSource, /target\.closest\('\.auth-board'\)/);
   assert.doesNotMatch(motionCss.match(/@keyframes auth-board-enter[\s\S]*?\n}/)?.[0] || '', /scale\(/);
 });

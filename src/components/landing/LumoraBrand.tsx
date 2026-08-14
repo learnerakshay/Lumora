@@ -18,7 +18,7 @@ export function LumoraBrand({
         className={`${compact ? 'h-8 w-8' : 'h-11 w-11'} lumora-brand-mark`}
       >
         <img
-          src="/brand/lumora-orbit-mark.png"
+          src="/brand/lumora-orbit-mark.svg"
           alt=""
           className="lumora-brand-image"
           decoding="async"
