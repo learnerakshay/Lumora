@@ -1,21 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { Bookmark, FileCode, FileText, Globe, Layers3, Lock, MessageSquareText, Video, Zap } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { LANDING_FEATURES } from './landing-content';
 
 gsap.registerPlugin(ScrollTrigger);
-
-const FEATURES = [
-  { icon: Lock, title: 'Private Workspaces', description: 'Workspace-level safeguards keep each Workspace and its source material separate.' },
-  { icon: MessageSquareText, title: 'Grounded Workspace Chat', description: 'Ask questions in a focused conversation grounded in the sources you have added.' },
-  { icon: Layers3, title: 'Multi-source Learning', description: 'Connect insights across PDFs, websites, YouTube videos, and plain text in one Workspace.' },
-  { icon: FileText, title: 'PDF Documents', description: 'Import PDF documents and use their content in grounded conversations.' },
-  { icon: Globe, title: 'Web Pages', description: 'Bring articles and documentation into the same learning flow as your other sources.' },
-  { icon: Video, title: 'YouTube Videos', description: 'Learn from supported YouTube videos through their available transcripts.' },
-  { icon: FileCode, title: 'Plain Text', description: 'Add notes and other plain text directly to a Workspace.' },
-  { icon: Zap, title: 'Streaming Responses', description: 'Read responses as they arrive instead of waiting for the entire answer.' },
-  { icon: Bookmark, title: 'Source Citations', description: 'Trace supported answers back to the source material behind them.' },
-];
 
 export function FeaturesSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -45,7 +33,7 @@ export function FeaturesSection() {
         </div>
 
         <div ref={gridRef} className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature) => {
+          {LANDING_FEATURES.map((feature) => {
             const Icon = feature.icon;
             return (
               <div key={feature.title} className="landing-card group flex min-h-48 flex-col rounded-2xl border border-slate-800/90 bg-[#101826]/95 p-6 shadow-lg">
