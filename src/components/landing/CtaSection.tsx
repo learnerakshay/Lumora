@@ -39,7 +39,7 @@ export function CtaSection() {
   return (
     <section
       ref={ctaRef}
-      className="landing-section landing-horizon relative overflow-hidden px-4 py-28 text-center sm:px-6 lg:px-8"
+      className="landing-section landing-horizon relative overflow-hidden px-4 pb-24 pt-28 text-center sm:px-6 lg:px-8"
     >
       {/* Observatory Ambient Background Lights */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">

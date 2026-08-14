@@ -19,8 +19,10 @@ export function HomePage() {
         <HowItWorksSection />
         <LivingKnowledgeSection />
         <FeaturesSection />
-        <CtaSection />
-        <Footer />
+        <div className="landing-closing-surface relative overflow-hidden">
+          <CtaSection />
+          <Footer />
+        </div>
       </div>
     </main>
   );

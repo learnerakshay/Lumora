@@ -89,6 +89,10 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     const nodeCount = mobile ? 24 : 42;
     const nodes: NeuralNode[] = [];
     const nodePositions = new Float32Array(nodeCount * 3);
+    const nodeColors = new Float32Array(nodeCount * 3);
+    const nodeInfluence = new Float32Array(nodeCount);
+    const nodeBaseColor = new THREE.Color(0x7dd3fc);
+    const nodeHighlightColor = new THREE.Color(0xe0f2fe);
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
     for (let index = 0; index < nodeCount; index += 1) {
       const y = 1 - (index / Math.max(1, nodeCount - 1)) * 2;
@@ -101,6 +105,7 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       ).multiplyScalar(1.55 + (index % 4) * 0.035);
       nodes.push({ base, phase: index * 0.61 });
       base.toArray(nodePositions, index * 3);
+      nodeBaseColor.toArray(nodeColors, index * 3);
     }
 
     const nodeGeometry = new THREE.BufferGeometry();
@@ -108,11 +113,12 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       'position',
       new THREE.BufferAttribute(nodePositions, 3),
     );
+    nodeGeometry.setAttribute('color', new THREE.BufferAttribute(nodeColors, 3));
     const nodeMaterial = new THREE.PointsMaterial({
-      color: 0x7dd3fc,
       size: mobile ? 0.055 : 0.065,
       transparent: true,
       opacity: 0.9,
+      vertexColors: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -143,15 +149,23 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     }
 
     const edgePositions = new Float32Array(edgePairs.length * 6);
+    const edgeColors = new Float32Array(edgePairs.length * 6);
+    const edgeBaseColor = new THREE.Color(0x0ea5e9);
+    const edgeHighlightColor = new THREE.Color(0x67e8f9);
+    edgePairs.forEach((_, index) => {
+      edgeBaseColor.toArray(edgeColors, index * 6);
+      edgeBaseColor.toArray(edgeColors, index * 6 + 3);
+    });
     const edgeGeometry = new THREE.BufferGeometry();
     edgeGeometry.setAttribute(
       'position',
       new THREE.BufferAttribute(edgePositions, 3),
     );
+    edgeGeometry.setAttribute('color', new THREE.BufferAttribute(edgeColors, 3));
     const edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0x0ea5e9,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.26,
+      vertexColors: true,
       blending: THREE.AdditiveBlending,
     });
     const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
@@ -185,24 +199,11 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       },
     );
 
-    let targetX = 0;
-    let targetY = 0;
     let hoverTarget = 0;
     let hoverAmount = 0;
     let coreIsHovered = false;
-    const pointerSurface = container.closest('section') ?? container;
-    const onPointerMove = (event: PointerEvent) => {
-      if (mobile || reducedMotion) return;
-      const rect = pointerSurface.getBoundingClientRect();
-      targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.62;
-      targetY = ((event.clientY - rect.top) / rect.height - 0.5) * 0.44;
-    };
-    const onPointerLeave = () => {
-      targetX = 0;
-      targetY = 0;
-    };
-    pointerSurface.addEventListener('pointermove', onPointerMove, { passive: true });
-    pointerSurface.addEventListener('pointerleave', onPointerLeave, { passive: true });
+    let pointerActive = false;
+    const pointerNdc = new THREE.Vector2(10, 10);
     const setCoreHovered = (hovered: boolean) => {
       if (coreIsHovered === hovered) return;
       coreIsHovered = hovered;
@@ -212,12 +213,19 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     const onCoreMove = (event: PointerEvent) => {
       if (mobile || reducedMotion) return;
       const rect = container.getBoundingClientRect();
+      pointerNdc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      pointerActive = true;
       const dx = event.clientX - (rect.left + rect.width / 2);
       const dy = event.clientY - (rect.top + rect.height / 2);
       const hoverRadius = Math.min(rect.width, rect.height) * 0.28;
       setCoreHovered(Math.hypot(dx, dy) <= hoverRadius);
     };
     const onCoreLeave = () => {
+      pointerActive = false;
+      pointerNdc.set(10, 10);
       setCoreHovered(false);
     };
     container.addEventListener('pointermove', onCoreMove, { passive: true });
@@ -245,6 +253,38 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       (edgeGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     };
 
+    const projectedNode = new THREE.Vector3();
+    const mixedColor = new THREE.Color();
+    const updateProximityColors = () => {
+      nodes.forEach((_, index) => {
+        projectedNode
+          .set(
+            nodePositions[index * 3],
+            nodePositions[index * 3 + 1],
+            nodePositions[index * 3 + 2],
+          )
+          .applyMatrix4(nodeCloud.matrixWorld)
+          .project(camera);
+        const distance = Math.hypot(
+          projectedNode.x - pointerNdc.x,
+          projectedNode.y - pointerNdc.y,
+        );
+        const influence = pointerActive ? Math.max(0, 1 - distance / 0.42) : 0;
+        nodeInfluence[index] = influence;
+        mixedColor.copy(nodeBaseColor).lerp(nodeHighlightColor, influence);
+        mixedColor.toArray(nodeColors, index * 3);
+      });
+
+      edgePairs.forEach(([from, to], index) => {
+        const influence = Math.max(nodeInfluence[from], nodeInfluence[to]);
+        mixedColor.copy(edgeBaseColor).lerp(edgeHighlightColor, influence * 0.9);
+        mixedColor.toArray(edgeColors, index * 6);
+        mixedColor.toArray(edgeColors, index * 6 + 3);
+      });
+      (nodeGeometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+      (edgeGeometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+    };
+
     const clock = new THREE.Clock();
     const render = () => {
       if (!inView || !pageVisible) return;
@@ -253,9 +293,7 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
 
       if (!reducedMotion) {
         hoverAmount += (hoverTarget - hoverAmount) * 0.055;
-        const activity = 1 + hoverAmount * 0.55;
-        const entrance = Math.min(1, elapsed / 1.8);
-        system.scale.setScalar(0.86 + entrance * 0.14);
+        const activity = 1;
         core.rotation.y += 0.00215 * activity;
         core.rotation.z += 0.0009 * activity;
         nodeCloud.rotation.y -= 0.00058 * activity;
@@ -265,10 +303,6 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
         halo.scale.setScalar(1 + Math.sin(elapsed * 0.41 + 1.2) * 0.07);
         haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012 + hoverAmount * 0.035;
         nodeMaterial.opacity = 0.9 + hoverAmount * 0.1;
-        system.rotation.y += (targetX - system.rotation.y) * 0.075;
-        system.rotation.x += (-targetY - system.rotation.x) * 0.075;
-        system.position.x += (targetX * 0.16 - system.position.x) * 0.06;
-        system.position.y += (-targetY * 0.12 - system.position.y) * 0.06;
 
         signals.forEach((signal, index) => {
           signal.progress += signal.speed * activity * (1 + Math.sin(elapsed * 0.3 + index) * 0.15);
@@ -299,6 +333,10 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
           );
         });
       }
+
+      system.updateMatrixWorld(true);
+      camera.updateMatrixWorld();
+      updateProximityColors();
 
       renderer.render(scene, camera);
       if (!reducedMotion) frame = requestAnimationFrame(render);
@@ -343,8 +381,6 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener('visibilitychange', handleVisibility);
-      pointerSurface.removeEventListener('pointermove', onPointerMove);
-      pointerSurface.removeEventListener('pointerleave', onPointerLeave);
       container.removeEventListener('pointermove', onCoreMove);
       container.removeEventListener('pointerleave', onCoreLeave);
       renderer.domElement.remove();

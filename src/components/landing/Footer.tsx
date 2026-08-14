@@ -5,37 +5,37 @@ import { LumoraBrand } from './LumoraBrand';
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-slate-800/80 bg-[#050810]/90 px-4 py-12 text-xs text-slate-400 backdrop-blur-sm sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+    <footer className="landing-footer relative border-t border-slate-800/70 px-4 py-10 text-xs text-slate-400 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
         {/* Brand Logo & Copyright */}
-        <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
+        <div className="flex flex-col items-center gap-2 sm:flex-row sm:gap-4">
           <Link to="/" className="group flex items-center space-x-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
             <LumoraBrand compact />
           </Link>
-          <span className="hidden sm:inline text-slate-700">|</span>
+          <span className="hidden h-4 w-px bg-slate-800 sm:inline" />
           <span className="text-slate-500">
             © {new Date().getFullYear()} Lumora. AI Knowledge Workspace.
           </span>
         </div>
 
         {/* Links */}
-        <div className="flex flex-wrap items-center justify-center gap-6">
+        <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
           <a
             href="https://github.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center space-x-1 rounded-md transition-all hover:-translate-y-0.5 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            <Github className="w-3.5 h-3.5" />
+            <Github className="h-3.5 w-3.5" strokeWidth={1.8} />
             <span>GitHub</span>
           </a>
           <a
             href="https://x.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center space-x-1 rounded-md transition-all hover:-translate-y-0.5 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            <Twitter className="w-3.5 h-3.5" />
+            <Twitter className="h-3.5 w-3.5" strokeWidth={1.8} />
             <span>X (Twitter)</span>
           </a>
           <Link
@@ -52,12 +52,12 @@ export function Footer() {
           </Link>
           <Link
             to="/contact"
-            className="flex items-center space-x-1 rounded-md transition-all hover:-translate-y-0.5 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            <Mail className="w-3.5 h-3.5" />
+            <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
             <span>Contact</span>
           </Link>
-        </div>
+        </nav>
       </div>
     </footer>
   );

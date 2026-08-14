@@ -71,8 +71,12 @@ export function HeroSection() {
         )
         .fromTo(
           cardsRef.current ? cardsRef.current.children : [],
-          { opacity: 0, y: 12 },
-          { opacity: 1, y: 0, stagger: 0.06, duration: 0.34 },
+          {
+            opacity: 0,
+            x: (index: number) => (index < 2 ? -16 : 16),
+            y: (index: number) => (index % 2 === 0 ? -8 : 8),
+          },
+          { opacity: 1, x: 0, y: 0, stagger: 0.07, duration: 0.36 },
           '-=0.2'
         );
     }, heroRef);

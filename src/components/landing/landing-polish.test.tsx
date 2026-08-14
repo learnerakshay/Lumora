@@ -12,14 +12,17 @@ function renderWithRouter(node: React.ReactNode): string {
   return renderToStaticMarkup(<MemoryRouter>{node}</MemoryRouter>);
 }
 
-test('feature grid content model contains exactly nine uniformly shaped entries', () => {
-  assert.equal(LANDING_FEATURES.length, 9);
+test('feature grid is curated to five hierarchical entries with consolidated ingestion', () => {
+  assert.equal(LANDING_FEATURES.length, 5);
+  assert.deepEqual(LANDING_FEATURES.map(({ id }) => id), ['chat', 'citations', 'ingestion', 'privacy', 'streaming']);
+  assert.equal(LANDING_FEATURES.filter(({ variant }) => variant === 'hero').length, 2);
+  assert.equal(LANDING_FEATURES.filter(({ variant }) => variant === 'supporting').length, 3);
   LANDING_FEATURES.forEach((feature) => {
     assert.ok(feature.icon);
     assert.ok(feature.title.length > 0);
     assert.ok(feature.description.length > 0);
-    assert.deepEqual(Object.keys(feature).sort(), ['description', 'icon', 'title']);
   });
+  assert.match(LANDING_FEATURES.find(({ id }) => id === 'ingestion')?.description || '', /PDFs.*websites.*YouTube.*plain text/i);
 });
 
 test('footer legal links resolve to dedicated routes', () => {
