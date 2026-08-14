@@ -532,6 +532,10 @@
     #040813;
 }
 
+.auth-star-field {
+  opacity: 0.82;
+}
+
 .auth-entry-horizon {
   z-index: 1;
   background:
@@ -545,8 +549,16 @@
   opacity: 0.7;
 }
 
+.auth-board-entrance {
+  animation: auth-board-enter 360ms var(--landing-ease) both;
+}
+
 .auth-board {
-  animation: auth-board-enter 800ms var(--landing-ease) both;
+  animation: auth-board-float 5.6s ease-in-out 420ms infinite;
+  box-shadow:
+    0 36px 110px rgba(2, 132, 199, 0.19),
+    0 16px 42px rgba(2, 8, 23, 0.68),
+    inset 0 1px 0 rgba(186, 230, 253, 0.055);
 }
 
 .auth-board::before {
@@ -566,14 +578,16 @@
   border-radius: 50%;
   background: transparent;
   box-shadow: 0 0 40px rgba(14, 165, 233, 0.12);
+  animation: auth-mark-glow 4.8s ease-in-out infinite;
 }
 
 .auth-hero-mark .lumora-brand-image {
   transform: scale(1.42) translateY(8%);
+  animation: auth-mark-rotate 18s linear infinite;
 }
 
 .auth-hero-mark:hover .lumora-brand-image {
-  transform: scale(1.47) translateY(8%);
+  transform: scale(1.42) translateY(8%);
 }
 
 .auth-secondary-button,
@@ -821,11 +835,37 @@
 @keyframes auth-board-enter {
   from {
     opacity: 0;
-    transform: translateY(20px) scale(0.985);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+  }
+}
+
+@keyframes auth-board-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes auth-mark-rotate {
+  to {
+    transform: scale(1.42) translateY(8%) rotate(360deg);
+  }
+}
+
+@keyframes auth-mark-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 32px rgba(14, 165, 233, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 48px rgba(14, 165, 233, 0.2);
   }
 }
 

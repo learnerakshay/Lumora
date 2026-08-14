@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { LandingAtmosphere } from '../landing/LandingAtmosphere';
 import { LumoraBrand } from '../landing/LumoraBrand';
+import { AuthStarField } from './AuthStarField';
 import '../landing/landing-motion.css';
 
 type AuthMode = 'sign-in' | 'sign-up';
@@ -43,14 +44,16 @@ export function AuthWelcomeBoard({
   const isSignIn = mode === 'sign-in';
 
   return (
-    <main className="auth-entry relative isolate flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-4 py-10 sm:px-6 sm:py-14">
+    <main className="auth-entry relative isolate flex min-h-[calc(100svh-4.5rem)] items-center justify-center overflow-hidden px-4 py-4 sm:px-6 sm:py-5">
       <LandingAtmosphere />
+      <AuthStarField />
       <div aria-hidden="true" className="auth-entry-horizon absolute inset-x-0 bottom-0 h-72" />
 
-      <section
-        aria-labelledby="auth-entry-title"
-        className="auth-board relative z-10 w-full max-w-xl overflow-hidden rounded-[2rem] border border-sky-500/45 bg-[#07101e]/88 px-5 py-8 text-center shadow-[0_30px_100px_rgba(2,132,199,0.18)] backdrop-blur-xl sm:px-10 sm:py-10"
-      >
+      <div className="auth-board-entrance relative z-10 w-full max-w-xl">
+        <section
+          aria-labelledby="auth-entry-title"
+          className="auth-board relative w-full overflow-hidden rounded-[2rem] border border-sky-500/45 bg-[#07101e]/88 px-5 py-8 text-center backdrop-blur-xl sm:px-10 sm:py-10"
+        >
         <div aria-hidden="true" className="auth-board-glow absolute inset-x-[18%] top-0 h-px bg-gradient-to-r from-transparent via-cyan-200 to-transparent" />
 
         <div className="mx-auto flex justify-center">
@@ -65,7 +68,7 @@ export function AuthWelcomeBoard({
             </span>
           </h1>
           <p className="font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-slate-400 sm:text-xs">
-            Your AI Knowledge Operating System
+            AI Knowledge Workspace
           </p>
           <p className="mx-auto max-w-md text-sm leading-6 text-slate-400 sm:text-base">
             Bring your learning materials together, organize them into Workspaces, and learn with grounded AI.
@@ -124,7 +127,8 @@ export function AuthWelcomeBoard({
           </button>
         </div>
 
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
