@@ -129,11 +129,47 @@ function inferredPlatform(url: URL): ResourcePlatform {
 
 function inferredType(source: WebSource, platform: ResourcePlatform): ResourceType {
   const value = `${source.title} ${source.url}`.toLowerCase();
+  if (/\b(?:\d+|top)\s+(?:best\s+)?(?:books?|courses?|resources?|tutorials?)\b|\bbest\s+(?:books?|courses?|resources?|tutorials?)\b/.test(value)) {
+    return 'article';
+  }
   if (value.includes('playlist')) return 'playlist';
   if (value.includes('docs') || value.includes('documentation')) return 'docs';
   if (value.includes('course')) return 'course';
   if (platform === 'YouTube') return 'video';
   return 'article';
+}
+
+export function discoveredQualityBoost(
+  source: WebSource,
+  platform: ResourcePlatform,
+  type: ResourceType,
+  useCase?: UseCase,
+): number {
+  let url: URL;
+  try {
+    url = new URL(source.url);
+  } catch {
+    return -10;
+  }
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const path = url.pathname.toLowerCase();
+  const text = `${source.title} ${source.snippet}`.toLowerCase();
+  const listicle = /\b(?:\d+|top)\s+(?:best\s+)?(?:books?|courses?|resources?|tutorials?)\b|\bbest\s+(?:books?|courses?|resources?|tutorials?)\b/.test(text);
+  const aggregator = /(?:^|\.)(?:classcentral\.com|sitepoint\.com)$/.test(host) ||
+    /\b(?:course catalog|course directory|learning resources directory)\b/.test(text);
+  const officialOrTutorial = /\b(?:official|documentation|tutorial|learn)\b/.test(text) ||
+    /\/(?:docs?|learn|tutorials?)(?:\/|$)/.test(path);
+  const genericLibraryPage = useCase === 'roadmap' &&
+    /\b(?:component library|design system|ui components?)\b/.test(text);
+  const directPath = /\/(?:course|learn|tutorials?|docs?)(?:\/|$)/.test(path);
+
+  return (platform === 'YouTube' ? 3 : 0) +
+    (['playlist', 'video', 'course'].includes(type) ? 1.5 : 0) +
+    (officialOrTutorial ? 2 : 0) +
+    (directPath ? 1 : 0) -
+    (listicle ? 5 : 0) -
+    (aggregator ? 2 : 0) -
+    (genericLibraryPage ? 2 : 0);
 }
 
 function isRecommendableDiscoveredUrl(url: URL, platform: ResourcePlatform): boolean {
@@ -220,6 +256,9 @@ function relevanceReason(
   resource: LearningResource | DiscoveredLearningResource,
   input: ResolveResourcesInput,
 ): string {
+  if (resource.sourceOrigin === 'CURATED') return resource.description;
+  const matchedTopic = input.topics.find((topic) => resource.topics.includes(topic));
+  const topic = matchedTopic ? matchedTopic.replace(/-/g, ' ') : 'your topic';
   if (input.language && resource.language === input.language) {
     return `${input.language === 'hi' ? 'Hindi' : 'English'} ${resource.type} matched to your learning goal.`;
   }
@@ -235,9 +274,10 @@ function relevanceReason(
     return 'A structured Udemy course matched to your learning goal.';
   }
   if (resource.type === 'playlist' || resource.type === 'course') {
-    return 'Structured coverage that fits a learning path.';
+    return `A direct ${resource.type} matched to your ${topic} learning goal.`;
   }
-  return 'Relevant to the topic and learning goal you asked about.';
+  if (resource.type === 'docs') return `Documentation matched to your ${topic} learning goal.`;
+  return `An external learning guide relevant to ${topic}.`;
 }
 
 function rankCandidate(
@@ -256,7 +296,9 @@ function rankCandidate(
   const platformMatch = Boolean(input.platform && details.platform === input.platform);
   const typeMatch = Boolean(input.resourceType && resource.type === input.resourceType);
   const deliveryMatch = Boolean(input.deliveryMode && resource.deliveryMode === input.deliveryMode);
-  const topicSpecificity = topicMatches / resource.topics.length;
+  const topicSpecificity = resource.topics.length > 0
+    ? topicMatches / resource.topics.length
+    : 0;
   const score = topicMatches * 5 +
     (useCaseMatch ? 3 : 0) +
     (languageMatch ? 2.5 : 0) +
@@ -316,15 +358,33 @@ function composeSoftly(resources: RankedResource[], limit: number): RankedResour
   const sorted = [...resources].sort((a, b) => b.score - a.score);
   const hasCurated = sorted.some(({ resource }) => resource.sourceOrigin === 'CURATED');
   const hasDiscovered = sorted.some(({ resource }) => resource.sourceOrigin === 'DISCOVERED');
-  if (!hasCurated || !hasDiscovered) return sorted.slice(0, limit);
+  if (!hasDiscovered) return sorted.slice(0, limit);
+  if (!hasCurated) {
+    const providerSeen = new Map<string, number>();
+    return sorted
+      .map((candidate) => {
+        const providerCount = providerSeen.get(candidate.providerName) || 0;
+        providerSeen.set(candidate.providerName, providerCount + 1);
+        return { candidate, adjustedScore: candidate.score - providerCount * 1.25 };
+      })
+      .sort((a, b) => b.adjustedScore - a.adjustedScore)
+      .slice(0, limit)
+      .map(({ candidate }) => candidate);
+  }
 
   let curatedSeen = 0;
+  const providerSeen = new Map<string, number>();
   const composed = sorted
     .map((candidate) => {
       const diversityPenalty = candidate.resource.sourceOrigin === 'CURATED'
         ? Math.max(0, curatedSeen++) * 2.25
         : 0;
-      return { candidate, adjustedScore: candidate.score - diversityPenalty };
+      const providerCount = providerSeen.get(candidate.providerName) || 0;
+      providerSeen.set(candidate.providerName, providerCount + 1);
+      return {
+        candidate,
+        adjustedScore: candidate.score - diversityPenalty - providerCount * 1.25,
+      };
     })
     .sort((a, b) => b.adjustedScore - a.adjustedScore)
     .slice(0, limit)
@@ -402,7 +462,13 @@ export async function resolveResources(
     .map((source) => {
       const normalized = normalizeDiscoveredResource(source, input, now());
       if (!normalized) return null;
-      return rankCandidate(normalized, input, rules, Math.max(0, Math.min(1, source.score)) * 2);
+      return rankCandidate(
+        normalized,
+        input,
+        rules,
+        Math.max(0, Math.min(1, source.score)) * 2 +
+          discoveredQualityBoost(source, normalized.platform, normalized.resource.type, input.useCase),
+      );
     })
     .filter((resource): resource is RankedResource => Boolean(resource));
 

@@ -31,6 +31,7 @@ import {
   reserveAssistantRegeneration,
   releaseAssistantRegeneration,
   replaceWorkspaceAssistantMessage,
+  attachWorkspaceMessageResources,
   ChatMessageConflictError,
   type StoredMessage,
 } from '../lib/chat/conversation-store';
@@ -67,6 +68,7 @@ import {
 import {
   externalWebSourcesAppendix,
   ExternalWebSafeStream,
+  sanitizeExternalWebLinks,
 } from '../lib/ai/web-attribution';
 import {
   AIActionError,
@@ -1338,10 +1340,22 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     const usedCitations = hasGroundedContext
       ? citationsUsedByResponse(generated.text, ragContext.citations)
       : [];
+    const safeGeneratedResponse = sanitizeExternalWebLinks(
+      generated.text,
+      generated.orchestration.webSources,
+      hasGroundedContext ? ragContext.citations : [],
+    );
+    if (safeGeneratedResponse.suppressedCount > 0) {
+      logger.warn('Suppressed unverified model-generated external links', {
+        workspaceId,
+        operationId,
+        suppressedCount: safeGeneratedResponse.suppressedCount,
+      });
+    }
     const webAppendix = externalWebSourcesAppendix(
       generated.orchestration.webSources,
     );
-    const finalResponse = `${generalPreamble}${generated.text}${webAppendix}`;
+    const finalResponse = `${generalPreamble}${safeGeneratedResponse.text}${webAppendix}`;
     if (webAppendix) externalWebSafeStream.push(webAppendix);
     externalWebSafeStream.finish(finalResponse);
     citationSafeStream?.finish(finalResponse);
@@ -1361,15 +1375,13 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       textOrigin: c.textOrigin,
     }));
     lifecyclePhase = 'persistence';
-    const resourceRecommendations = await resourceRecommendationsPromise;
-    const savedAssistantMessage = regenerationTurn
+    let savedAssistantMessage = regenerationTurn
       ? await replaceWorkspaceAssistantMessage({
           workspaceId,
           assistantMessageId: regenerationTurn.assistantMessage.id,
           content: finalResponse,
           mode,
           responseMode: responseMode || undefined,
-          resourceRecommendations,
           citations: persistedCitations,
         })
       : await replaceWorkspaceAssistantMessage({
@@ -1378,11 +1390,30 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           content: finalResponse,
           mode,
           responseMode: responseMode || undefined,
-          resourceRecommendations,
           citations: persistedCitations,
         });
     persistedAssistantMessage = savedAssistantMessage;
     assistantPersisted = true;
+    let resourceRecommendations = [];
+    try {
+      resourceRecommendations = await resourceRecommendationsPromise;
+      if (resourceRecommendations.length > 0) {
+        savedAssistantMessage = await attachWorkspaceMessageResources({
+          workspaceId,
+          assistantMessageId: savedAssistantMessage.id,
+          resourceRecommendations,
+        });
+        persistedAssistantMessage = savedAssistantMessage;
+      }
+    } catch (resourceError) {
+      resourceRecommendations = [];
+      logger.warn('Optional learning resource attachment failed closed', {
+        workspaceId,
+        operationId,
+        messageId: savedAssistantMessage.id,
+        reason: resourceError instanceof Error ? resourceError.name : 'unknown',
+      });
+    }
     await commitUsage(usageEventId, providerCompletionMetadata);
     usageEventId = null;
     regenerationReserved = false;

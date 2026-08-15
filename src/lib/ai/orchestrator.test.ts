@@ -169,6 +169,55 @@ test('orchestrator executes registered model requests and resumes generation', a
   );
 });
 
+test('tool execution reaches a terminal status before a downstream result callback can fail', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'echo',
+    description: 'Echo a value.',
+    parameters: { type: 'object' },
+    validate: (input) => input as { value: string },
+    execute: async ({ value }) => ({ value }),
+  });
+  let generation = 0;
+  const statuses: ToolStatusUpdate[] = [];
+  const orchestrator = new AIOrchestrator(registry, async () => {
+    generation += 1;
+    return generation === 1 ? result({ toolRequests: [request] }) : result({ text: 'unused' });
+  });
+  await assert.rejects(
+    () => orchestrator.run({
+      ...baseInput(),
+      onToolStatus: (status) => statuses.push(status),
+      onToolResult: () => { throw new Error('optional result consumer failed'); },
+    }),
+    /optional result consumer failed/,
+  );
+  assert.deepEqual(statuses.map(({ status }) => status), ['requested', 'running', 'completed']);
+});
+
+test('invalid tool arguments terminate as invalid and orchestration continues', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: 'echo',
+    description: 'Echo a value.',
+    parameters: { type: 'object' },
+    validate: () => { throw new Error('invalid value'); },
+    execute: async () => ({ unused: true }),
+  });
+  let generation = 0;
+  const statuses: ToolStatusUpdate[] = [];
+  const orchestrator = new AIOrchestrator(registry, async (input) => {
+    generation += 1;
+    if (generation === 1) return result({ toolRequests: [request] });
+    assert.equal(input.toolExecutions?.[0].response.status, 'invalid');
+    input.onTextDelta('Answer without tool enrichment.');
+    return result({ text: 'Answer without tool enrichment.' });
+  });
+  const output = await orchestrator.run({ ...baseInput(), onToolStatus: (status) => statuses.push(status) });
+  assert.equal(output.text, 'Answer without tool enrichment.');
+  assert.deepEqual(statuses.map(({ status }) => status), ['requested', 'running', 'invalid']);
+});
+
 test('empty registry preserves the direct no-tool generation path', async () => {
   let received: GenerateChatInput | undefined;
   const generate = async (input: GenerateChatInput) => {

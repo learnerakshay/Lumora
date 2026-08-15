@@ -20,8 +20,19 @@ test('recommendations persist in an optional additive JSON field across done and
   assert.match(schema, /resourceRecommendations Json\?/);
   assert.match(store, /resourceRecommendations: normalizeResourceRecommendations/);
   assert.match(store, /resourceRecommendations: data\.resourceRecommendations/);
-  assert.match(streamRoute, /resourceRecommendations,\s*citations: persistedCitations/);
+  assert.match(streamRoute, /attachWorkspaceMessageResources/);
+  assert.match(streamRoute, /Optional learning resource attachment failed closed/);
   assert.match(streamRoute, /message: savedAssistantMessage/);
+});
+
+test('durable assistant content precedes optional resource resolution and attachment', () => {
+  const persisted = streamRoute.indexOf('assistantPersisted = true');
+  const resourcesAwaited = streamRoute.indexOf('await resourceRecommendationsPromise', persisted);
+  const attached = streamRoute.indexOf('await attachWorkspaceMessageResources', persisted);
+  assert.ok(persisted > 0);
+  assert.ok(resourcesAwaited > persisted);
+  assert.ok(attached > resourcesAwaited);
+  assert.match(streamRoute, /sanitizeExternalWebLinks\(\s*generated\.text/);
 });
 
 test('the public card contract strips origin and score mechanics', () => {

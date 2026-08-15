@@ -250,6 +250,13 @@ export class AIOrchestrator {
         });
         toolExecutions.push({ request, response: execution.response });
         const record = { request, response: execution.response };
+        // Terminalize the visible tool state before optional result consumers.
+        // A downstream enrichment/SSE callback failure must never strand it as running.
+        input.onToolStatus?.({
+          requestId: request.id,
+          toolName: request.name,
+          status: execution.response.status,
+        });
         input.onToolResult?.(record);
         if (
           request.name === TAVILY_TOOL_NAME &&
@@ -267,11 +274,6 @@ export class AIOrchestrator {
               'empty_or_insufficient_search_results',
           });
         }
-        input.onToolStatus?.({
-          requestId: request.id,
-          toolName: request.name,
-          status: execution.response.status,
-        });
       }
     }
 

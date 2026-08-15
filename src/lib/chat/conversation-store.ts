@@ -714,6 +714,37 @@ export async function replaceWorkspaceAssistantMessage(data: {
   );
 }
 
+export async function attachWorkspaceMessageResources(data: {
+  workspaceId: string;
+  assistantMessageId: string;
+  resourceRecommendations: LearningResourceRecommendation[];
+}): Promise<StoredMessage> {
+  return prisma.$transaction(async (tx) => {
+    const assistant = await tx.message.findFirst({
+      where: {
+        id: data.assistantMessageId,
+        workspaceId: data.workspaceId,
+        role: 'ASSISTANT',
+        status: 'SUCCESS',
+      },
+      select: { id: true },
+    });
+    if (!assistant) {
+      throw new ChatMessageConflictError('The completed response is no longer available.');
+    }
+    const updated = await tx.message.update({
+      where: { id: assistant.id },
+      data: {
+        resourceRecommendations: data.resourceRecommendations.length > 0
+          ? (data.resourceRecommendations as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      },
+      include: { citations: { ...historicalCitationInclude } },
+    });
+    return toStoredMessage(updated);
+  });
+}
+
 export async function deleteWorkspaceQueryTurn(
   workspaceId: string,
   userMessageId: string,

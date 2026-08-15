@@ -7,6 +7,7 @@ import type { ResourceDiscoveryProvider } from './discovery';
 import { detectResourceIntent } from './normalization';
 import {
   clearResourceDiscoveryCache,
+  discoveredQualityBoost,
   normalizeDiscoveredResource,
   resolveResources,
 } from './resolver';
@@ -159,6 +160,80 @@ test('soft composition favors broader diversity without forcing irrelevant curat
   });
   assert.ok(broaderOnly.length > 0);
   assert.ok(broaderOnly.every(({ resource }) => resource.sourceOrigin === 'DISCOVERED'));
+});
+
+test('direct React learning sources outrank listicles and generic library pages deterministically', async () => {
+  const direct = webSource(1, {
+    title: 'Official React Tutorial',
+    url: 'https://react.dev/learn',
+    snippet: 'Official documentation and tutorial for learning React.',
+    score: 0.72,
+  });
+  const listicle = webSource(2, {
+    title: '16 Best React Courses and Resources',
+    url: 'https://www.classcentral.com/report/best-react-courses/',
+    snippet: 'A course catalog comparing the best React resources.',
+    score: 0.99,
+  });
+  const library = webSource(3, {
+    title: 'Material UI React component library',
+    url: 'https://mui.com/material-ui/getting-started/',
+    snippet: 'A design system and UI component library for React.',
+    score: 0.95,
+  });
+  assert.ok(
+    discoveredQualityBoost(direct, 'Website', 'docs', 'roadmap') >
+      discoveredQualityBoost(listicle, 'Website', 'article', 'roadmap'),
+  );
+  assert.ok(
+    discoveredQualityBoost(direct, 'Website', 'docs', 'roadmap') >
+      discoveredQualityBoost(library, 'Website', 'article', 'roadmap'),
+  );
+  const results = await resolveResources(input('I want to learn React. Give me a roadmap and the best resources.'), {
+    discovery: discovery([listicle, library, direct]),
+    resources: [],
+  });
+  assert.equal(results[0].resource.url, direct.url);
+});
+
+test('strong curated React resources remain competitive without forcing weak ecosystem matches', async () => {
+  const results = await resolveResources(input('I want to learn React. Give me a roadmap and the best resources.'), {
+    discovery: discovery([
+      webSource(1, {
+        title: 'Official React Tutorial',
+        url: 'https://react.dev/learn',
+        snippet: 'Official documentation and tutorial for learning React.',
+        score: 0.9,
+      }),
+      webSource(2, {
+        title: '13 Best React Books Courses and Communities',
+        url: 'https://sitepoint.com/best-react-resources/',
+        snippet: 'A list of React learning resources.',
+        score: 0.99,
+      }),
+    ]),
+  });
+  assert.ok(results.some(({ resource }) => resource.id === 'piyush-master-reactjs'));
+  assert.ok(results.some(({ resource }) => resource.sourceOrigin === 'DISCOVERED'));
+  assert.ok(results.every(({ resource }) => !resource.topics.includes('docker')));
+  const curated = results.find(({ resource }) => resource.id === 'piyush-master-reactjs');
+  assert.notEqual(curated?.reason, 'Structured coverage that fits a learning path.');
+});
+
+test('provider diversity breaks near-equal discovery ties when alternatives exist', async () => {
+  const results = await resolveResources({
+    ...input('Recommend a Kotlin learning course'),
+    limit: 3,
+  }, {
+    resources: [],
+    discovery: discovery([
+      webSource(1, { title: 'Kotlin Tutorial One', url: 'https://same.example.com/tutorial/one', score: 0.9 }),
+      webSource(2, { title: 'Kotlin Tutorial Two', url: 'https://same.example.com/tutorial/two', score: 0.89 }),
+      webSource(3, { title: 'Independent Kotlin Tutorial', url: 'https://other.example.com/tutorial/kotlin', score: 0.88 }),
+      webSource(4, { title: 'Third Kotlin Tutorial', url: 'https://third.example.com/tutorial/kotlin', score: 0.87 }),
+    ]),
+  });
+  assert.notEqual(results[0].providerName, results[1].providerName);
 });
 
 test('language, project use-case, and foundational format affect ranking without excluding alternatives', async () => {
