@@ -122,9 +122,10 @@ async function discover(
 }
 
 function inferredPlatform(url: URL): ResourcePlatform {
-  return ['youtube.com', 'www.youtube.com', 'youtu.be'].includes(url.hostname.toLowerCase())
-    ? 'YouTube'
-    : 'Website';
+  const host = url.hostname.toLowerCase();
+  if (['youtube.com', 'www.youtube.com', 'youtu.be'].includes(host)) return 'YouTube';
+  if (['udemy.com', 'www.udemy.com'].includes(host)) return 'Udemy';
+  return 'Website';
 }
 
 function inferredType(source: WebSource, platform: ResourcePlatform): ResourceType {
@@ -287,6 +288,16 @@ function rankCandidate(
   providerScore = 0,
 ): RankedResource {
   const { resource } = details;
+  const intentTerms = input.query.toLowerCase().match(/[a-z][a-z-]{2,}/g) || [];
+  const significantTerms = intentTerms.filter((term) => !new Set([
+    'best', 'good', 'great', 'recommend', 'recommendation', 'suggest', 'please',
+    'learn', 'learning', 'study', 'resource', 'resources', 'course', 'courses',
+    'tutorial', 'tutorials', 'playlist', 'playlists', 'series', 'udemy', 'youtube',
+    'with', 'from', 'for', 'the', 'and', 'that', 'this', 'about', 'free', 'paid',
+  ]).has(term));
+  const title = resource.title.toLowerCase();
+  const titleIntentMatches = [...new Set(significantTerms)]
+    .filter((term) => title.includes(term)).length;
   const topicMatches = input.topics.filter((topic) => resource.topics.includes(topic)).length;
   const useCaseMatch = Boolean(input.useCase && resource.useCases.includes(input.useCase));
   const languageMatch = Boolean(input.language && resource.language === input.language);
@@ -296,6 +307,15 @@ function rankCandidate(
   const platformMatch = Boolean(input.platform && details.platform === input.platform);
   const typeMatch = Boolean(input.resourceType && resource.type === input.resourceType);
   const deliveryMatch = Boolean(input.deliveryMode && resource.deliveryMode === input.deliveryMode);
+  const curatedVerificationBoost = resource.sourceOrigin === 'CURATED' ? 1.5 : 0;
+  const exactConstraintMatch = platformMatch || typeMatch || deliveryMatch ||
+    (accessMatch && resource.type === 'course');
+  const exactCuratedIntentBoost = resource.sourceOrigin === 'CURATED' &&
+    input.topics.length > 0 &&
+    topicMatches === input.topics.length &&
+    exactConstraintMatch
+    ? 5
+    : 0;
   const topicSpecificity = resource.topics.length > 0
     ? topicMatches / resource.topics.length
     : 0;
@@ -308,7 +328,10 @@ function rankCandidate(
     (platformMatch ? 3 : 0) +
     (typeMatch ? 3 : 0) +
     (deliveryMatch ? 2 : 0) +
+    titleIntentMatches * 1.25 +
     topicSpecificity * 2 +
+    curatedVerificationBoost +
+    exactCuratedIntentBoost +
     preferenceBoost(resource, input, rules) +
     providerScore;
   return {

@@ -23,6 +23,10 @@ test('detects every supplied positive learning/resource example', () => {
     'Where should I learn computer networks?',
     'Best Next.js course?',
     'Give me a full stack project to learn from.',
+    'Best YouTube series to learn JavaScript.',
+    'What should I follow to learn Node?',
+    'Give me free resources for Docker.',
+    'Best Udemy course for web development.',
   ];
   for (const prompt of positives) assert.equal(hasLearningResourceIntent(prompt), true, prompt);
 });
@@ -35,6 +39,24 @@ test('does not run discovery for explanation, debugging, or definition questions
     'What is a JavaScript promise?',
   ];
   for (const prompt of negatives) assert.equal(detectResourceIntent(prompt), null, prompt);
+});
+
+test('extracts explicit provider, playlist, and web-development intent without widening explanation queries', () => {
+  assert.deepEqual(detectResourceIntent('Best YouTube series to learn JavaScript.'), {
+    query: 'Best YouTube series to learn JavaScript.',
+    topics: ['javascript'],
+    useCase: 'roadmap',
+    platform: 'YouTube',
+    resourceType: 'playlist',
+  });
+  assert.deepEqual(detectResourceIntent('Best Udemy course for web development.'), {
+    query: 'Best Udemy course for web development.',
+    topics: ['full-stack'],
+    useCase: 'roadmap',
+    platform: 'Udemy',
+    resourceType: 'course',
+  });
+  assert.equal(detectResourceIntent('Explain JavaScript closures with a simple example.'), null);
 });
 
 test('derives topic, project use-case, and explicit language without an LLM', () => {

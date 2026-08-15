@@ -110,6 +110,10 @@ test('Udemy canonicalization collapses referral and coupon variants without chan
   const b = 'https://udemy.com/course/nodejs-backend/?couponCode=three';
   assert.equal(canonicalResourceUrl(a), canonicalResourceUrl(b));
   assert.equal(canonicalResourceUrl(a), 'https://udemy.com/course/nodejs-backend');
+  assert.equal(
+    canonicalResourceUrl('https://www.udemy.com/course/nodejs-backend/?couponCode=three'),
+    'https://udemy.com/course/nodejs-backend',
+  );
 
   const resources = structuredClone(CURATED_LEARNING_RESOURCES) as LearningResource[];
   const duplicate = structuredClone(resources.find(({ id }) => id === 'chaicode-udemy-nodejs-backend')!);
@@ -124,6 +128,36 @@ test('Udemy canonicalization collapses referral and coupon variants without chan
     providers: RESOURCE_PROVIDERS,
     resources,
   }), /Duplicate resource URL/);
+});
+
+test('cross-origin Udemy duplicates collapse to the curated course with verified metadata', async () => {
+  const discovered = {
+    title: 'Complete React and NextJS course with AI powered Projects - Udemy',
+    url: 'https://www.udemy.com/course/complete-react-and-nextjs-course-with-ai-powered-projects/?couponCode=other',
+    snippet: 'A React and Next.js course with AI powered projects.',
+    score: 0.99,
+  };
+  const results = await resolveResources(
+    input('Recommend a good paid Udemy course for React and Next.js with projects.'),
+    { discovery: { async discover() { return [discovered]; } } },
+  );
+  const matching = results.filter(({ resource }) =>
+    canonicalResourceUrl(resource.url) === canonicalResourceUrl(discovered.url));
+  assert.equal(matching.length, 1);
+  assert.equal(matching[0].resource.id, 'chaicode-udemy-react-nextjs-ai');
+  assert.equal(matching[0].resource.accessType, 'paid');
+  assert.equal(matching[0].creatorName, 'Hitesh Choudhary + Suraj Jha');
+});
+
+test('verified exact provider/type/topic matches take priority without a creator-specific rule', async () => {
+  const youtube = await resolveResources(input('Best YouTube series to learn JavaScript.'), { discovery: emptyDiscovery });
+  assert.equal(youtube[0].resource.id, 'hitesh-javascript-playlist');
+
+  const udemy = await resolveResources(input('Best Udemy course for web development.'), { discovery: emptyDiscovery });
+  assert.equal(udemy[0].resource.id, 'chaicode-udemy-web-development');
+
+  const cohort = await resolveResources(input('Is there a good GenAI JavaScript cohort?'), { discovery: emptyDiscovery });
+  assert.equal(cohort[0].resource.id, 'chaicode-genai-js-cohort');
 });
 
 test('registry rejects invalid organization ownership, fallback destinations, and offer identity', () => {

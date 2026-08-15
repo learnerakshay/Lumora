@@ -16,6 +16,8 @@ const TOPIC_ALIASES: ReadonlyArray<readonly [string, Topic]> = [
   ['operating systems', 'operating-systems'],
   ['operating system', 'operating-systems'],
   ['data science', 'data-science'],
+  ['web development', 'full-stack'],
+  ['web dev', 'full-stack'],
   ['openai agent sdk', 'ai-agents'],
   ['amazon web services', 'aws'],
   ['open source contribution', 'open-source'],
@@ -144,11 +146,13 @@ export function extractAccessType(value: string): ResourceAccessType | undefined
 
 export function extractPreferredPlatform(value: string): ResourcePlatform | undefined {
   if (/\budemy\b/i.test(value)) return 'Udemy';
+  if (/\byoutube\b|\byou\s*tube\b/i.test(value)) return 'YouTube';
   return undefined;
 }
 
 export function extractPreferredResourceType(value: string): ResourceType | undefined {
   if (/\bcohorts?\b/i.test(value)) return 'cohort';
+  if (/\b(?:series|playlists?)\b/i.test(value)) return 'playlist';
   if (/\budemy\b/i.test(value)) return 'course';
   return undefined;
 }
@@ -166,11 +170,13 @@ export function hasLearningResourceIntent(value: string): boolean {
     /\bwhere\s+should\s+i\s+(?:learn|study)\b/,
     /\b(?:recommend|suggest)\b.{0,80}\b(?:resource|course|playlist|video|tutorial|roadmap|project)\b/,
     /\b(?:best|good)\b.{0,60}\b(?:course|playlist|resource|tutorial|video)\b/,
+    /\b(?:best|good)\b.{0,80}\b(?:youtube|udemy|series|cohorts?)\b/,
     /\b(?:best|good)\b.{0,60}\bcohorts?\b/,
     /\b(?:roadmap|resources?|course|playlist)\b.{0,80}\b(?:learn|learning|study|begin|start|recommend)\b/,
     /\b(?:learn|learning|study)\b.{0,80}\b(?:roadmap|resources?|course|playlist|project|from)\b/,
     /\b(?:give|show)\s+me\b.{0,80}\b(?:roadmap|resources?|course|playlist|project)\b/,
     /\bwhat\s+should\s+i\s+learn\s+first\b/,
+    /\bwhat\s+should\s+i\s+follow\b.{0,80}\b(?:learn|study)\b/,
     /\b(?:develop|build|choose|improve|stop being)\b.{0,80}\b(?:developer mindset|development niche|tutorial[- ](?:only|dependent))\b/,
     /\b(?:serious|production[- ]style|resume)\b.{0,60}\bprojects?\b|\bprojects?\b.{0,60}\b(?:resume|prove .*skills?)\b/,
     /\bhow\s+(?:can|do)\s+i\s+prove\b.{0,50}\bskills?\b/,
@@ -178,6 +184,7 @@ export function hasLearningResourceIntent(value: string): boolean {
     /\b(?:new to|beginner in)\b.{0,60}\bwhere should i start\b/,
     /\b(?:want|need)\b.{0,80}\b(?:deployment|containerisation|containerization)\b.{0,40}\bproperly\b/,
     /\b(?:want|need)\b.{0,100}\bresources?\b/,
+    /\b(?:free|paid|premium)\b.{0,80}\b(?:resources?|courses?|playlists?|tutorials?)\b/,
     /\b(?:is|are)\s+there\b.{0,80}\bcohorts?\b/,
     /\b(?:want|need)\b.{0,80}\bcohorts?\b/,
   ].some((pattern) => pattern.test(normalized));
@@ -251,6 +258,8 @@ export const DOCUMENTED_TOPIC_ALIASES: Readonly<Record<string, Topic>> = {
   'data structures and algorithms': 'dsa',
   dsa: 'dsa',
   'data science': 'data-science',
+  'web development': 'full-stack',
+  'web dev': 'full-stack',
   kubernetes: 'kubernetes',
   k8s: 'kubernetes',
   devops: 'devops',

@@ -1034,6 +1034,7 @@ export function canonicalResourceUrl(value: string): string {
       url.searchParams.delete('si');
     }
   } else if (host === 'udemy.com' || host === 'www.udemy.com') {
+    url.hostname = 'udemy.com';
     url.search = '';
   }
   for (const key of [...url.searchParams.keys()]) {
