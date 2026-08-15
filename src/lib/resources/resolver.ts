@@ -129,14 +129,20 @@ function inferredPlatform(url: URL): ResourcePlatform {
 }
 
 function inferredType(source: WebSource, platform: ResourcePlatform): ResourceType {
+  const url = new URL(source.url);
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (platform === 'YouTube') {
+    if (url.pathname === '/playlist') return 'playlist';
+    return 'video';
+  }
+  if (platform === 'Udemy' && /^\/course\/[^/]+/.test(url.pathname)) return 'course';
+  if (host === 'reddit.com' || host === 'medium.com') return 'article';
   const value = `${source.title} ${source.url}`.toLowerCase();
   if (/\b(?:\d+|top)\s+(?:best\s+)?(?:books?|courses?|resources?|tutorials?)\b|\bbest\s+(?:books?|courses?|resources?|tutorials?)\b/.test(value)) {
     return 'article';
   }
-  if (value.includes('playlist')) return 'playlist';
   if (value.includes('docs') || value.includes('documentation')) return 'docs';
   if (value.includes('course')) return 'course';
-  if (platform === 'YouTube') return 'video';
   return 'article';
 }
 
@@ -156,8 +162,10 @@ export function discoveredQualityBoost(
   const path = url.pathname.toLowerCase();
   const text = `${source.title} ${source.snippet}`.toLowerCase();
   const listicle = /\b(?:\d+|top)\s+(?:best\s+)?(?:books?|courses?|resources?|tutorials?)\b|\bbest\s+(?:books?|courses?|resources?|tutorials?)\b/.test(text);
-  const aggregator = /(?:^|\.)(?:classcentral\.com|sitepoint\.com)$/.test(host) ||
+  const aggregator = /(?:^|\.)(?:classcentral\.com|sitepoint\.com|coursecity\.com)$/.test(host) ||
     /\b(?:course catalog|course directory|learning resources directory)\b/.test(text);
+  const communityThread = /(?:^|\.)(?:reddit\.com)$/.test(host);
+  const genericArticle = /(?:^|\.)(?:medium\.com)$/.test(host);
   const officialOrTutorial = /\b(?:official|documentation|tutorial|learn)\b/.test(text) ||
     /\/(?:docs?|learn|tutorials?)(?:\/|$)/.test(path);
   const genericLibraryPage = useCase === 'roadmap' &&
@@ -168,8 +176,10 @@ export function discoveredQualityBoost(
     (['playlist', 'video', 'course'].includes(type) ? 1.5 : 0) +
     (officialOrTutorial ? 2 : 0) +
     (directPath ? 1 : 0) -
-    (listicle ? 5 : 0) -
-    (aggregator ? 2 : 0) -
+    (listicle ? 6 : 0) -
+    (aggregator ? 4 : 0) -
+    (communityThread ? 6 : 0) -
+    (genericArticle ? 2.5 : 0) -
     (genericLibraryPage ? 2 : 0);
 }
 
@@ -226,7 +236,9 @@ export function normalizeDiscoveredResource(
     level: input.level || 'beginner',
     useCases: input.useCase ? [input.useCase] : ['roadmap'],
     ...(input.language ? { language: input.language } : {}),
-    accessType: 'free',
+    // Search metadata alone cannot establish a course's price. In particular,
+    // discovery results for Udemy must never be presented as free by default.
+    accessType: platform === 'Udemy' ? 'unknown' : 'free',
     status: 'ACTIVE',
     verifiedAt: now.toISOString(),
     description: source.snippet.trim().slice(0, 500),
@@ -314,7 +326,15 @@ function rankCandidate(
     input.topics.length > 0 &&
     topicMatches === input.topics.length &&
     exactConstraintMatch
-    ? 5
+    ? 7.5
+    : 0;
+  const projectProofMatch = input.useCase === 'project-proof' &&
+    resource.useCases.includes('project-proof') &&
+    resource.topics.includes('project-building');
+  const projectProofBoost = projectProofMatch ? 8 : 0;
+  const genericProjectCoursePenalty = input.useCase === 'project-proof' &&
+    !projectProofMatch && resource.type === 'course'
+    ? -2.5
     : 0;
   const topicSpecificity = resource.topics.length > 0
     ? topicMatches / resource.topics.length
@@ -332,6 +352,8 @@ function rankCandidate(
     topicSpecificity * 2 +
     curatedVerificationBoost +
     exactCuratedIntentBoost +
+    projectProofBoost +
+    genericProjectCoursePenalty +
     preferenceBoost(resource, input, rules) +
     providerScore;
   return {
@@ -440,7 +462,7 @@ export async function resolveResources(
 
   const curated = resources
     .filter((resource) => resource.status === 'ACTIVE')
-    .filter((resource) => input.accessType !== 'free' || resource.accessType === 'free')
+    .filter((resource) => !input.accessType || resource.accessType === input.accessType)
     .filter((resource) => input.topics.length > 0 && resource.topics.some((topic) => input.topics.includes(topic)))
     .map((resource) => {
       const provider = providers.find(({ id }) => id === resource.providerId);
@@ -495,7 +517,9 @@ export async function resolveResources(
     })
     .filter((resource): resource is RankedResource => Boolean(resource));
 
-  return composeSoftly(deduplicate([...curated, ...discovered]), limit);
+  const constrained = [...curated, ...discovered]
+    .filter((candidate) => !input.accessType || candidate.resource.accessType === input.accessType);
+  return composeSoftly(deduplicate(constrained), limit);
 }
 
 export function clearResourceDiscoveryCache(): void {

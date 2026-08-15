@@ -21,6 +21,17 @@ export function formatRecoveryTime(value: string | null, now = Date.now()): stri
   return `Capacity begins returning in ${relative} (${date.toLocaleString()}).`;
 }
 
+export function formatRecoveryLabel(value: string | null, now = Date.now()): string {
+  if (!value) return 'No capacity currently waiting to recover';
+  const date = new Date(value);
+  const remainingMs = date.getTime() - now;
+  if (remainingMs <= 0) return 'Capacity is available now';
+  const totalMinutes = Math.ceil(remainingMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `Next recovery in ${hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`}`;
+}
+
 export function UsageLimitNotice({
   details,
   onDismiss,

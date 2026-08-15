@@ -63,3 +63,20 @@ test('renders multiple instructors, delivery snapshots, and a restrained offer l
   assert.match(html, /referralCode=verified/);
   assert.doesNotMatch(html, />referralCode|>couponCode|guaranteed|forever/i);
 });
+
+test('uses type-specific labels while withholding an unverified access claim', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(LearningResourceSection, {
+      resources: [
+        { ...resource, id: 'video', type: 'video', title: 'A direct video' },
+        { ...resource, id: 'udemy', platform: 'Udemy', type: 'course', title: 'An unverified Udemy course', accessType: 'unknown' },
+        { ...resource, id: 'cohort', platform: 'Cohort', type: 'cohort', title: 'A recorded cohort', deliveryMode: 'RECORDED' },
+        { ...resource, id: 'docs', platform: 'Website', type: 'docs', title: 'Official documentation' },
+      ],
+    }),
+  );
+  assert.match(html, /Udemy course/);
+  assert.match(html, /Recorded/);
+  assert.match(html, /Official documentation/);
+  assert.doesNotMatch(html, /unknown<\/span>/i);
+});

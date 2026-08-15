@@ -52,7 +52,7 @@ export type ResourceLanguage = 'hi' | 'en' | 'mixed';
 export type ResourcePlatform = 'YouTube' | 'Udemy' | 'Cohort' | 'Website';
 export type ResourceType = 'video' | 'playlist' | 'course' | 'cohort' | 'digital-product' | 'article' | 'docs';
 export type ResourceLevel = 'beginner' | 'intermediate' | 'advanced';
-export type ResourceAccessType = 'free' | 'paid';
+export type ResourceAccessType = 'free' | 'paid' | 'unknown';
 export type ResourceLinkMode = 'DIRECT_RESOURCE' | 'PROVIDER_FALLBACK';
 export type ResourceDeliveryMode = 'LIVE' | 'RECORDED';
 
@@ -149,7 +149,7 @@ export interface LearningResourceRecommendation {
   reason: string;
   language?: ResourceLanguage;
   level: ResourceLevel;
-  accessType: 'free' | 'paid';
+  accessType: ResourceAccessType;
   deliveryMode?: ResourceDeliveryMode;
   offer?: {
     url: string;

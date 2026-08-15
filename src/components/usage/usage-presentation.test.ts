@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { UsageLimitReachedError, usageLimitFromPayload } from '../../lib/usage/client';
-import { formatRecoveryTime } from './UsageLimitNotice';
+import { formatRecoveryLabel, formatRecoveryTime } from './UsageLimitNotice';
 import { selectHeaderUsage } from '../../lib/usage/presentation';
 import type { UsageSummary } from '../../lib/usage/types';
 
@@ -33,6 +33,11 @@ test('rolling recovery wording is relative and never claims a daily reset', () =
   assert.match(wording, /4h 12m/);
   assert.doesNotMatch(wording, /reset|tomorrow/i);
   assert.match(formatRecoveryTime(null), /in-flight work/);
+  assert.equal(formatRecoveryLabel(null), 'No capacity currently waiting to recover');
+  assert.equal(
+    formatRecoveryLabel('2026-08-14T16:12:00.000Z', new Date('2026-08-14T12:00:00.000Z').getTime()),
+    'Next recovery in 4h 12m',
+  );
 });
 
 test('header displays one real quota instead of a fabricated combined denominator', () => {

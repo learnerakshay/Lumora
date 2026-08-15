@@ -149,7 +149,7 @@ function normalizeResourceRecommendations(
       !['YouTube', 'Udemy', 'Cohort', 'Website'].includes(item.platform) ||
       !['video', 'playlist', 'course', 'cohort', 'digital-product', 'article', 'docs'].includes(item.type) ||
       !['beginner', 'intermediate', 'advanced'].includes(item.level) ||
-      !['free', 'paid'].includes(item.accessType) ||
+      !['free', 'paid', 'unknown'].includes(item.accessType) ||
       (item.language !== undefined && !['hi', 'en', 'mixed'].includes(String(item.language))) ||
       (item.deliveryMode !== undefined && !['LIVE', 'RECORDED'].includes(String(item.deliveryMode)))
     ) return [];

@@ -38,6 +38,7 @@ import {
   type GenerationStatusInput,
 } from '../components/workspace/chat-presentation';
 import { UsageLimitNotice } from '../components/usage/UsageLimitNotice';
+import { WorkspaceUsageDrawer } from '../components/usage/WorkspaceUsageDrawer';
 import { notifyUsageChanged } from '../components/usage/UsageProvider';
 import {
   UsageLimitReachedError,
@@ -96,6 +97,7 @@ export function WorkspaceDetailPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [isUsageDrawerOpen, setIsUsageDrawerOpen] = useState(false);
   const [contextCitations, setContextCitations] = useState<StoredCitation[] | null>(null);
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
   const sourceRefreshRef = useRef(false);
@@ -906,6 +908,7 @@ export function WorkspaceDetailPage() {
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenAddSource={() => handleOpenAddSource()}
           onToggleContext={() => setIsContextOpen(true)}
+          onOpenUsage={() => setIsUsageDrawerOpen(true)}
           citationCount={availableCitations(latestCitations, visibleSources).length}
         />
         {usageLimit && (
@@ -953,6 +956,8 @@ export function WorkspaceDetailPage() {
           onCancelGeneration={handleCancelGeneration}
         />
       </main>
+
+      <WorkspaceUsageDrawer isOpen={isUsageDrawerOpen} onClose={() => setIsUsageDrawerOpen(false)} />
 
       <div className="hidden h-full shrink-0 xl:block">
         <WorkspaceContextPanel

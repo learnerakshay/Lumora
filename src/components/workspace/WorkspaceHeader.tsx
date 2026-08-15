@@ -26,6 +26,7 @@ interface WorkspaceHeaderProps {
   onOpenSettings: () => void;
   onOpenAddSource: () => void;
   onToggleContext: () => void;
+  onOpenUsage: () => void;
   citationCount: number;
 }
 
@@ -36,6 +37,7 @@ export function WorkspaceHeader({
   onOpenSettings,
   onOpenAddSource,
   onToggleContext,
+  onOpenUsage,
   citationCount,
 }: WorkspaceHeaderProps) {
   const { user } = useAuth();
@@ -134,7 +136,7 @@ export function WorkspaceHeader({
 
       {/* Right Actions & User Profile */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        <UsageIndicator compact />
+        <UsageIndicator compact onOpen={onOpenUsage} />
         <button
           type="button"
           onClick={onOpenAddSource}

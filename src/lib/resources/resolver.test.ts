@@ -103,6 +103,35 @@ test('normalizes only actual provider-returned HTTPS URLs as discovered resource
   );
 });
 
+test('classifies discovered resources from provider URL identity and keeps unverified Udemy access unknown', () => {
+  const intent = input('Recommend a JavaScript playlist');
+  const playlist = normalizeDiscoveredResource(
+    webSource(1, { title: 'A discussion about a playlist', url: 'https://youtube.com/playlist?list=PL123' }),
+    intent,
+    new Date(),
+  );
+  const video = normalizeDiscoveredResource(
+    webSource(2, { title: 'JavaScript playlist overview', url: 'https://youtube.com/watch?v=abc123' }),
+    intent,
+    new Date(),
+  );
+  const reddit = normalizeDiscoveredResource(
+    webSource(3, { title: 'My favorite playlist for JavaScript', url: 'https://www.reddit.com/r/javascript/comments/abc/thread/' }),
+    intent,
+    new Date(),
+  );
+  const udemy = normalizeDiscoveredResource(
+    webSource(4, { title: 'JavaScript course', url: 'https://www.udemy.com/course/javascript-course/?couponCode=maybe' }),
+    intent,
+    new Date(),
+  );
+  assert.equal(playlist?.resource.type, 'playlist');
+  assert.equal(video?.resource.type, 'video');
+  assert.equal(reddit?.resource.type, 'article');
+  assert.equal(udemy?.resource.type, 'course');
+  assert.equal(udemy?.resource.accessType, 'unknown');
+});
+
 test('provider timeout, malformed output, and empty output fail closed without breaking curated results', async () => {
   const throwing: ResourceDiscoveryProvider = { async discover() { throw new Error('timeout'); } };
   const curatedFallback = await resolveResources(input('I want to learn JavaScript'), { discovery: throwing });
@@ -143,6 +172,19 @@ test('deduplicates curated and discovery URLs with curated metadata taking prece
   const duplicates = results.filter(({ resource }) => resource.url === curated.url);
   assert.equal(duplicates.length, 1);
   assert.equal(duplicates[0].resource.sourceOrigin, 'CURATED');
+});
+
+test('exact curated YouTube matches outrank strong broader discovery results', async () => {
+  const results = await resolveResources(input('best youtube course to learn javascript'), {
+    discovery: discovery([
+      webSource(1, {
+        title: 'JavaScript Full Course for Beginners',
+        url: 'https://youtube.com/watch?v=strong-broader-result',
+        score: 0.99,
+      }),
+    ]),
+  });
+  assert.equal(results[0].resource.id, 'hitesh-javascript-playlist');
 });
 
 test('soft composition favors broader diversity without forcing irrelevant curated entries', async () => {
@@ -246,4 +288,13 @@ test('language, project use-case, and foundational format affect ranking without
 
   const foundational = await resolveResources(input('I want to learn JavaScript from the beginning'), { discovery: emptyDiscovery });
   assert.ok(['playlist', 'course'].includes(foundational[0].resource.type));
+});
+
+test('serious Next.js portfolio requests prioritize project-proof resources and relevant Suraj work', async () => {
+  const results = await resolveResources(
+    input('I know Next.js, but I need a serious project for my resume. Recommend projects and resources.'),
+    { discovery: emptyDiscovery },
+  );
+  assert.equal(results[0].resource.useCases.includes('project-proof'), true);
+  assert.ok(results.slice(0, 4).some(({ resource }) => resource.creatorId === 'suraj-jha'));
 });
