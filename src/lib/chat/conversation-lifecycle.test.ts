@@ -5,6 +5,7 @@ import {
   ChatTransportInterruptedError,
   ConversationOperationGate,
   ConversationStreamGuard,
+  mergeConversationSnapshot,
   parseConversationHistoryResponse,
   reconcileCompletedTurn,
   removeDeletedMessages,
@@ -37,6 +38,35 @@ function message(
 test('stale message snapshots cannot replace a newer completed local turn', () => {
   assert.equal(shouldApplyMessageSnapshot(3, 4), false);
   assert.equal(shouldApplyMessageSnapshot(4, 4), true);
+});
+
+test('Lifecycle E: a stale recovery snapshot cannot downgrade terminal SUCCESS', () => {
+  const completed = message('assistant-1', 'ASSISTANT', 'user-1', 'durable answer');
+  const staleError = {
+    ...completed,
+    content: 'The AI provider timed out before completing.',
+    responseMode: null,
+    status: 'ERROR' as const,
+  };
+  const staleSending = {
+    ...completed,
+    content: 'Response generation is in progress.',
+    responseMode: null,
+    status: 'SENDING' as const,
+  };
+  assert.deepEqual(mergeConversationSnapshot([completed], [staleError]), [completed]);
+  assert.deepEqual(mergeConversationSnapshot([completed], [staleSending]), [completed]);
+});
+
+test('Lifecycle D: completed hydration remains terminal and unchanged', () => {
+  const completed = message('assistant-1', 'ASSISTANT', 'user-1', 'durable answer');
+  const hydrated = parseConversationHistoryResponse(
+    { ok: true, status: 200 },
+    { success: true, data: [completed] },
+  );
+  assert.deepEqual(mergeConversationSnapshot([completed], hydrated), [completed]);
+  assert.equal(hydrated[0].status, 'SUCCESS');
+  assert.equal(hydrated[0].content, 'durable answer');
 });
 
 test('empty conversation history responses are valid initial Workspace states', () => {

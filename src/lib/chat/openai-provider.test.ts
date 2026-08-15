@@ -34,6 +34,40 @@ function streamResponse(events: object[], trailingDelimiter = true): Response {
   );
 }
 
+function delayedStreamResponse(
+  signal: AbortSignal | null | undefined,
+  events: Array<{ delayMs: number; event: object }>,
+): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        let settled = false;
+        const abort = () => {
+          if (settled) return;
+          settled = true;
+          controller.error(new DOMException('Aborted', 'AbortError'));
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+        void (async () => {
+          for (const { delayMs, event } of events) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            if (settled || signal?.aborted) return;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+            );
+          }
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener('abort', abort);
+          controller.close();
+        })();
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+  );
+}
+
 function input(signal = new AbortController().signal) {
   return {
     instructions: 'Use evidence.',
@@ -156,6 +190,43 @@ test('rejects a stream that closes without a completion event', async () => {
   }
 });
 
+test('Lifecycle A: active streaming can cross the old absolute timeout and completion disarms it', async () => {
+  const originalFetch = globalThis.fetch;
+  process.env.CHAT_REQUEST_TIMEOUT_MS = '1000';
+  let abortCount = 0;
+  globalThis.fetch = async (_url, request) => {
+    request?.signal?.addEventListener('abort', () => {
+      abortCount += 1;
+    });
+    return delayedStreamResponse(request?.signal, [
+      {
+        delayMs: 0,
+        event: { type: 'response.output_text.delta', sequence_number: 1, delta: 'Active ' },
+      },
+      {
+        delayMs: 600,
+        event: { type: 'response.output_text.delta', sequence_number: 2, delta: 'response' },
+      },
+      {
+        delayMs: 600,
+        event: {
+          type: 'response.completed',
+          sequence_number: 3,
+          response: { id: 'resp_active', status: 'completed' },
+        },
+      },
+    ]);
+  };
+  try {
+    const result = await generateGroundedResponse(input());
+    assert.equal(result.text, 'Active response');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert.equal(abortCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('provider requests use the selected Mode token ceiling and verbosity', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<Record<string, any>> = [];
@@ -272,7 +343,7 @@ test('classifies output-token exhaustion with safe terminal diagnostics', async 
   }
 });
 
-test('partial text followed by a genuine provider failure remains a failure', async () => {
+test('Lifecycle C: partial text followed by a genuine provider failure remains a failure', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     streamResponse([
@@ -358,7 +429,7 @@ test('fails explicitly after retryable provider errors', async () => {
   }
 });
 
-test('turns provider timeout into an explicit failure', async () => {
+test('Lifecycle B: genuine provider inactivity remains an explicit timeout failure', async () => {
   const originalFetch = globalThis.fetch;
   process.env.CHAT_REQUEST_TIMEOUT_MS = '1000';
   globalThis.fetch = async (_url, request) =>

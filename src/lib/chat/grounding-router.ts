@@ -16,6 +16,16 @@ export interface EvidenceSufficiencyAssessment {
   coveredTopicGroupCount: number;
 }
 
+interface GroundedHistoryMessage {
+  id: string;
+  parentMessageId: string | null;
+  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
+  content: string;
+  status: 'SENDING' | 'SUCCESS' | 'ERROR';
+  responseMode: ChatResponseMode | null;
+  citations?: unknown[];
+}
+
 export const NO_SOURCES_META_RESPONSE =
   "There are currently no sources in this Workspace. Add a PDF, website, YouTube video, or text note when you'd like answers grounded in your own material.";
 
@@ -41,14 +51,16 @@ const QUERY_SCAFFOLDING = new Set([
   'document', 'documents', 'engineering', 'engineer', 'example', 'examples',
   'explain', 'file', 'files', 'for', 'from', 'give', 'guide', 'have', 'help',
   'how', 'i', 'in', 'information', 'inside', 'interview', 'into', 'is', 'it',
-  'its', 'key', 'learn', 'learning', 'make', 'material', 'materials', 'me',
-  'my', 'note', 'notes', 'of', 'on', 'overview', 'plan', 'please', 'pros',
+  'important', 'its', 'key', 'learn', 'learning', 'make', 'material', 'materials',
+  'me', 'most', 'my', 'note', 'notes', 'of', 'on', 'one', 'ones', 'overview',
+  'pdf', 'pdfs', 'plan', 'please', 'pros',
   'implement', 'question', 'questions', 'roadmap', 'say', 'said', 'should',
   'show', 'source',
   'sources', 'step', 'steps', 'summarize', 'summary', 'takeaway', 'takeaways',
   'tell', 'that', 'the', 'their', 'these', 'this', 'to', 'understand', 'uploaded',
   'upload', 'use', 'using', 'versus', 'want', 'what', 'when', 'where', 'which',
-  'why', 'with', 'work', 'works', 'workspace', 'would', 'you', 'your',
+  'video', 'videos', 'website', 'websites', 'why', 'with', 'work', 'works',
+  'workspace', 'would', 'youtube', 'you', 'your',
 ]);
 
 const STEM_EXEMPTIONS = new Set([
@@ -107,6 +119,41 @@ function distinctiveTopicGroups(query: string): string[][] {
       )];
     })
     .filter((group) => group.length > 0);
+}
+
+export function normalizedDistinctiveTopicQuery(query: string): string | null {
+  const groups = distinctiveTopicGroups(query);
+  return groups.length > 0
+    ? groups.map((group) => group.join(' ')).join(' and ')
+    : null;
+}
+
+export function latestGroundedFollowUpTopicQuery(
+  messages: GroundedHistoryMessage[],
+): string | null {
+  const usersById = new Map(
+    messages
+      .filter((message) => message.role === 'USER')
+      .map((message) => [message.id, message]),
+  );
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const assistant = messages[index];
+    if (
+      assistant.role !== 'ASSISTANT' ||
+      assistant.status !== 'SUCCESS' ||
+      assistant.responseMode !== 'GROUNDED' ||
+      !assistant.parentMessageId ||
+      !assistant.citations?.length
+    ) {
+      continue;
+    }
+    const parent = usersById.get(assistant.parentMessageId);
+    const topicQuery = parent
+      ? normalizedDistinctiveTopicQuery(parent.content)
+      : null;
+    if (topicQuery) return topicQuery;
+  }
+  return null;
 }
 
 function requiredTopicMatches(group: string[]): number {

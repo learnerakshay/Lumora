@@ -62,6 +62,24 @@ export function shouldApplyMessageSnapshot(
   return requestedAtRevision === currentRevision;
 }
 
+export function mergeConversationSnapshot(
+  current: StoredMessage[],
+  incoming: StoredMessage[],
+): StoredMessage[] {
+  const currentById = new Map(current.map((message) => [message.id, message]));
+  return incoming.map((message) => {
+    const existing = currentById.get(message.id);
+    if (!existing) return message;
+    if (existing.status === 'SUCCESS' && message.status !== 'SUCCESS') {
+      return existing;
+    }
+    if (existing.status === 'ERROR' && message.status === 'SENDING') {
+      return existing;
+    }
+    return message;
+  });
+}
+
 export class ChatTransportInterruptedError extends Error {
   constructor(message = 'The chat response transport ended before a terminal event.') {
     super(message);

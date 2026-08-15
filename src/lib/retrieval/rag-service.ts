@@ -673,7 +673,7 @@ function citationLocation(citation: RAGCitation): string {
 export function buildRAGContext(
   retrievedChunks: RetrievedChunk[],
   _query: string,
-  _mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'DETAILED',
+  _mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE' = 'CONCISE',
   options: ContextOptions = {},
 ): RAGContextResult {
   const tokenBudget = Math.max(Math.floor(options.tokenBudget || DEFAULT_CONTEXT_TOKEN_BUDGET), 1);

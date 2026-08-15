@@ -185,12 +185,24 @@ export async function generateGroundedResponse(
 
   const timeoutController = new AbortController();
   let timedOut = false;
+  let providerCompleted = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   const abortForCaller = () => timeoutController.abort();
   input.signal.addEventListener('abort', abortForCaller, { once: true });
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    timeoutController.abort();
-  }, env.CHAT_REQUEST_TIMEOUT_MS);
+  const clearProviderTimeout = () => {
+    if (timeout) clearTimeout(timeout);
+    timeout = undefined;
+  };
+  const armProviderTimeout = () => {
+    clearProviderTimeout();
+    if (providerCompleted || timeoutController.signal.aborted) return;
+    timeout = setTimeout(() => {
+      if (providerCompleted || timeoutController.signal.aborted) return;
+      timedOut = true;
+      timeoutController.abort();
+    }, env.CHAT_REQUEST_TIMEOUT_MS);
+  };
+  armProviderTimeout();
 
   const modeContract = getResponseModeContract(input.mode);
   const continuationInput = (input.toolExecutions || []).flatMap(({ request, response }) => [
@@ -280,6 +292,7 @@ export async function generateGroundedResponse(
     };
 
     const handleEvent = (event: OpenAIStreamEvent) => {
+      armProviderTimeout();
       if (
         Number.isInteger(event.sequence_number) &&
         seenSequences.has(event.sequence_number!)
@@ -332,6 +345,9 @@ export async function generateGroundedResponse(
           };
         }
         completed = true;
+        providerCompleted = true;
+        timedOut = false;
+        clearProviderTimeout();
         return;
       }
       if (event.type === 'response.refusal.delta') {
@@ -440,7 +456,7 @@ export async function generateGroundedResponse(
       ...(usage ? { usage } : {}),
     };
   } catch (error) {
-    if (timedOut) {
+    if (timedOut && !providerCompleted) {
       const timeoutError = new ChatProviderError(
         'The AI provider timed out before completing.',
         'OPENAI_TIMEOUT',
@@ -464,7 +480,7 @@ export async function generateGroundedResponse(
     });
     throw error;
   } finally {
-    clearTimeout(timeout);
+    clearProviderTimeout();
     input.signal.removeEventListener('abort', abortForCaller);
     await reader?.cancel().catch(() => undefined);
   }

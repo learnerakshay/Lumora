@@ -398,7 +398,7 @@ export async function createWorkspaceMessage(data: {
           parentMessageId: data.parentMessageId,
           role: data.role,
           content: data.content,
-          mode: data.mode || 'DETAILED',
+          mode: data.mode || 'CONCISE',
           responseMode: data.role === 'ASSISTANT' ? data.responseMode : undefined,
           status: data.status || 'SUCCESS',
           action:

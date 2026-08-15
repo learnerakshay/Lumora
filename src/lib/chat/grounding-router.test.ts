@@ -3,7 +3,9 @@ import test from 'node:test';
 import {
   assessWorkspaceEvidenceSufficiency,
   isWorkspaceMetaQuestion,
+  latestGroundedFollowUpTopicQuery,
   NO_SOURCES_META_RESPONSE,
+  normalizedDistinctiveTopicQuery,
   selectInitialChatRoute,
   selectResponseModeAfterRetrieval,
 } from './grounding-router';
@@ -98,6 +100,104 @@ test('C2: semantically retrieved evidence still grounds when it covers the topic
       isWorkspaceMeta: false,
     }),
     'GROUNDED',
+  );
+});
+
+test('C1/C2/C3: real DSA topic phrases remain answerable without request adjectives', () => {
+  const fixtures = [
+    {
+      query: 'What are the most important interview questions for Linked List?',
+      topic: 'linked list',
+      content: 'Linked List questions include reversal, cycle detection, and merging sorted lists.',
+    },
+    {
+      query: 'What are the most important Binary Tree questions?',
+      topic: 'binary tree',
+      content: 'Binary Tree practice covers traversals, height, diameter, and lowest common ancestor.',
+    },
+    {
+      query: 'Give me the key Dynamic Programming interview questions.',
+      topic: 'dynamic programming',
+      content: 'Dynamic Programming questions cover knapsack, subsequences, and grid paths.',
+    },
+  ];
+  for (const fixture of fixtures) {
+    assert.equal(normalizedDistinctiveTopicQuery(fixture.query), fixture.topic);
+    assert.equal(
+      assessWorkspaceEvidenceSufficiency(
+        fixture.topic,
+        [evidence(fixture.content, 'DSA Mastery')],
+      ).sufficient,
+      true,
+      fixture.query,
+    );
+  }
+});
+
+test('bounded recovery can promote a missed deep-section topic without loosening Case D', () => {
+  const query = 'What are the most important interview questions for Linked List?';
+  const recoveryQuery = normalizedDistinctiveTopicQuery(query);
+  assert.equal(recoveryQuery, 'linked list');
+  const initial = [
+    evidence('Arrays, sorting, hashing, and graph interview questions.', 'DSA Mastery'),
+  ];
+  const recovered = [
+    evidence('Linked List reversal, cycle detection, and merge questions.', 'DSA Mastery'),
+    ...initial,
+  ];
+  assert.equal(
+    assessWorkspaceEvidenceSufficiency(recoveryQuery!, initial).sufficient,
+    false,
+  );
+  assert.equal(
+    assessWorkspaceEvidenceSufficiency(recoveryQuery!, recovered).sufficient,
+    true,
+  );
+  assert.equal(
+    assessWorkspaceEvidenceSufficiency(
+      'kubernetes',
+      recovered,
+    ).sufficient,
+    false,
+  );
+});
+
+test('a contextual follow-up reuses only the latest genuinely grounded topic', () => {
+  const priorUser = {
+    id: 'user-linked-list',
+    workspaceId: 'workspace-1',
+    parentMessageId: null,
+    role: 'USER' as const,
+    content: 'Explain linked lists from my PDF.',
+    mode: 'CONCISE' as const,
+    responseMode: null,
+    status: 'SUCCESS' as const,
+    action: null,
+    createdAt: new Date().toISOString(),
+  };
+  const priorAssistant = {
+    ...priorUser,
+    id: 'assistant-linked-list',
+    parentMessageId: priorUser.id,
+    role: 'ASSISTANT' as const,
+    content: 'A grounded explanation.',
+    responseMode: 'GROUNDED' as const,
+    citations: [{ id: 'citation-1' }],
+  };
+  assert.equal(
+    normalizedDistinctiveTopicQuery('What are the most important ones for interviews?'),
+    null,
+  );
+  assert.equal(
+    latestGroundedFollowUpTopicQuery([priorUser, priorAssistant]),
+    'linked list',
+  );
+  assert.equal(
+    assessWorkspaceEvidenceSufficiency(
+      'linked list',
+      [evidence('Important Linked List interview problems.', 'DSA Mastery')],
+    ).sufficient,
+    true,
   );
 });
 

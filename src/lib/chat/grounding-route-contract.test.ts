@@ -9,6 +9,14 @@ const routeSource = readFileSync(
 const streamRoute = routeSource.slice(
   routeSource.indexOf("workspaceRouter.post('/:id/chat/stream'"),
 );
+const conversationStoreSource = readFileSync(
+  new URL('./conversation-store.ts', import.meta.url),
+  'utf8',
+);
+const workspacePageSource = readFileSync(
+  new URL('../../pages/WorkspaceDetailPage.tsx', import.meta.url),
+  'utf8',
+);
 
 test('normal chat keeps one shared CHAT reservation boundary for both response modes', () => {
   assert.equal((streamRoute.match(/checkAndReserve\(/g) || []).length, 1);
@@ -40,7 +48,7 @@ test('Case C keeps the existing retrieval threshold, citation filter, and durabl
 });
 
 test('Case D requires complete evidence coverage before exposing Workspace context or citations', () => {
-  assert.match(streamRoute, /assessWorkspaceEvidenceSufficiency\(retrievalQuery, ragContext\.chunks\)/);
+  assert.match(streamRoute, /assessWorkspaceEvidenceSufficiency\(answerabilityQuery, ragContext\.chunks\)/);
   assert.match(
     streamRoute,
     /const hasGroundedContext = responseMode === 'GROUNDED' && ragContext\.hasContext/,
@@ -56,6 +64,40 @@ test('Case D requires complete evidence coverage before exposing Workspace conte
   );
   assert.match(streamRoute, /citations: persistedCitations/);
   assert.match(streamRoute, /hasWorkspaceContext: hasGroundedContext/);
+});
+
+test('insufficient topic evidence gets exactly one bounded owned-Workspace recovery search', () => {
+  assert.match(streamRoute, /const recoveryQuery = requestedTopicQuery \|\| followUpTopicQuery/);
+  assert.equal((streamRoute.match(/searchWorkspaceChunks\(/g) || []).length, 3);
+  assert.match(
+    streamRoute,
+    /searchWorkspaceChunks\(\s*workspaceId,\s*res\.locals\.userId,\s*recoveryQuery,\s*\{ topK: 5, threshold: 0\.15 \}/,
+  );
+  assert.match(streamRoute, /\.slice\(0, 10\)/);
+  assert.match(
+    streamRoute,
+    /evidenceSufficiency = assessWorkspaceEvidenceSufficiency\(\s*answerabilityQuery,\s*ragContext\.chunks/,
+  );
+  assert.equal((streamRoute.match(/checkAndReserve\(/g) || []).length, 1);
+});
+
+test('durable assistant success is terminal across post-persistence failures', () => {
+  assert.match(streamRoute, /assistantPersisted && persistedAssistantMessage && savedUserMessage/);
+  assert.match(streamRoute, /Post-persistence chat finalization failed; preserving durable success/);
+  const replaceStart = conversationStoreSource.indexOf(
+    'export async function replaceWorkspaceAssistantMessage',
+  );
+  const replaceEnd = conversationStoreSource.indexOf(
+    'export async function deleteWorkspaceQueryTurn',
+    replaceStart,
+  );
+  const replaceFunction = conversationStoreSource.slice(replaceStart, replaceEnd);
+  assert.match(replaceFunction, /status: 'SENDING'/);
+  assert.match(replaceFunction, /throw new ChatMessageConflictError/);
+  assert.match(
+    workspacePageSource,
+    /data\.type === 'error'[\s\S]*?if \(completedResponse\) continue/,
+  );
 });
 
 test('auth and Workspace ownership middleware still guard the shared chat route', () => {

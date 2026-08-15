@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   AI_MODE_OPTIONS,
@@ -22,6 +23,20 @@ test('AI mode menu exposes the four existing response modes with concise descrip
     'CREATIVE',
   ]);
   assert.ok(AI_MODE_OPTIONS.every((mode) => mode.description.length > 0));
+});
+
+test('fresh composer and application fallbacks default coherently to Concise', () => {
+  const composer = readFileSync(new URL('./WorkspacePromptComposer.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../../pages/WorkspaceDetailPage.tsx', import.meta.url), 'utf8');
+  const route = readFileSync(new URL('../../routes/workspaces.ts', import.meta.url), 'utf8');
+  const store = readFileSync(new URL('../../lib/chat/conversation-store.ts', import.meta.url), 'utf8');
+  const rag = readFileSync(new URL('../../lib/retrieval/rag-service.ts', import.meta.url), 'utf8');
+  assert.match(composer, /useState<AnswerMode>\('CONCISE'\)/);
+  assert.match(page, /mode: AnswerMode = 'CONCISE'/);
+  assert.match(route, /mode: requestedMode = 'CONCISE'/);
+  assert.match(store, /mode: data\.mode \|\| 'CONCISE'/);
+  assert.match(rag, /_mode: 'CONCISE' \| 'DETAILED' \| 'CRITICAL' \| 'CREATIVE' = 'CONCISE'/);
+  assert.doesNotMatch(composer, /useState<AnswerMode>\('DETAILED'\)/);
 });
 
 test('citation marker presentation preserves citation numbering and surrounding text', () => {

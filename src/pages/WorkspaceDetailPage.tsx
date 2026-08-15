@@ -7,6 +7,7 @@ import {
   ConversationStreamGuard,
   ChatTransportInterruptedError,
   parseConversationHistoryResponse,
+  mergeConversationSnapshot,
   reconcileCompletedTurn,
   removeDeletedMessages,
   replaceCompletedAssistant,
@@ -180,7 +181,7 @@ export function WorkspaceDetailPage() {
           conversationRevisionRef.current,
         )
       ) {
-        setMessages(nextMessages);
+        setMessages((current) => mergeConversationSnapshot(current, nextMessages));
         setHistoryError(null);
       }
     } catch (err: any) {
@@ -258,7 +259,7 @@ export function WorkspaceDetailPage() {
   // Chat Streaming Submission Handler
   const handleSubmitMessage = async (
     promptText: string,
-    mode: AnswerMode = 'DETAILED',
+    mode: AnswerMode = 'CONCISE',
     action?: AIActionRequest,
     regenerateAssistant?: StoredMessage,
   ) => {
@@ -488,6 +489,7 @@ export function WorkspaceDetailPage() {
               notifyUsageChanged();
             } else if (data.type === 'error') {
               terminalEventReceived = true;
+              if (completedResponse) continue;
               if (!isCurrentOperation()) continue;
               if (
                 !isRegeneration &&
@@ -792,7 +794,7 @@ export function WorkspaceDetailPage() {
   const generationStatusLabel = chatIsGenerating
     ? getGenerationStatusLabel(
         activeGenerationStatus || persistedGenerationStatus || {
-          mode: 'DETAILED',
+          mode: 'CONCISE',
           phase: 'GENERATING',
         },
       )

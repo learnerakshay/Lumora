@@ -33,7 +33,7 @@ export function WorkspacePromptComposer({
   onCancelGeneration,
 }: WorkspacePromptComposerProps) {
   const [promptText, setPromptText] = useState('');
-  const [selectedMode, setSelectedMode] = useState<AnswerMode>('DETAILED');
+  const [selectedMode, setSelectedMode] = useState<AnswerMode>('CONCISE');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const maxLength = 4000;
   const maxTextareaHeight = 176;

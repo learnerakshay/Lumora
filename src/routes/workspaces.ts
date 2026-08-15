@@ -51,7 +51,9 @@ import {
   GENERAL_FALLBACK_PREAMBLE,
   assessWorkspaceEvidenceSufficiency,
   isWorkspaceMetaQuestion,
+  latestGroundedFollowUpTopicQuery,
   NO_SOURCES_META_RESPONSE,
+  normalizedDistinctiveTopicQuery,
   selectInitialChatRoute,
   selectResponseModeAfterRetrieval,
 } from '../lib/chat/grounding-router';
@@ -723,7 +725,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   const workspaceId = res.locals.workspace.id;
   const {
     message,
-    mode: requestedMode = 'DETAILED',
+    mode: requestedMode = 'CONCISE',
     action: requestedAction,
     regenerateMessageId,
     operationId: requestedOperationId,
@@ -932,6 +934,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       }
     | undefined;
   let assistantPersisted = false;
+  let persistedAssistantMessage: StoredMessage | null = null;
   const operationId =
     typeof requestedOperationId === 'string' ? requestedOperationId : randomUUID();
   const generationController = new AbortController();
@@ -1102,8 +1105,15 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       throw retrievalError;
     }
     lifecyclePhase = 'citation_validation';
-    const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
-    const evidenceSufficiency =
+    let ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
+    const requestedTopicQuery = actionPlan || workspaceMetaQuestion
+      ? null
+      : normalizedDistinctiveTopicQuery(retrievalQuery);
+    const followUpTopicQuery = requestedTopicQuery
+      ? null
+      : latestGroundedFollowUpTopicQuery(recentHistory);
+    const answerabilityQuery = requestedTopicQuery || followUpTopicQuery || retrievalQuery;
+    let evidenceSufficiency =
       actionPlan || workspaceMetaQuestion
         ? {
             sufficient: ragContext.hasContext,
@@ -1111,7 +1121,42 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             topicGroupCount: 0,
             coveredTopicGroupCount: 0,
           }
-        : assessWorkspaceEvidenceSufficiency(retrievalQuery, ragContext.chunks);
+        : assessWorkspaceEvidenceSufficiency(answerabilityQuery, ragContext.chunks);
+    const recoveryQuery = requestedTopicQuery || followUpTopicQuery;
+    if (
+      !actionPlan &&
+      !workspaceMetaQuestion &&
+      !evidenceSufficiency.sufficient &&
+      recoveryQuery
+    ) {
+      lifecyclePhase = 'retrieval';
+      const recoveryChunks = await searchWorkspaceChunks(
+        workspaceId,
+        res.locals.userId,
+        recoveryQuery,
+        { topK: 5, threshold: 0.15 },
+      );
+      const recoveredChunkIds = new Set(recoveryChunks.map(({ id }) => id));
+      retrievedChunks = [
+        ...recoveryChunks,
+        ...retrievedChunks.filter(({ id }) => !recoveredChunkIds.has(id)),
+      ].slice(0, 10);
+      lifecyclePhase = 'citation_validation';
+      ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
+      evidenceSufficiency = assessWorkspaceEvidenceSufficiency(
+        answerabilityQuery,
+        ragContext.chunks,
+      );
+      logger.info('Completed bounded Workspace evidence recovery', {
+        workspaceId,
+        operationId,
+        recoveredChunkCount: recoveryChunks.length,
+        combinedChunkCount: ragContext.chunks.length,
+        sufficient: evidenceSufficiency.sufficient,
+        topicGroupCount: evidenceSufficiency.topicGroupCount,
+        coveredTopicGroupCount: evidenceSufficiency.coveredTopicGroupCount,
+      });
+    }
     const responseMode =
       initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL'
         ? initialChatRoute.responseMode
@@ -1310,6 +1355,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           responseMode: responseMode || undefined,
           citations: persistedCitations,
         });
+    persistedAssistantMessage = savedAssistantMessage;
     assistantPersisted = true;
     await commitUsage(usageEventId, providerCompletionMetadata);
     usageEventId = null;
@@ -1370,6 +1416,24 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           providerCompleted: Boolean(providerCompletionMetadata),
         });
       }
+    }
+    if (assistantPersisted && persistedAssistantMessage && savedUserMessage) {
+      logger.error('Post-persistence chat finalization failed; preserving durable success', err, {
+        workspaceId,
+        operationId,
+        messageId: persistedAssistantMessage.id,
+        transportDisconnected,
+      });
+      sendEvent({
+        type: 'done',
+        messageId: persistedAssistantMessage.id,
+        userMessage: savedUserMessage,
+        message: persistedAssistantMessage,
+        citations: persistedAssistantMessage.citations || [],
+        responseMode: persistedAssistantMessage.responseMode,
+        regenerated: Boolean(regenerationTurn),
+      });
+      return;
     }
     const failure = classifyChatLifecycleFailure(
       err,
