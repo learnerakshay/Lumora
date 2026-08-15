@@ -1,5 +1,21 @@
 import type { ChatResponseMode } from '../../types';
 
+export interface AnswerabilityEvidence {
+  content: string;
+  sourceTitle: string;
+}
+
+export interface EvidenceSufficiencyAssessment {
+  sufficient: boolean;
+  reason:
+    | 'no_context'
+    | 'semantic_only_query'
+    | 'complete_topic_coverage'
+    | 'missing_topic_coverage';
+  topicGroupCount: number;
+  coveredTopicGroupCount: number;
+}
+
 export const NO_SOURCES_META_RESPONSE =
   "There are currently no sources in this Workspace. Add a PDF, website, YouTube video, or text note when you'd like answers grounded in your own material.";
 
@@ -16,6 +32,147 @@ const UPLOAD_INTENT =
   /\bwhat\s+(?:did|have)\s+i\s+upload(?:ed)?\b|\bwhat(?:'s|\s+is)\s+(?:been\s+)?uploaded\b/i;
 const SOURCE_CONTENT_INTENT =
   /\bwhat(?:'s|\s+is|\s+are)\s+(?:in|inside|contained\s+in)\s+(?:my|the|this)\s+(?:sources?|documents?|docs?|notes?|files?|workspace)\b/i;
+
+const QUERY_SCAFFOLDING = new Set([
+  'a', 'about', 'according', 'an', 'answer', 'answers', 'are', 'as', 'at', 'be',
+  'become', 'beginner', 'best', 'between', 'build', 'can', 'compare', 'concept',
+  'concepts', 'content', 'contents', 'could', 'create', 'describe', 'did',
+  'difference', 'differences', 'do', 'does',
+  'document', 'documents', 'engineering', 'engineer', 'example', 'examples',
+  'explain', 'file', 'files', 'for', 'from', 'give', 'guide', 'have', 'help',
+  'how', 'i', 'in', 'information', 'inside', 'interview', 'into', 'is', 'it',
+  'its', 'key', 'learn', 'learning', 'make', 'material', 'materials', 'me',
+  'my', 'note', 'notes', 'of', 'on', 'overview', 'plan', 'please', 'pros',
+  'implement', 'question', 'questions', 'roadmap', 'say', 'said', 'should',
+  'show', 'source',
+  'sources', 'step', 'steps', 'summarize', 'summary', 'takeaway', 'takeaways',
+  'tell', 'that', 'the', 'their', 'these', 'this', 'to', 'understand', 'uploaded',
+  'upload', 'use', 'using', 'versus', 'want', 'what', 'when', 'where', 'which',
+  'why', 'with', 'work', 'works', 'workspace', 'would', 'you', 'your',
+]);
+
+const STEM_EXEMPTIONS = new Set([
+  'css', 'dsa', 'devops', 'html', 'kubernetes', 'mlops', 'redis', 'sass',
+]);
+
+function normalizeKnownCompounds(value: string): string {
+  return value
+    .replace(/\bback[\s-]?end\b/gi, 'backend')
+    .replace(/\bfront[\s-]?end\b/gi, 'frontend')
+    .replace(/\bmachine[\s-]+learning[\s-]+operations\b/gi, 'mlops')
+    .replace(/\bdata[\s-]+structures?\s+(?:and\s+)?algorithms?\b/gi, 'dsa')
+    .replace(/\bci\s*\/\s*cd\b/gi, 'cicd')
+    .replace(/\bc\+\+\b/gi, 'cpp')
+    .replace(/\bc#\b/gi, 'csharp');
+}
+
+function canonicalToken(value: string): string {
+  const token = value.toLowerCase();
+  if (STEM_EXEMPTIONS.has(token) || token.length <= 4) return token;
+  if (token.endsWith('ies') && token.length > 5) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('es') && token.length > 5) return token.slice(0, -2);
+  if (token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+function contentTokens(value: string): Set<string> {
+  const tokens = normalizeKnownCompounds(value).match(/[\p{L}\p{N}]+/gu) || [];
+  const normalized = new Set(tokens.map(canonicalToken));
+  if (normalized.has('k8s')) normalized.add('kubernetes');
+  if (normalized.has('kubernetes')) normalized.add('k8s');
+  if (normalized.has('server') && normalized.has('side')) normalized.add('backend');
+  if (normalized.has('client') && normalized.has('side')) normalized.add('frontend');
+  return normalized;
+}
+
+function distinctiveTopicGroups(query: string): string[][] {
+  return normalizeKnownCompounds(query)
+    .split(/\b(?:and|or|plus|versus|vs)\b|[,&/]+/i)
+    .map((clause) => {
+      const tokens = clause.match(/[\p{L}\p{N}]+/gu) || [];
+      return [...new Set(
+        tokens
+          .map((rawToken) => ({
+            raw: rawToken.toLowerCase(),
+            canonical: canonicalToken(rawToken),
+          }))
+          .filter(
+            ({ raw, canonical }) =>
+              !QUERY_SCAFFOLDING.has(raw) &&
+              !QUERY_SCAFFOLDING.has(canonical) &&
+              (canonical.length >= 3 ||
+                ['ai', 'db', 'ml', 'os', 'ui', 'ux'].includes(canonical)),
+          )
+          .map(({ canonical }) => canonical),
+      )];
+    })
+    .filter((group) => group.length > 0);
+}
+
+function requiredTopicMatches(group: string[]): number {
+  if (group.length <= 2) return group.length;
+  return Math.ceil(group.length * 0.6);
+}
+
+function hasTopicToken(tokens: Set<string>, topicToken: string): boolean {
+  if (tokens.has(topicToken)) return true;
+  if (topicToken.length < 4) return false;
+  return [...tokens].some(
+    (candidate) =>
+      candidate.length >= 4 &&
+      Math.abs(candidate.length - topicToken.length) <= 1 &&
+      (candidate.startsWith(topicToken) || topicToken.startsWith(candidate)),
+  );
+}
+
+/**
+ * The embedding threshold establishes candidate relevance; this second,
+ * deterministic gate establishes complete topic coverage. Every distinctive
+ * requested topic group must be represented in at least one actual context
+ * chunk. Generic follow-ups with no extractable topic keep the existing
+ * semantic-only behavior.
+ */
+export function assessWorkspaceEvidenceSufficiency(
+  query: string,
+  evidence: AnswerabilityEvidence[],
+): EvidenceSufficiencyAssessment {
+  if (evidence.length === 0) {
+    return {
+      sufficient: false,
+      reason: 'no_context',
+      topicGroupCount: 0,
+      coveredTopicGroupCount: 0,
+    };
+  }
+
+  const topicGroups = distinctiveTopicGroups(query);
+  if (topicGroups.length === 0) {
+    return {
+      sufficient: true,
+      reason: 'semantic_only_query',
+      topicGroupCount: 0,
+      coveredTopicGroupCount: 0,
+    };
+  }
+
+  const evidenceTokenSets = evidence.map(({ content, sourceTitle }) =>
+    contentTokens(`${sourceTitle}\n${content}`),
+  );
+  const coveredTopicGroupCount = topicGroups.filter((group) => {
+    const requiredMatches = requiredTopicMatches(group);
+    return evidenceTokenSets.some((tokens) => {
+      const matches = group.filter((token) => hasTopicToken(tokens, token)).length;
+      return matches >= requiredMatches;
+    });
+  }).length;
+  const sufficient = coveredTopicGroupCount === topicGroups.length;
+  return {
+    sufficient,
+    reason: sufficient ? 'complete_topic_coverage' : 'missing_topic_coverage',
+    topicGroupCount: topicGroups.length,
+    coveredTopicGroupCount,
+  };
+}
 
 export function isWorkspaceMetaQuestion(query: string): boolean {
   const normalized = query.replace(/\s+/g, ' ').trim();
@@ -48,10 +205,16 @@ export function selectInitialChatRoute(input: {
 
 export function selectResponseModeAfterRetrieval(input: {
   hasContext: boolean;
+  hasSufficientEvidence: boolean;
   isAIAction: boolean;
   isWorkspaceMeta: boolean;
 }): ChatResponseMode | null {
-  if (input.hasContext) return 'GROUNDED';
+  if (
+    input.hasContext &&
+    (input.isAIAction || input.isWorkspaceMeta || input.hasSufficientEvidence)
+  ) {
+    return 'GROUNDED';
+  }
   if (input.isAIAction) return null;
   return input.isWorkspaceMeta ? 'GROUNDED' : 'GENERAL';
 }

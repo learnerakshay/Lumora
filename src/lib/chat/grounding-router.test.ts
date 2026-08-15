@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assessWorkspaceEvidenceSufficiency,
   isWorkspaceMetaQuestion,
   NO_SOURCES_META_RESPONSE,
   selectInitialChatRoute,
   selectResponseModeAfterRetrieval,
 } from './grounding-router';
+
+function evidence(content: string, sourceTitle: string) {
+  return { content, sourceTitle };
+}
 
 test('A1: zero sources plus a general question selects GENERAL without retrieval', () => {
   assert.deepEqual(
@@ -47,10 +52,26 @@ test('meta detection does not swallow ordinary general questions', () => {
   }
 });
 
-test('C1/C2: evidence accepted by the existing retrieval boundary remains GROUNDED', () => {
+test('C1: genuinely answerable Workspace evidence remains GROUNDED', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Explain binary search and its time complexity.',
+    [
+      evidence(
+        'Binary search repeatedly halves a sorted search space and has logarithmic time complexity.',
+        'DSA Search Algorithms',
+      ),
+    ],
+  );
+  assert.deepEqual(assessment, {
+    sufficient: true,
+    reason: 'complete_topic_coverage',
+    topicGroupCount: 2,
+    coveredTopicGroupCount: 2,
+  });
   assert.equal(
     selectResponseModeAfterRetrieval({
       hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
       isAIAction: false,
       isWorkspaceMeta: false,
     }),
@@ -58,7 +79,139 @@ test('C1/C2: evidence accepted by the existing retrieval boundary remains GROUND
   );
 });
 
-test('D1/D2: empty post-threshold evidence becomes GENERAL for ordinary questions', () => {
+test('C2: semantically retrieved evidence still grounds when it covers the topic', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'How does Kubernetes orchestration work?',
+    [
+      evidence(
+        'Kubernetes orchestration schedules and manages container workloads across a cluster.',
+        'K8s Guide',
+      ),
+    ],
+  );
+  assert.equal(assessment.sufficient, true);
+  assert.equal(
+    selectResponseModeAfterRetrieval({
+      hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
+      isAIAction: false,
+      isWorkspaceMeta: false,
+    }),
+    'GROUNDED',
+  );
+});
+
+test('question scaffolding and singular/plural forms do not block legitimate grounding', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'What are the differences between arrays and linked lists?',
+    [evidence('An array stores contiguous elements. Linked list nodes use pointers.', 'Arrays and Linked Lists')],
+  );
+  assert.equal(assessment.topicGroupCount, 2);
+  assert.equal(assessment.coveredTopicGroupCount, 2);
+  assert.equal(assessment.sufficient, true);
+});
+
+test('D1: DSA roadmap evidence cannot ground a Kubernetes roadmap', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Give me a roadmap to learn Kubernetes.',
+    [
+      evidence(
+        'Start with arrays, linked lists, trees, graphs, and dynamic programming.',
+        'DSA Roadmap',
+      ),
+    ],
+  );
+  assert.equal(assessment.sufficient, false);
+  assert.equal(assessment.reason, 'missing_topic_coverage');
+  assert.equal(
+    selectResponseModeAfterRetrieval({
+      hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
+      isAIAction: false,
+      isWorkspaceMeta: false,
+    }),
+    'GENERAL',
+  );
+});
+
+test('D2: adjacent roadmap evidence cannot ground multiple uncovered topics', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Give me a roadmap to learn MLOps and System Design.',
+    [evidence('This roadmap covers data structures, algorithms, and coding interviews.', 'DSA Roadmap')],
+  );
+  assert.deepEqual(assessment, {
+    sufficient: false,
+    reason: 'missing_topic_coverage',
+    topicGroupCount: 2,
+    coveredTopicGroupCount: 0,
+  });
+  assert.equal(
+    selectResponseModeAfterRetrieval({
+      hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
+      isAIAction: false,
+      isWorkspaceMeta: false,
+    }),
+    'GENERAL',
+  );
+});
+
+test('D3: HTML/CSS interview evidence cannot ground backend infrastructure', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Explain backend deployment infrastructure.',
+    [
+      evidence(
+        'HTML semantics, CSS specificity, Flexbox, and frontend interview questions.',
+        'HTML CSS Interview Notes',
+      ),
+    ],
+  );
+  assert.equal(assessment.sufficient, false);
+  assert.equal(
+    selectResponseModeAfterRetrieval({
+      hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
+      isAIAction: false,
+      isWorkspaceMeta: false,
+    }),
+    'GENERAL',
+  );
+});
+
+test('mixed coverage is conservatively GENERAL when any requested topic is missing', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Give me a roadmap for System Design and MLOps.',
+    [
+      evidence(
+        'System design covers load balancing, caching, and distributed databases.',
+        'System Design Guide',
+      ),
+    ],
+  );
+  assert.equal(assessment.topicGroupCount, 2);
+  assert.equal(assessment.coveredTopicGroupCount, 1);
+  assert.equal(assessment.sufficient, false);
+  assert.equal(
+    selectResponseModeAfterRetrieval({
+      hasContext: true,
+      hasSufficientEvidence: assessment.sufficient,
+      isAIAction: false,
+      isWorkspaceMeta: false,
+    }),
+    'GENERAL',
+  );
+});
+
+test('generic follow-ups preserve the existing semantic retrieval decision', () => {
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    'Summarize the key takeaways.',
+    [evidence('The retrieved passage selected by semantic search.', 'Workspace Notes')],
+  );
+  assert.equal(assessment.reason, 'semantic_only_query');
+  assert.equal(assessment.sufficient, true);
+});
+
+test('empty post-threshold evidence becomes GENERAL for ordinary questions', () => {
   for (const query of [
     'Give me a roadmap to become a DevOps engineer.',
     'How should I structure a strength-training plan?',
@@ -67,6 +220,7 @@ test('D1/D2: empty post-threshold evidence becomes GENERAL for ordinary question
     assert.equal(
       selectResponseModeAfterRetrieval({
         hasContext: false,
+        hasSufficientEvidence: false,
         isAIAction: false,
         isWorkspaceMeta: false,
       }),
@@ -79,6 +233,7 @@ test('unsupported Workspace-meta questions and context-free AI Actions do not be
   assert.equal(
     selectResponseModeAfterRetrieval({
       hasContext: false,
+      hasSufficientEvidence: false,
       isAIAction: false,
       isWorkspaceMeta: true,
     }),
@@ -87,6 +242,7 @@ test('unsupported Workspace-meta questions and context-free AI Actions do not be
   assert.equal(
     selectResponseModeAfterRetrieval({
       hasContext: false,
+      hasSufficientEvidence: false,
       isAIAction: true,
       isWorkspaceMeta: false,
     }),

@@ -49,6 +49,7 @@ import {
 } from '../lib/chat/citation-consistency';
 import {
   GENERAL_FALLBACK_PREAMBLE,
+  assessWorkspaceEvidenceSufficiency,
   isWorkspaceMetaQuestion,
   NO_SOURCES_META_RESPONSE,
   selectInitialChatRoute,
@@ -1102,19 +1103,40 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     }
     lifecyclePhase = 'citation_validation';
     const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
+    const evidenceSufficiency =
+      actionPlan || workspaceMetaQuestion
+        ? {
+            sufficient: ragContext.hasContext,
+            reason: 'complete_topic_coverage' as const,
+            topicGroupCount: 0,
+            coveredTopicGroupCount: 0,
+          }
+        : assessWorkspaceEvidenceSufficiency(retrievalQuery, ragContext.chunks);
     const responseMode =
       initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL'
         ? initialChatRoute.responseMode
         : selectResponseModeAfterRetrieval({
             hasContext: ragContext.hasContext,
+            hasSufficientEvidence: evidenceSufficiency.sufficient,
             isAIAction: Boolean(actionPlan),
             isWorkspaceMeta: workspaceMetaQuestion,
           });
+    const hasGroundedContext = responseMode === 'GROUNDED' && ragContext.hasContext;
+    if (ragContext.hasContext && responseMode === 'GENERAL') {
+      logger.info('Workspace evidence did not cover the complete chat request', {
+        workspaceId,
+        operationId,
+        reason: evidenceSufficiency.reason,
+        topicGroupCount: evidenceSufficiency.topicGroupCount,
+        coveredTopicGroupCount: evidenceSufficiency.coveredTopicGroupCount,
+        candidateChunkCount: ragContext.chunks.length,
+      });
+    }
     sendEvent({
       type: 'start',
-      hasContext: ragContext.hasContext,
+      hasContext: hasGroundedContext,
       responseMode,
-      candidateCitationCount: ragContext.citations.length,
+      candidateCitationCount: hasGroundedContext ? ragContext.citations.length : 0,
       citations: [],
       ...(actionPlan
         ? { action: { id: actionPlan.actionId, label: actionPlan.actionLabel } }
@@ -1164,7 +1186,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       return;
     }
 
-    const citationSafeStream = responseMode === 'GROUNDED' && ragContext.hasContext
+    const citationSafeStream = hasGroundedContext
       ? new CitationSafeStream(
           ragContext.citations,
           (text) => {
@@ -1176,7 +1198,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       ? new GeneralResponseSafeStream((text) => sendEvent({ type: 'chunk', text }))
       : null;
     const externalWebSafeStream = new ExternalWebSafeStream(
-      ragContext.citations,
+      hasGroundedContext ? ragContext.citations : [],
       (text) => {
         if (citationSafeStream) {
           citationSafeStream.push(text);
@@ -1201,10 +1223,10 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     lifecyclePhase = 'orchestration';
     const generated = await orchestrateGroundedResponse({
       workspaceId,
-      hasWorkspaceContext: ragContext.hasContext,
+      hasWorkspaceContext: hasGroundedContext,
       hasActionContext: actionPlan?.allowWithoutWorkspaceContext === true,
       allowGeneralKnowledge: responseMode === 'GENERAL',
-      instructions: ragContext.hasContext
+      instructions: hasGroundedContext
         ? `${ragContext.contextPrompt}${
             actionPlan
               ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
@@ -1245,7 +1267,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     if (generationController.signal.aborted) throw new ChatGenerationAbortedError();
 
     lifecyclePhase = 'citation_validation';
-    const usedCitations = ragContext.hasContext
+    const usedCitations = hasGroundedContext
       ? citationsUsedByResponse(generated.text, ragContext.citations)
       : [];
     const webAppendix = externalWebSourcesAppendix(

@@ -32,11 +32,26 @@ function citation(overrides: Partial<StoredCitation> = {}): StoredCitation {
   };
 }
 
-test('GENERAL responses cannot expose stale or attached Workspace evidence', () => {
+test('a GROUNDED response followed by GENERAL cannot expose old or attached Workspace evidence', () => {
   const evidence = citation();
-  assert.deepEqual(citationsForResponse('GENERAL', [evidence]), []);
   assert.deepEqual(citationsForResponse('GROUNDED', [evidence]), [evidence]);
+  assert.deepEqual(citationsForResponse('GENERAL', [evidence]), []);
   assert.deepEqual(citationsForResponse(null, undefined), []);
+});
+
+test('starting the next response clears selected RHS Context before stream routing', () => {
+  const page = readFileSync(
+    new URL('../../pages/WorkspaceDetailPage.tsx', import.meta.url),
+    'utf8',
+  );
+  const submissionStart = page.indexOf('setIsGenerating(true)');
+  const streamStart = page.indexOf('const abortController = new AbortController()', submissionStart);
+  assert.ok(submissionStart >= 0 && streamStart > submissionStart);
+  const submissionReset = page.slice(submissionStart, streamStart);
+  assert.match(submissionReset, /setStreamingCitations\(\[\]\)/);
+  assert.match(submissionReset, /setStreamingResponseMode\(null\)/);
+  assert.match(submissionReset, /setContextCitations\(null\)/);
+  assert.match(submissionReset, /setActiveCitationId\(null\)/);
 });
 
 function source(overrides: Partial<SourceRecord> = {}): SourceRecord {

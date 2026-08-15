@@ -39,6 +39,25 @@ test('Case C keeps the existing retrieval threshold, citation filter, and durabl
   assert.match(streamRoute, /activeChatGenerations\.register/);
 });
 
+test('Case D requires complete evidence coverage before exposing Workspace context or citations', () => {
+  assert.match(streamRoute, /assessWorkspaceEvidenceSufficiency\(retrievalQuery, ragContext\.chunks\)/);
+  assert.match(
+    streamRoute,
+    /const hasGroundedContext = responseMode === 'GROUNDED' && ragContext\.hasContext/,
+  );
+  assert.match(streamRoute, /hasContext: hasGroundedContext/);
+  assert.match(
+    streamRoute,
+    /candidateCitationCount: hasGroundedContext \? ragContext\.citations\.length : 0/,
+  );
+  assert.match(
+    streamRoute,
+    /const usedCitations = hasGroundedContext\s*\? citationsUsedByResponse/,
+  );
+  assert.match(streamRoute, /citations: persistedCitations/);
+  assert.match(streamRoute, /hasWorkspaceContext: hasGroundedContext/);
+});
+
 test('auth and Workspace ownership middleware still guard the shared chat route', () => {
   const authIndex = routeSource.indexOf('workspaceRouter.use(requireApiAuth)');
   const ownershipIndex = routeSource.indexOf("workspaceRouter.param('id'");

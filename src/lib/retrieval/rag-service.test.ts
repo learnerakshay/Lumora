@@ -7,6 +7,7 @@ import {
   RetrievedChunk,
   searchWorkspaceChunks,
 } from './rag-service';
+import { assessWorkspaceEvidenceSufficiency } from '../chat/grounding-router';
 
 const contract = {
   provider: 'openai' as const,
@@ -318,6 +319,13 @@ test('the existing 0.15 boundary accepts equality and rejects the value below it
     0.15,
   );
   assert.deepEqual(ranked.map(({ id }) => id), ['at-boundary']);
+  assert.equal(
+    assessWorkspaceEvidenceSufficiency(
+      'Explain the unique Lumora production facts.',
+      ranked,
+    ).sufficient,
+    true,
+  );
 });
 
 test('source-scoped retrieval constrains candidates before vector ranking and top-K', async () => {
