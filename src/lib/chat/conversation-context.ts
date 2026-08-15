@@ -19,6 +19,7 @@ export function buildConversationHistory(
   messages: StoredMessage[],
   currentUserMessageId: string,
   tokenBudget = DEFAULT_HISTORY_TOKEN_BUDGET,
+  includeGeneralTurns = false,
 ): ChatHistoryItem[] {
   const seenIds = new Set<string>();
   const uniqueMessages = messages.filter((message) => {
@@ -52,9 +53,10 @@ export function buildConversationHistory(
         : explicitParent || pendingUser;
     if (!user || pairedUserIds.has(user.id)) continue;
 
-    // An assistant response without any currently valid citation is not safe
-    // evidence for a later grounded answer.
-    if (!message.citations?.length) {
+    // Grounded generations preserve the existing evidence-only replay rule.
+    // General generations may use completed turns for conversational continuity,
+    // but their system prompt still forbids presenting history as Workspace evidence.
+    if (!includeGeneralTurns && !message.citations?.length) {
       if (pendingUser?.id === user.id) pendingUser = null;
       continue;
     }

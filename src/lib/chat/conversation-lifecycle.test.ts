@@ -26,6 +26,7 @@ function message(
     role,
     content,
     mode: 'DETAILED',
+    responseMode: role === 'ASSISTANT' ? 'GROUNDED' : null,
     status: 'SUCCESS',
     action: null,
     createdAt: '2026-07-26T00:00:00.000Z',

@@ -1,5 +1,13 @@
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
+import type { ChatResponseMode } from '../../types';
+
+export function citationsForResponse(
+  responseMode: ChatResponseMode | null,
+  citations: StoredCitation[] | undefined,
+): StoredCitation[] {
+  return responseMode === 'GENERAL' ? [] : citations || [];
+}
 
 export function citationEvidenceKey(citation: StoredCitation): string {
   return citation.id || [

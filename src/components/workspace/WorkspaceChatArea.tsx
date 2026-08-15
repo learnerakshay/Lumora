@@ -19,14 +19,17 @@ import {
 import { StoredCitation, StoredMessage } from '../../lib/chat/conversation-store';
 import type { ToolStatusUpdate, WebSource } from '../../lib/ai/types';
 import type { SourceRecord } from '../../lib/source-store';
+import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
-import { splitCitationMarkers } from './chat-presentation';
+import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presentation';
+import { citationsForResponse } from './workspace-interactions';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
   isGenerating: boolean;
   streamingText: string;
   streamingCitations: StoredCitation[];
+  streamingResponseMode?: ChatResponseMode | null;
   toolExecutions?: ToolStatusUpdate[];
   streamingWebSources?: WebSource[];
   generationStatusLabel?: string | null;
@@ -220,6 +223,7 @@ export function WorkspaceChatArea({
   isGenerating,
   streamingText,
   streamingCitations,
+  streamingResponseMode,
   toolExecutions = [],
   streamingWebSources = [],
   generationStatusLabel,
@@ -339,19 +343,25 @@ export function WorkspaceChatArea({
             <div className="flex min-h-[340px] items-center justify-center py-8 text-center">
               <div className="w-full max-w-xl">
                 <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-800/60 bg-sky-950/40 text-sky-300"><Sparkles className="h-5 w-5" /></div>
-                <h2 className="mt-4 text-xl font-semibold text-white">{hasIndexedSources ? 'What would you like to understand?' : 'Preparing your sources'}</h2>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Lumora answers from your ready sources and shows the context behind each response.' : 'You can start asking questions as soon as at least one source is ready.'}</p>
-                {hasIndexedSources && <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                  {['Summarize the key ideas', 'Explain the hardest concept', 'What should I learn first?'].map((question) => (
+                <h2 className="mt-4 text-xl font-semibold text-white">{hasIndexedSources ? 'What would you like to understand?' : 'Ask anything to get started'}</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Lumora uses strong matching Workspace evidence when available and clearly discloses general answers.' : 'Lumora can answer with general knowledge now. Add sources anytime for grounded answers with citations.'}</p>
+                <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                  {(hasIndexedSources
+                    ? ['Summarize the key ideas', 'Explain the hardest concept', 'What should I learn first?']
+                    : ['Build me a learning roadmap', 'Explain a difficult concept', 'Help me plan what to learn']).map((question) => (
                     <button key={question} type="button" onClick={() => onSubmitMessage(question)} className="rounded-xl border border-slate-800 bg-slate-900/55 px-3 py-3 text-left text-xs leading-5 text-slate-300 transition hover:border-sky-700/70 hover:bg-slate-900 hover:text-white">{question}</button>
                   ))}
-                </div>}
+                </div>
               </div>
             </div>
           )}
 
           {messages.map((message, index) => {
             const isUser = message.role === 'USER';
+            const messageCitations = citationsForResponse(
+              message.responseMode,
+              message.citations,
+            );
             const previousMessage = messages[index - 1];
             const startsGroup = !previousMessage || previousMessage.role !== message.role;
 
@@ -406,28 +416,40 @@ export function WorkspaceChatArea({
                     </div>
                   ) : (
                     <div>
-                      {message.mode && (
-                        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          <Sparkles className="h-3 w-3 text-sky-400" />
-                          <span>{message.mode.toLowerCase()} synthesis</span>
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                          {message.responseMode === 'GENERAL' ? (
+                            <Globe className="h-3 w-3 text-violet-400" />
+                          ) : message.responseMode === 'GROUNDED' ? (
+                            <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                          ) : (
+                            <Clock3 className="h-3 w-3 text-slate-500" />
+                          )}
+                          <span>{getResponseModeDisclosure(message.responseMode)}</span>
                         </div>
-                      )}
-
-                      <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
-                        <Markdown components={createMarkdownComponents(message.citations || [], availableSourceIds, onSelectCitation)}>{message.content}</Markdown>
+                        {message.mode && (
+                          <div className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                            <Sparkles className="h-3 w-3 text-sky-400" />
+                            <span>{message.mode.toLowerCase()} synthesis</span>
+                          </div>
+                        )}
                       </div>
 
-                      {message.citations && message.citations.length > 0 && (
+                      <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
+                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation)}>{message.content}</Markdown>
+                      </div>
+
+                      {messageCitations.length > 0 && (
                         <div className="mt-5 space-y-2 border-t border-slate-800/60 pt-3">
                           <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
                             <span>
-                              Grounded in {message.citations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length} available Workspace {message.citations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length === 1 ? 'source' : 'sources'}
-                              {message.citations.some(({ sourceId }) => !availableSourceIds.has(sourceId)) ? ' · historical source unavailable' : ''}
+                              Grounded in {messageCitations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length} available Workspace {messageCitations.filter(({ sourceId }) => availableSourceIds.has(sourceId)).length === 1 ? 'source' : 'sources'}
+                              {messageCitations.some(({ sourceId }) => !availableSourceIds.has(sourceId)) ? ' · historical source unavailable' : ''}
                             </span>
                           </div>
                           <div className="flex max-w-full flex-wrap gap-2">
-                            {message.citations.map((citation, citationIndex) => {
+                            {messageCitations.map((citation, citationIndex) => {
                               const source = sources.find((item) => item.id === citation.sourceId);
                               const surface = !source
                                 ? 'border-slate-800 bg-slate-900/60 text-slate-500'
@@ -441,7 +463,7 @@ export function WorkspaceChatArea({
                               return <button
                                 key={citation.id || citationIndex}
                                 type="button"
-                                onClick={() => source && onSelectCitation?.(citation, message.citations)}
+                                onClick={() => source && onSelectCitation?.(citation, messageCitations)}
                                 disabled={!source}
                                 title={source ? citation.snippet : 'This source has been deleted or is unavailable.'}
                                 className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white disabled:cursor-not-allowed disabled:hover:text-slate-500 ${surface}`}
@@ -512,6 +534,19 @@ export function WorkspaceChatArea({
                 <Bot className="h-4 w-4" />
               </div>
               <div className="min-w-0 max-w-[calc(100%-2.625rem)] flex-1 rounded-2xl rounded-tl-md border border-cyan-800/30 bg-cyan-950/[0.07] px-4 py-3.5 text-slate-200 shadow-[0_12px_30px_rgba(0,0,0,0.12)] sm:px-5 sm:py-4">
+                {streamingResponseMode && (
+                  <div
+                    className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400"
+                    aria-label={`Response source: ${getResponseModeDisclosure(streamingResponseMode)}`}
+                  >
+                    {streamingResponseMode === 'GENERAL' ? (
+                      <Globe className="h-3 w-3 text-violet-400" />
+                    ) : (
+                      <ShieldCheck className="h-3 w-3 text-emerald-400" />
+                    )}
+                    <span>{getResponseModeDisclosure(streamingResponseMode)}</span>
+                  </div>
+                )}
                 {toolExecutions.length > 0 && (
                   <div
                     className="mb-3 flex flex-wrap gap-2"

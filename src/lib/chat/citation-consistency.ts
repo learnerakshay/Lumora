@@ -3,6 +3,45 @@ import { RAGCitation } from '../retrieval/rag-service';
 const CITATION_MARKER = /\[Citation\s*#(\d+)\]/gi;
 const CITATION_LIKE_MARKER = /\[Citation[^\]]*\]/gi;
 
+export function assertNoWorkspaceCitationMarkers(responseText: string): void {
+  if (/\[Citation/i.test(responseText)) {
+    throw new Error('General response attempted to reference Workspace citations');
+  }
+}
+
+/**
+ * Streams a General response while holding incomplete bracketed text long
+ * enough to prevent a fabricated Workspace citation marker reaching the UI.
+ */
+export class GeneralResponseSafeStream {
+  private pending = '';
+
+  constructor(private readonly emit: (text: string) => void) {}
+
+  push(delta: string): void {
+    this.pending += delta;
+    const lastOpenBracket = this.pending.lastIndexOf('[');
+    const safeEnd =
+      lastOpenBracket >= 0 && !this.pending.slice(lastOpenBracket).includes(']')
+        ? lastOpenBracket
+        : this.pending.length;
+    const safeText = this.pending.slice(0, safeEnd);
+    assertNoWorkspaceCitationMarkers(safeText);
+    if (safeText) {
+      this.emit(safeText);
+      this.pending = this.pending.slice(safeEnd);
+    }
+  }
+
+  finish(fullResponse: string): void {
+    assertNoWorkspaceCitationMarkers(fullResponse);
+    if (this.pending) {
+      this.emit(this.pending);
+      this.pending = '';
+    }
+  }
+}
+
 function validateMarkerSyntax(responseText: string): void {
   const exactMarkers = [...responseText.matchAll(CITATION_MARKER)].map((match) =>
     match[0].toLowerCase(),

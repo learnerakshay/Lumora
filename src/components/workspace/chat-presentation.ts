@@ -1,5 +1,6 @@
 import type { AIActionId } from '../../lib/ai/actions/catalog';
 import type { AIActionRequest } from '../../lib/ai/actions/types';
+import type { ChatResponseMode } from '../../types';
 
 export type AnswerMode = 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
 
@@ -31,6 +32,14 @@ export const AI_MODE_OPTIONS = [
   description: string;
   icon: 'zap' | 'list' | 'search' | 'spark';
 }>;
+
+export function getResponseModeDisclosure(
+  responseMode: ChatResponseMode | null,
+): string {
+  if (responseMode === 'GENERAL') return 'General knowledge';
+  if (responseMode === 'GROUNDED') return 'From your Workspace';
+  return 'Previous response';
+}
 
 const ACTION_GENERATION_COPY: Record<AIActionId, string> = {
   summarize: 'Summarizing validated Workspace context',

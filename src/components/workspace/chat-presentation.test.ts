@@ -4,8 +4,15 @@ import {
   AI_MODE_OPTIONS,
   getGenerationStatusLabel,
   getPersistedGenerationStatus,
+  getResponseModeDisclosure,
   splitCitationMarkers,
 } from './chat-presentation';
+
+test('assistant disclosure is explicit while historical unknown messages stay neutral', () => {
+  assert.equal(getResponseModeDisclosure('GENERAL'), 'General knowledge');
+  assert.equal(getResponseModeDisclosure('GROUNDED'), 'From your Workspace');
+  assert.equal(getResponseModeDisclosure(null), 'Previous response');
+});
 
 test('AI mode menu exposes the four existing response modes with concise descriptors', () => {
   assert.deepEqual(AI_MODE_OPTIONS.map((mode) => mode.id), [

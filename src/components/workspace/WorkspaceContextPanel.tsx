@@ -2,11 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { BookOpen, ExternalLink, Quote, X } from 'lucide-react';
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
+import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { citationEvidenceKey } from './workspace-interactions';
 
 interface WorkspaceContextPanelProps {
   citations: StoredCitation[];
+  responseMode?: ChatResponseMode | null;
   sources: SourceRecord[];
   onSelectCitation: (citation: StoredCitation) => void;
   onClose?: () => void;
@@ -24,6 +26,7 @@ function formatLocation(citation: StoredCitation) {
 
 export function WorkspaceContextPanel({
   citations,
+  responseMode,
   sources,
   onSelectCitation,
   onClose,
@@ -65,8 +68,16 @@ export function WorkspaceContextPanel({
             <span className="lumora-empty-icon-strong mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-cyan-300">
               <Quote className="h-6 w-6" strokeWidth={1.8} />
             </span>
-            <p className="mt-3 text-xs font-semibold text-slate-300">Context appears with answers</p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">Ask a question and Lumora will show the real sources used to ground its response.</p>
+            <p className="mt-3 text-xs font-semibold text-slate-300">
+              {responseMode === 'GENERAL'
+                ? 'General knowledge response'
+                : 'Context appears with grounded answers'}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+              {responseMode === 'GENERAL'
+                ? 'No Workspace evidence was used for this response.'
+                : 'When Workspace evidence supports an answer, Lumora shows the real sources used here.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">

@@ -72,6 +72,11 @@ enum CitationKind {
   CALCULATION
 }
 
+enum ResponseMode {
+  GENERAL
+  GROUNDED
+}
+
 enum Plan {
   FREE
   CORE
@@ -273,6 +278,7 @@ model Message {
   role            MessageRole
   content         String        @db.Text
   mode            AnswerMode    @default(DETAILED)
+  responseMode    ResponseMode?
   status          MessageStatus @default(SUCCESS)
   action          Json?
   regenerationStartedAt DateTime?

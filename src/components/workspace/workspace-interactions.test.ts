@@ -5,6 +5,7 @@ import type { StoredCitation } from '../../lib/chat/conversation-store';
 import {
   citationEvidenceKey,
   availableCitations,
+  citationsForResponse,
   findCitationEvidence,
   resolveCitationNavigation,
   releaseSubmission,
@@ -30,6 +31,13 @@ function citation(overrides: Partial<StoredCitation> = {}): StoredCitation {
     ...overrides,
   };
 }
+
+test('GENERAL responses cannot expose stale or attached Workspace evidence', () => {
+  const evidence = citation();
+  assert.deepEqual(citationsForResponse('GENERAL', [evidence]), []);
+  assert.deepEqual(citationsForResponse('GROUNDED', [evidence]), [evidence]);
+  assert.deepEqual(citationsForResponse(null, undefined), []);
+});
 
 function source(overrides: Partial<SourceRecord> = {}): SourceRecord {
   return {

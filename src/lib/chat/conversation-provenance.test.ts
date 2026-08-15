@@ -2,8 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   historicalCitationInclude,
+  normalizeChatResponseMode,
   toStoredCitation,
 } from './conversation-store';
+
+test('response-mode hydration preserves new values and keeps historical rows unknown', () => {
+  assert.equal(normalizeChatResponseMode('GENERAL'), 'GENERAL');
+  assert.equal(normalizeChatResponseMode('GROUNDED'), 'GROUNDED');
+  assert.equal(normalizeChatResponseMode(null), null);
+  assert.equal(normalizeChatResponseMode('unexpected'), null);
+});
 
 function persistedCitation(indexId: string, sourceVersion: number) {
   return toStoredCitation({

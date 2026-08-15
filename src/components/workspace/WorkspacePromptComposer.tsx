@@ -48,7 +48,7 @@ export function WorkspacePromptComposer({
   }, [promptText]);
 
   const handleSubmit = () => {
-    if (!promptText.trim() || !hasIndexedSources || isGenerating) return;
+    if (!promptText.trim() || isGenerating) return;
     onSubmitMessage(promptText.trim(), selectedMode);
     setPromptText('');
   };
@@ -63,7 +63,7 @@ export function WorkspacePromptComposer({
   return (
     <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800/70 bg-[#0d131d]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl sm:px-4 md:px-5">
       <div className="mx-auto max-w-3xl">
-        <div className={`overflow-visible rounded-2xl border transition-[border-color,background-color,box-shadow,opacity] duration-200 ${hasIndexedSources ? 'border-slate-700/85 bg-[#121a26] shadow-[0_14px_36px_rgba(0,0,0,0.2)] focus-within:border-cyan-400/60 focus-within:bg-[#141e2b] focus-within:shadow-[0_16px_38px_rgba(0,0,0,0.28),0_0_0_1px_rgba(34,211,238,0.08),0_0_24px_rgba(34,211,238,0.07)]' : 'border-slate-800/45 bg-slate-900/25 opacity-65 shadow-none'}`}>
+        <div className="overflow-visible rounded-2xl border border-slate-700/85 bg-[#121a26] shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-[border-color,background-color,box-shadow,opacity] duration-200 focus-within:border-cyan-400/60 focus-within:bg-[#141e2b] focus-within:shadow-[0_16px_38px_rgba(0,0,0,0.28),0_0_0_1px_rgba(34,211,238,0.08),0_0_24px_rgba(34,211,238,0.07)]">
           <textarea
             ref={textareaRef}
             value={promptText}
@@ -71,10 +71,10 @@ export function WorkspacePromptComposer({
               if (event.target.value.length <= maxLength) setPromptText(event.target.value);
             }}
             onKeyDown={handleKeyDown}
-            disabled={!hasIndexedSources || isGenerating}
+            disabled={isGenerating}
             rows={1}
-            aria-label="Ask a question about Workspace sources"
-            placeholder={hasIndexedSources ? 'Ask a question about your sources…' : 'Add a source to start asking questions…'}
+            aria-label="Ask Lumora a question"
+            placeholder={hasIndexedSources ? 'Ask about your sources or anything else…' : 'Ask Lumora anything…'}
             className="block min-h-16 max-h-44 w-full resize-none overflow-x-hidden bg-transparent px-4 pb-3 pt-4 text-sm leading-6 text-white placeholder-slate-500 transition-[height] duration-150 focus:outline-none disabled:cursor-not-allowed sm:px-5"
           />
 
@@ -94,7 +94,7 @@ export function WorkspacePromptComposer({
                 />
               )}
               <span className="h-4 w-px bg-slate-800" aria-hidden="true" />
-              <WorkspaceAIModeMenu value={selectedMode} onChange={setSelectedMode} disabled={!hasIndexedSources || isGenerating} />
+              <WorkspaceAIModeMenu value={selectedMode} onChange={setSelectedMode} disabled={isGenerating} />
             </div>
 
             <div className="ml-auto flex min-w-0 items-center gap-2.5">
@@ -115,9 +115,9 @@ export function WorkspacePromptComposer({
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={!hasIndexedSources || !promptText.trim()}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-[background-color,color,box-shadow,opacity] duration-200 ${hasIndexedSources && promptText.trim() ? 'bg-cyan-300 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.18)] hover:bg-cyan-200 hover:shadow-[0_10px_24px_rgba(34,211,238,0.25)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
-                  aria-label="Send research prompt"
+                  disabled={!promptText.trim()}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-[background-color,color,box-shadow,opacity] duration-200 ${promptText.trim() ? 'bg-cyan-300 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.18)] hover:bg-cyan-200 hover:shadow-[0_10px_24px_rgba(34,211,238,0.25)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
+                  aria-label="Send chat prompt"
                 >
                   <Send className="h-4 w-4" />
                 </button>

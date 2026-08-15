@@ -230,6 +230,25 @@ test('orchestrator recognizes bounded AI action material without Workspace retri
   assert.doesNotMatch(received!.instructions, /No verified Workspace or web evidence/);
 });
 
+test('GENERAL chat explicitly allows model knowledge without claiming Workspace grounding', async () => {
+  let received: GenerateChatInput | undefined;
+  const generate = async (input: GenerateChatInput) => {
+    received = input;
+    input.onTextDelta('A general answer.');
+    return result({ text: 'A general answer.' });
+  };
+
+  await new AIOrchestrator(new ToolRegistry(), generate).run({
+    ...baseInput(),
+    hasWorkspaceContext: false,
+    allowGeneralKnowledge: true,
+  });
+
+  assert.match(received!.instructions, /Use general model knowledge/i);
+  assert.match(received!.instructions, /Workspace evidence/i);
+  assert.match(received!.instructions, /do not emit Workspace-style \[Citation #N\] markers/i);
+});
+
 test('orchestrator reports hybrid mode and validated Tavily sources', async () => {
   const registry = new ToolRegistry();
   registry.register({

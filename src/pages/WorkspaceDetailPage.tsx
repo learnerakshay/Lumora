@@ -17,7 +17,6 @@ import type { ToolStatusUpdate, WebSource } from '../lib/ai/types';
 import type { AIActionRequest } from '../lib/ai/actions/types';
 import { WorkspaceSourcesSidebar } from '../components/workspace/WorkspaceSourcesSidebar';
 import { WorkspaceHeader } from '../components/workspace/WorkspaceHeader';
-import { WorkspaceCenter } from '../components/workspace/WorkspaceCenter';
 import { WorkspaceChatArea } from '../components/workspace/WorkspaceChatArea';
 import { WorkspacePromptComposer, AnswerMode } from '../components/workspace/WorkspacePromptComposer';
 import { AddSourceModal } from '../components/workspace/AddSourceModal';
@@ -29,6 +28,7 @@ import { AlertCircle, X } from 'lucide-react';
 import {
   availableCitations,
   citationEvidenceKey,
+  citationsForResponse,
   resolveCitationNavigation,
 } from '../components/workspace/workspace-interactions';
 import {
@@ -43,6 +43,7 @@ import {
   usageLimitFromPayload,
 } from '../lib/usage/client';
 import type { UsageLimitDetails } from '../lib/usage/types';
+import { isChatResponseMode, type ChatResponseMode } from '../types';
 
 interface WorkspaceData {
   id: string;
@@ -75,6 +76,7 @@ export function WorkspaceDetailPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<StoredCitation[]>([]);
+  const [streamingResponseMode, setStreamingResponseMode] = useState<ChatResponseMode | null>(null);
   const [toolExecutions, setToolExecutions] = useState<ToolStatusUpdate[]>([]);
   const [streamingWebSources, setStreamingWebSources] = useState<WebSource[]>([]);
   const [activeGenerationStatus, setActiveGenerationStatus] = useState<GenerationStatusInput | null>(null);
@@ -198,6 +200,9 @@ export function WorkspaceDetailPage() {
     operationGateRef.current = new ConversationOperationGate();
     conversationRevisionRef.current += 1;
     setMessages([]);
+    setStreamingResponseMode(null);
+    setContextCitations(null);
+    setActiveCitationId(null);
     setHistoryError(null);
     fetchWorkspace();
     fetchSources();
@@ -282,6 +287,7 @@ export function WorkspaceDetailPage() {
       role: 'USER',
       content: promptText.trim(),
       mode,
+      responseMode: null,
       status: 'SUCCESS',
       action: action || null,
       createdAt: new Date().toISOString(),
@@ -297,8 +303,11 @@ export function WorkspaceDetailPage() {
     setUsageLimit(null);
     setStreamingText('');
     setStreamingCitations([]);
+    setStreamingResponseMode(null);
     setToolExecutions([]);
     setStreamingWebSources([]);
+    setContextCitations(null);
+    setActiveCitationId(null);
     setActiveGenerationStatus({
       actionId: action?.actionId,
       mode,
@@ -371,7 +380,19 @@ export function WorkspaceDetailPage() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const data = JSON.parse(line.substring(6));
-            if (data.type === 'chunk' && data.text) {
+            if (
+              data.type === 'start' &&
+              isChatResponseMode(data.responseMode)
+            ) {
+              if (isCurrentOperation()) {
+                setStreamingResponseMode(data.responseMode);
+                setStreamingCitations(
+                  data.responseMode === 'GENERAL' || !Array.isArray(data.citations)
+                    ? []
+                    : data.citations,
+                );
+              }
+            } else if (data.type === 'chunk' && data.text) {
               if (isCurrentOperation()) {
                 setStreamingText((prev) => prev + data.text);
               }
@@ -524,6 +545,7 @@ export function WorkspaceDetailPage() {
         setIsGenerating(false);
         setStreamingText('');
         setStreamingCitations([]);
+        setStreamingResponseMode(null);
         setToolExecutions([]);
         setStreamingWebSources([]);
         setActiveGenerationStatus(null);
@@ -587,6 +609,7 @@ export function WorkspaceDetailPage() {
         setIsGenerating(false);
         setStreamingText('');
         setStreamingCitations([]);
+        setStreamingResponseMode(null);
         setToolExecutions([]);
         setStreamingWebSources([]);
         setActiveGenerationStatus(null);
@@ -603,6 +626,8 @@ export function WorkspaceDetailPage() {
       if (!response.ok) throw new Error('Failed to clear conversation history.');
       conversationRevisionRef.current += 1;
       setMessages([]);
+      setContextCitations(null);
+      setActiveCitationId(null);
       setActivityError(null);
     } catch (err: any) {
       setActivityError(err.message || 'Unable to clear conversation history.');
@@ -717,11 +742,26 @@ export function WorkspaceDetailPage() {
     (source) => source.type !== 'VTT' && source.status === 'COMPLETED' && source.stage === 'COMPLETED'
   );
   const visibleSources = sources.filter((source) => source.type !== 'VTT');
+  const hasPersistedGeneration = messages.some(
+    (message) => message.status === 'SENDING',
+  );
+  const chatIsGenerating = isGenerating || hasPersistedGeneration;
 
-  const latestCitations = [...messages]
+  const latestAssistantMessage = [...messages]
     .reverse()
-    .find((message) => message.role === 'ASSISTANT' && message.citations?.length)
-    ?.citations || streamingCitations;
+    .find(
+      (message) =>
+        message.role === 'ASSISTANT' && message.status !== 'SENDING',
+    );
+  const latestResponseMode = chatIsGenerating
+    ? streamingResponseMode
+    : latestAssistantMessage?.responseMode || null;
+  const latestCitations = chatIsGenerating
+    ? citationsForResponse(streamingResponseMode, streamingCitations)
+    : citationsForResponse(
+        latestAssistantMessage?.responseMode || null,
+        latestAssistantMessage?.citations,
+      );
   const displayedContextCitations = availableCitations(
     contextCitations || latestCitations,
     visibleSources,
@@ -748,10 +788,6 @@ export function WorkspaceDetailPage() {
     }
   };
 
-  const hasPersistedGeneration = messages.some(
-    (message) => message.status === 'SENDING',
-  );
-  const chatIsGenerating = isGenerating || hasPersistedGeneration;
   const persistedGenerationStatus = getPersistedGenerationStatus(messages);
   const generationStatusLabel = chatIsGenerating
     ? getGenerationStatusLabel(
@@ -874,13 +910,13 @@ export function WorkspaceDetailPage() {
           <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
         )}
 
-        {/* Center View: Shows Onboarding or Chat Thread */}
-        {visibleSources.length > 0 ? (
-          <WorkspaceChatArea
+        {/* One chat surface supports both General and Workspace-grounded answers. */}
+        <WorkspaceChatArea
             messages={messages.filter((message) => message.status !== 'SENDING')}
             isGenerating={chatIsGenerating}
             streamingText={streamingText}
             streamingCitations={streamingCitations}
+            streamingResponseMode={streamingResponseMode}
             toolExecutions={toolExecutions}
             streamingWebSources={streamingWebSources}
             generationStatusLabel={generationStatusLabel}
@@ -897,14 +933,7 @@ export function WorkspaceDetailPage() {
             onClearHistory={handleClearHistory}
             onDeleteQuery={handleDeleteQuery}
             onRegenerateResponse={handleRegenerateResponse}
-          />
-        ) : (
-          <WorkspaceCenter
-            workspace={workspace}
-            sources={visibleSources}
-            onOpenAddSource={handleOpenAddSource}
-          />
-        )}
+        />
 
         {/* Bottom Prompt Composer */}
         <WorkspacePromptComposer
@@ -926,6 +955,7 @@ export function WorkspaceDetailPage() {
       <div className="hidden h-full shrink-0 xl:block">
         <WorkspaceContextPanel
           citations={displayedContextCitations}
+          responseMode={latestResponseMode}
           sources={visibleSources}
           onSelectCitation={(citation) => handleSelectCitation(citation, displayedContextCitations)}
           activeCitationId={activeCitationId}
@@ -938,6 +968,7 @@ export function WorkspaceDetailPage() {
           <div className="relative z-10 h-full w-[340px] max-w-[90vw] shadow-2xl">
             <WorkspaceContextPanel
               citations={displayedContextCitations}
+              responseMode={latestResponseMode}
               sources={visibleSources}
               onSelectCitation={(citation) => {
                 handleSelectCitation(citation, displayedContextCitations);

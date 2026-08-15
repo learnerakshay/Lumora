@@ -16,6 +16,7 @@ function message(
     role,
     content,
     mode: 'DETAILED',
+    responseMode: role === 'ASSISTANT' ? 'GROUNDED' : null,
     status: 'SUCCESS',
     createdAt: new Date().toISOString(),
     citations,
@@ -33,6 +34,31 @@ test('history contains only complete grounded turns in role order', () => {
     { role: 'user', content: 'first' },
     { role: 'assistant', content: 'grounded answer' },
   ]);
+});
+
+test('GENERAL generation can replay completed General turns for continuity', () => {
+  const user = message('u-general', 'USER', 'Help me learn backend engineering');
+  const assistant = message(
+    'a-general',
+    'ASSISTANT',
+    'Start with HTTP and one server framework.',
+    [],
+  );
+  assistant.parentMessageId = user.id;
+  assistant.responseMode = 'GENERAL';
+  const current = message('current', 'USER', 'What comes next?');
+
+  assert.deepEqual(
+    buildConversationHistory([user, assistant, current], current.id, 3_000, true),
+    [
+      { role: 'user', content: user.content },
+      { role: 'assistant', content: assistant.content },
+    ],
+  );
+  assert.deepEqual(
+    buildConversationHistory([user, assistant, current], current.id),
+    [],
+  );
 });
 
 test('history excludes stale ungrounded answers, duplicate IDs, and oversized turns', () => {

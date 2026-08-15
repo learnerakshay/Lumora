@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RAGCitation } from '../retrieval/rag-service';
-import { CitationSafeStream, citationsUsedByResponse } from './citation-consistency';
+import {
+  assertNoWorkspaceCitationMarkers,
+  CitationSafeStream,
+  citationsUsedByResponse,
+  GeneralResponseSafeStream,
+} from './citation-consistency';
 
 function citation(index: number): RAGCitation {
   return {
@@ -63,4 +68,22 @@ test('stream withholds output until a valid citation and never emits an invalid 
   const laterInvalid = new CitationSafeStream([citation(1)], () => undefined);
   laterInvalid.push('Valid [Citation #1]. ');
   assert.throws(() => laterInvalid.push('Bad [Citation #7].'));
+});
+
+test('GENERAL streaming passes ordinary text but blocks fabricated Workspace citations', () => {
+  const emitted: string[] = [];
+  const safe = new GeneralResponseSafeStream((value) => emitted.push(value));
+  safe.push('General guidance with no Workspace evidence.');
+  safe.finish('General guidance with no Workspace evidence.');
+  assert.equal(emitted.join(''), 'General guidance with no Workspace evidence.');
+
+  assert.throws(
+    () => assertNoWorkspaceCitationMarkers('Invented claim [Citation #1]'),
+    /attempted to reference Workspace citations/i,
+  );
+  const blocked: string[] = [];
+  const splitMarker = new GeneralResponseSafeStream((value) => blocked.push(value));
+  splitMarker.push('Safe prefix [Cita');
+  assert.deepEqual(blocked, ['Safe prefix ']);
+  assert.throws(() => splitMarker.push('tion #1]'), /Workspace citations/i);
 });

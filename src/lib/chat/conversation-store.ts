@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma';
 import { createCitation, RAGCitation, RetrievedChunk } from '../retrieval/rag-service';
 import type { AIActionRequest } from '../ai/actions/types';
+import { isChatResponseMode, type ChatResponseMode } from '../../types';
 
 export interface StoredCitation {
   id: string;
@@ -28,10 +29,15 @@ export interface StoredMessage {
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   content: string;
   mode: 'CONCISE' | 'DETAILED' | 'CRITICAL' | 'CREATIVE';
+  responseMode: ChatResponseMode | null;
   status: 'SENDING' | 'SUCCESS' | 'ERROR';
   action?: AIActionRequest | null;
   createdAt: string;
   citations?: StoredCitation[];
+}
+
+export function normalizeChatResponseMode(value: unknown): ChatResponseMode | null {
+  return isChatResponseMode(value) ? value : null;
 }
 
 type CitationInput = Omit<RAGCitation, 'id'>;
@@ -95,6 +101,7 @@ function toStoredMessage(message: {
   role: string;
   content: string;
   mode: string;
+  responseMode: string | null;
   status: string;
   action: Prisma.JsonValue | null;
   createdAt: Date;
@@ -107,6 +114,7 @@ function toStoredMessage(message: {
     role: message.role as StoredMessage['role'],
     content: message.content,
     mode: message.mode as StoredMessage['mode'],
+    responseMode: normalizeChatResponseMode(message.responseMode),
     status: message.status as StoredMessage['status'],
     action: message.action as unknown as AIActionRequest | null,
     createdAt: message.createdAt.toISOString(),
@@ -341,6 +349,7 @@ export async function createWorkspaceMessage(data: {
   role: StoredMessage['role'];
   content: string;
   mode?: StoredMessage['mode'];
+  responseMode?: ChatResponseMode;
   status?: StoredMessage['status'];
   action?: AIActionRequest;
   citations?: CitationInput[];
@@ -356,6 +365,12 @@ export async function createWorkspaceMessage(data: {
       }
 
       const citations = data.citations || [];
+      if (data.responseMode === 'GENERAL' && citations.length > 0) {
+        throw new CitationTrustError(
+          'General responses cannot persist Workspace citations',
+          'CITATION_VALIDATION_FAILED',
+        );
+      }
       await validateCitationsForWorkspace(tx, workspace.id, citations);
 
       if (data.role === 'ASSISTANT') {
@@ -384,6 +399,7 @@ export async function createWorkspaceMessage(data: {
           role: data.role,
           content: data.content,
           mode: data.mode || 'DETAILED',
+          responseMode: data.role === 'ASSISTANT' ? data.responseMode : undefined,
           status: data.status || 'SUCCESS',
           action:
             data.role === 'USER' && data.action
@@ -557,6 +573,7 @@ export async function replaceWorkspaceAssistantMessage(data: {
   assistantMessageId: string;
   content: string;
   mode: StoredMessage['mode'];
+  responseMode?: ChatResponseMode;
   status?: 'SUCCESS' | 'ERROR';
   citations?: CitationInput[];
 }): Promise<StoredMessage> {
@@ -579,6 +596,12 @@ export async function replaceWorkspaceAssistantMessage(data: {
       }
 
       const citations = data.citations || [];
+      if (data.responseMode === 'GENERAL' && citations.length > 0) {
+        throw new CitationTrustError(
+          'General responses cannot persist Workspace citations',
+          'CITATION_VALIDATION_FAILED',
+        );
+      }
       await validateCitationsForWorkspace(tx, data.workspaceId, citations);
       await tx.citation.deleteMany({ where: { messageId: assistant.id } });
       const updated = await tx.message.update({
@@ -586,6 +609,7 @@ export async function replaceWorkspaceAssistantMessage(data: {
         data: {
           content: data.content,
           mode: data.mode,
+          responseMode: data.responseMode,
           status: data.status || 'SUCCESS',
           regenerationStartedAt: null,
           citations:

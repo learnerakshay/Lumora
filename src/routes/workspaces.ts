@@ -44,8 +44,16 @@ import {
 } from '../lib/chat/generation-lifecycle';
 import {
   CitationSafeStream,
+  GeneralResponseSafeStream,
   citationsUsedByResponse,
 } from '../lib/chat/citation-consistency';
+import {
+  GENERAL_FALLBACK_PREAMBLE,
+  isWorkspaceMetaQuestion,
+  NO_SOURCES_META_RESPONSE,
+  selectInitialChatRoute,
+  selectResponseModeAfterRetrieval,
+} from '../lib/chat/grounding-router';
 import {
   ChatGenerationAbortedError,
 } from '../lib/chat/openai-provider';
@@ -75,6 +83,7 @@ import {
   shouldCommitChatUsage,
 } from '../lib/usage/service';
 import { usageLimitError } from '../lib/usage/errors';
+import type { ChatStreamEvent } from '../types';
 
 export const workspaceRouter = Router();
 
@@ -895,6 +904,13 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     (typeof submittedMessage === 'string' ? submittedMessage.trim() : '');
   const retrievalQuery = actionPlan?.retrievalQuery || queryText;
   const modelQuery = actionPlan?.modelPrompt || queryText;
+  const workspaceSourceCount = Number(res.locals.workspace.sourcesCount || 0);
+  const workspaceMetaQuestion = !actionPlan && isWorkspaceMetaQuestion(queryText);
+  const initialChatRoute = selectInitialChatRoute({
+    sourceCount: workspaceSourceCount,
+    query: queryText,
+    isAIAction: Boolean(actionPlan),
+  });
   const meteredActionType = actionPlan ? 'AI_ACTION' : 'CHAT';
   const usageReservation = await checkAndReserve(
     res.locals.userId,
@@ -960,7 +976,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   req.once('aborted', handleRequestAborted);
   res.once('close', handleResponseClose);
 
-  const sendEvent = (eventData: object): boolean => {
+  const sendEvent = (eventData: ChatStreamEvent): boolean => {
     if (transportDisconnected || res.destroyed || res.writableEnded) {
       markTransportDisconnected();
       return false;
@@ -996,15 +1012,47 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
 
     const recentHistory =
       actionMessageSnapshot || (await getWorkspaceMessages(workspaceId));
-    const conversationHistory = buildConversationHistory(
-      recentHistory,
-      savedUserMessage.id,
-    );
+    if (initialChatRoute.kind === 'DETERMINISTIC_NO_SOURCES') {
+      sendEvent({
+        type: 'start',
+        hasContext: false,
+        responseMode: initialChatRoute.responseMode,
+        candidateCitationCount: 0,
+        citations: [],
+      });
+      sendEvent({ type: 'chunk', text: NO_SOURCES_META_RESPONSE });
+      const savedMessage = await replaceWorkspaceAssistantMessage({
+        workspaceId,
+        assistantMessageId: regenerationTurn
+          ? regenerationTurn.assistantMessage.id
+          : pendingAssistantMessage!.id,
+        content: NO_SOURCES_META_RESPONSE,
+        mode,
+        responseMode: initialChatRoute.responseMode,
+      });
+      assistantPersisted = true;
+      await commitUsage(usageEventId);
+      usageEventId = null;
+      regenerationReserved = false;
+      sendEvent({
+        type: 'done',
+        messageId: savedMessage.id,
+        userMessage: savedUserMessage,
+        message: savedMessage,
+        citations: [],
+        responseMode: initialChatRoute.responseMode,
+        groundingStatus: 'workspace_has_no_sources',
+        regenerated: Boolean(regenerationTurn),
+      });
+      return;
+    }
 
-    let retrievedChunks;
+    let retrievedChunks = [];
     lifecyclePhase = 'retrieval';
     try {
-      if (actionPlan?.sourceRetrievals?.length) {
+      if (initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL') {
+        retrievedChunks = [];
+      } else if (actionPlan?.sourceRetrievals?.length) {
         const scopedResults = await Promise.all(
           actionPlan.sourceRetrievals.map(async (scope) => {
             const candidates = await searchWorkspaceChunks(
@@ -1054,9 +1102,18 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     }
     lifecyclePhase = 'citation_validation';
     const ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
+    const responseMode =
+      initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL'
+        ? initialChatRoute.responseMode
+        : selectResponseModeAfterRetrieval({
+            hasContext: ragContext.hasContext,
+            isAIAction: Boolean(actionPlan),
+            isWorkspaceMeta: workspaceMetaQuestion,
+          });
     sendEvent({
       type: 'start',
       hasContext: ragContext.hasContext,
+      responseMode,
       candidateCitationCount: ragContext.citations.length,
       citations: [],
       ...(actionPlan
@@ -1065,6 +1122,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     });
 
     if (
+      responseMode !== 'GENERAL' &&
       shouldReturnInsufficientWorkspaceEvidence(
         ragContext.hasContext,
         actionPlan?.allowWithoutWorkspaceContext === true,
@@ -1081,12 +1139,14 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             assistantMessageId: regenerationTurn.assistantMessage.id,
             content: insufficientContext,
             mode,
+            responseMode: responseMode || undefined,
           })
         : await replaceWorkspaceAssistantMessage({
             workspaceId,
             assistantMessageId: pendingAssistantMessage!.id,
             content: insufficientContext,
             mode,
+            responseMode: responseMode || undefined,
           });
       await discardUsage(usageEventId);
       usageEventId = null;
@@ -1097,13 +1157,14 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         userMessage: savedUserMessage,
         message: savedMessage,
         citations: [],
+        responseMode,
         groundingStatus: 'insufficient_workspace_evidence',
         regenerated: Boolean(regenerationTurn),
       });
       return;
     }
 
-    const citationSafeStream = ragContext.hasContext
+    const citationSafeStream = responseMode === 'GROUNDED' && ragContext.hasContext
       ? new CitationSafeStream(
           ragContext.citations,
           (text) => {
@@ -1111,21 +1172,38 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           },
         )
       : null;
+    const generalSafeStream = responseMode === 'GENERAL'
+      ? new GeneralResponseSafeStream((text) => sendEvent({ type: 'chunk', text }))
+      : null;
     const externalWebSafeStream = new ExternalWebSafeStream(
       ragContext.citations,
       (text) => {
         if (citationSafeStream) {
           citationSafeStream.push(text);
+        } else if (generalSafeStream) {
+          generalSafeStream.push(text);
         } else {
           sendEvent({ type: 'chunk', text });
         }
       },
+    );
+    const generalPreamble =
+      responseMode === 'GENERAL' && workspaceSourceCount > 0
+        ? GENERAL_FALLBACK_PREAMBLE
+        : '';
+    if (generalPreamble) generalSafeStream?.push(generalPreamble);
+    const conversationHistory = buildConversationHistory(
+      recentHistory,
+      savedUserMessage.id,
+      undefined,
+      responseMode === 'GENERAL',
     );
     lifecyclePhase = 'orchestration';
     const generated = await orchestrateGroundedResponse({
       workspaceId,
       hasWorkspaceContext: ragContext.hasContext,
       hasActionContext: actionPlan?.allowWithoutWorkspaceContext === true,
+      allowGeneralKnowledge: responseMode === 'GENERAL',
       instructions: ragContext.hasContext
         ? `${ragContext.contextPrompt}${
             actionPlan
@@ -1136,7 +1214,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             actionPlan
               ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
               : ''
-          }`,
+          }${responseMode === 'GENERAL' ? '\nAnswer as disclosed general knowledge. Never claim that the response is based on Workspace sources, and never emit [Citation #N] markers.' : ''}`,
       history: conversationHistory,
       query: modelQuery,
       userId: res.locals.userId,
@@ -1173,10 +1251,11 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     const webAppendix = externalWebSourcesAppendix(
       generated.orchestration.webSources,
     );
-    const finalResponse = `${generated.text}${webAppendix}`;
+    const finalResponse = `${generalPreamble}${generated.text}${webAppendix}`;
     if (webAppendix) externalWebSafeStream.push(webAppendix);
     externalWebSafeStream.finish(finalResponse);
     citationSafeStream?.finish(finalResponse);
+    generalSafeStream?.finish(finalResponse);
     const persistedCitations = usedCitations.map((c) => ({
       chunkId: c.chunkId,
       sourceId: c.sourceId,
@@ -1198,6 +1277,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           assistantMessageId: regenerationTurn.assistantMessage.id,
           content: finalResponse,
           mode,
+          responseMode: responseMode || undefined,
           citations: persistedCitations,
         })
       : await replaceWorkspaceAssistantMessage({
@@ -1205,19 +1285,21 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           assistantMessageId: pendingAssistantMessage!.id,
           content: finalResponse,
           mode,
+          responseMode: responseMode || undefined,
           citations: persistedCitations,
         });
     assistantPersisted = true;
     await commitUsage(usageEventId, providerCompletionMetadata);
     usageEventId = null;
     regenerationReserved = false;
-    logger.info('Grounded response completed and persisted', {
+    logger.info('Chat response completed and persisted', {
       workspaceId,
       messageId: savedAssistantMessage.id,
       provider: generated.provider,
       model: generated.model,
       providerResponseId: generated.responseId,
       citationCount: usedCitations.length,
+      responseMode,
       toolExecutionCount: generated.orchestration.toolExecutions.length,
       intelligenceMode: generated.orchestration.intelligenceMode,
       webSourceCount: generated.orchestration.webSources.length,
@@ -1233,6 +1315,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       userMessage: savedUserMessage,
       message: savedAssistantMessage,
       citations: usedCitations,
+      responseMode,
       intelligenceMode: generated.orchestration.intelligenceMode,
       webSources: generated.orchestration.webSources,
       regenerated: Boolean(regenerationTurn),

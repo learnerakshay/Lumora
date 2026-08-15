@@ -304,6 +304,22 @@ test('below-threshold candidates produce an empty grounded result', async () => 
   assert.deepEqual(results, []);
 });
 
+test('the existing 0.15 boundary accepts equality and rejects the value below it', () => {
+  const ranked = rankAndDeduplicateChunks(
+    [
+      chunk({ id: 'at-boundary', similarity: 0.15 }),
+      chunk({
+        id: 'below-boundary',
+        similarity: 0.149999,
+        content: 'Different content below the existing confidence boundary.',
+      }),
+    ],
+    5,
+    0.15,
+  );
+  assert.deepEqual(ranked.map(({ id }) => id), ['at-boundary']);
+});
+
 test('source-scoped retrieval constrains candidates before vector ranking and top-K', async () => {
   const requestedSource = 'source-requested';
   const { dependencies, state } = retrievalDependencies([
