@@ -23,6 +23,7 @@ import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presentation';
 import { citationsForResponse } from './workspace-interactions';
+import { LearningResourceSection } from './LearningResourceSection';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
@@ -438,6 +439,8 @@ export function WorkspaceChatArea({
                       <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
                         <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation)}>{message.content}</Markdown>
                       </div>
+
+                      <LearningResourceSection resources={message.resourceRecommendations || []} />
 
                       {messageCitations.length > 0 && (
                         <div className="mt-5 space-y-2 border-t border-slate-800/60 pt-3">

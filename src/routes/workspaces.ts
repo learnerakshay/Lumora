@@ -87,6 +87,9 @@ import {
 } from '../lib/usage/service';
 import { usageLimitError } from '../lib/usage/errors';
 import type { ChatStreamEvent } from '../types';
+import { detectResourceIntent } from '../lib/resources/normalization';
+import { resolveResources } from '../lib/resources/resolver';
+import { toLearningResourceRecommendation } from '../lib/resources/domain';
 
 export const workspaceRouter = Router();
 
@@ -914,6 +917,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     query: queryText,
     isAIAction: Boolean(actionPlan),
   });
+  const resourceIntent = actionPlan ? null : detectResourceIntent(queryText);
   const meteredActionType = actionPlan ? 'AI_ACTION' : 'CHAT';
   const usageReservation = await checkAndReserve(
     res.locals.userId,
@@ -960,6 +964,25 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     );
     return res.status(response.statusCode).json(response.payload);
   }
+
+  const resourceRecommendationsPromise = resourceIntent
+    ? resolveResources({
+        ...resourceIntent,
+        workspaceId,
+        userId: res.locals.userId,
+        signal: generationController.signal,
+        limit: 4,
+      })
+        .then((resources) => resources.map(toLearningResourceRecommendation))
+        .catch((error) => {
+          logger.warn('Learning resource resolution failed closed', {
+            workspaceId,
+            operationId,
+            reason: error instanceof Error ? error.name : 'unknown',
+          });
+          return [];
+        })
+    : Promise.resolve([]);
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1338,6 +1361,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       textOrigin: c.textOrigin,
     }));
     lifecyclePhase = 'persistence';
+    const resourceRecommendations = await resourceRecommendationsPromise;
     const savedAssistantMessage = regenerationTurn
       ? await replaceWorkspaceAssistantMessage({
           workspaceId,
@@ -1345,6 +1369,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           content: finalResponse,
           mode,
           responseMode: responseMode || undefined,
+          resourceRecommendations,
           citations: persistedCitations,
         })
       : await replaceWorkspaceAssistantMessage({
@@ -1353,6 +1378,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           content: finalResponse,
           mode,
           responseMode: responseMode || undefined,
+          resourceRecommendations,
           citations: persistedCitations,
         });
     persistedAssistantMessage = savedAssistantMessage;
@@ -1371,6 +1397,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       toolExecutionCount: generated.orchestration.toolExecutions.length,
       intelligenceMode: generated.orchestration.intelligenceMode,
       webSourceCount: generated.orchestration.webSources.length,
+      resourceRecommendationCount: resourceRecommendations.length,
       actionId: actionPlan?.actionId,
       actionTarget: actionPlan?.target,
       operationId,

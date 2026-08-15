@@ -279,6 +279,7 @@ model Message {
   content         String        @db.Text
   mode            AnswerMode    @default(DETAILED)
   responseMode    ResponseMode?
+  resourceRecommendations Json?
   status          MessageStatus @default(SUCCESS)
   action          Json?
   regenerationStartedAt DateTime?

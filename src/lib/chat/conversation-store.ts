@@ -3,6 +3,7 @@ import { prisma } from '../prisma';
 import { createCitation, RAGCitation, RetrievedChunk } from '../retrieval/rag-service';
 import type { AIActionRequest } from '../ai/actions/types';
 import { isChatResponseMode, type ChatResponseMode } from '../../types';
+import type { LearningResourceRecommendation } from '../resources/domain';
 
 export interface StoredCitation {
   id: string;
@@ -32,6 +33,7 @@ export interface StoredMessage {
   responseMode: ChatResponseMode | null;
   status: 'SENDING' | 'SUCCESS' | 'ERROR';
   action?: AIActionRequest | null;
+  resourceRecommendations?: LearningResourceRecommendation[];
   createdAt: string;
   citations?: StoredCitation[];
 }
@@ -102,6 +104,7 @@ function toStoredMessage(message: {
   content: string;
   mode: string;
   responseMode: string | null;
+  resourceRecommendations: Prisma.JsonValue | null;
   status: string;
   action: Prisma.JsonValue | null;
   createdAt: Date;
@@ -115,11 +118,65 @@ function toStoredMessage(message: {
     content: message.content,
     mode: message.mode as StoredMessage['mode'],
     responseMode: normalizeChatResponseMode(message.responseMode),
+    resourceRecommendations: normalizeResourceRecommendations(
+      message.resourceRecommendations,
+    ),
     status: message.status as StoredMessage['status'],
     action: message.action as unknown as AIActionRequest | null,
     createdAt: message.createdAt.toISOString(),
     citations: message.citations.map(toStoredCitation),
   };
+}
+
+function normalizeResourceRecommendations(
+  value: Prisma.JsonValue | null,
+): LearningResourceRecommendation[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    const item = candidate as Record<string, Prisma.JsonValue>;
+    if (
+      typeof item.id !== 'string' ||
+      typeof item.title !== 'string' ||
+      typeof item.creator !== 'string' ||
+      typeof item.provider !== 'string' ||
+      typeof item.platform !== 'string' ||
+      typeof item.type !== 'string' ||
+      typeof item.url !== 'string' ||
+      typeof item.reason !== 'string' ||
+      typeof item.level !== 'string' ||
+      typeof item.accessType !== 'string' ||
+      !['YouTube', 'Udemy', 'Cohort', 'Website'].includes(item.platform) ||
+      !['video', 'playlist', 'course', 'cohort', 'digital-product', 'article', 'docs'].includes(item.type) ||
+      !['beginner', 'intermediate', 'advanced'].includes(item.level) ||
+      !['free', 'paid'].includes(item.accessType) ||
+      (item.language !== undefined && !['hi', 'en', 'mixed'].includes(String(item.language))) ||
+      (item.deliveryMode !== undefined && !['LIVE', 'RECORDED'].includes(String(item.deliveryMode)))
+    ) return [];
+    try {
+      if (new URL(item.url).protocol !== 'https:') return [];
+    } catch {
+      return [];
+    }
+    const normalized = { ...item } as unknown as LearningResourceRecommendation;
+    if (item.offer !== undefined) {
+      if (!item.offer || typeof item.offer !== 'object' || Array.isArray(item.offer)) {
+        delete normalized.offer;
+      } else {
+        const offer = item.offer as Record<string, Prisma.JsonValue>;
+        try {
+          if (typeof offer.url !== 'string' ||
+              typeof offer.label !== 'string' ||
+              new URL(offer.url).protocol !== 'https:') {
+            delete normalized.offer;
+          }
+        } catch {
+          delete normalized.offer;
+        }
+      }
+    }
+    return [normalized];
+  });
 }
 
 export async function getWorkspaceMessages(workspaceId: string): Promise<StoredMessage[]> {
@@ -352,6 +409,7 @@ export async function createWorkspaceMessage(data: {
   responseMode?: ChatResponseMode;
   status?: StoredMessage['status'];
   action?: AIActionRequest;
+  resourceRecommendations?: LearningResourceRecommendation[];
   citations?: CitationInput[];
 }): Promise<StoredMessage> {
   return prisma.$transaction(
@@ -404,6 +462,10 @@ export async function createWorkspaceMessage(data: {
           action:
             data.role === 'USER' && data.action
               ? (data.action as unknown as Prisma.InputJsonValue)
+              : undefined,
+          resourceRecommendations:
+            data.role === 'ASSISTANT' && data.resourceRecommendations
+              ? (data.resourceRecommendations as unknown as Prisma.InputJsonValue)
               : undefined,
           citations:
             citations.length > 0
@@ -575,6 +637,7 @@ export async function replaceWorkspaceAssistantMessage(data: {
   mode: StoredMessage['mode'];
   responseMode?: ChatResponseMode;
   status?: 'SUCCESS' | 'ERROR';
+  resourceRecommendations?: LearningResourceRecommendation[];
   citations?: CitationInput[];
 }): Promise<StoredMessage> {
   return prisma.$transaction(
@@ -611,6 +674,9 @@ export async function replaceWorkspaceAssistantMessage(data: {
           mode: data.mode,
           responseMode: data.responseMode,
           status: data.status || 'SUCCESS',
+          resourceRecommendations: data.resourceRecommendations
+            ? (data.resourceRecommendations as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
           regenerationStartedAt: null,
           citations:
             citations.length > 0
