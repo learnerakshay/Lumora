@@ -335,6 +335,86 @@ async function parsePlainTextSource(
   };
 }
 
+export interface YouTubeExtractionQuality {
+  segmentCount: number;
+  textLength: number;
+  timestampStartMs: number;
+  timestampEndMs: number;
+  timestampSpanMs: number;
+  spokenDurationMs: number;
+  charactersPerMinute: number;
+  suspiciouslyThin: boolean;
+}
+
+const LONG_TRANSCRIPT_SPAN_MS = 10 * 60 * 1_000;
+const THIN_TRANSCRIPT_MAX_CHARACTERS = 800;
+const THIN_TRANSCRIPT_MAX_CHARACTERS_PER_MINUTE = 80;
+
+export function assessYouTubeExtractionQuality(
+  cues: Array<{ text: string; offset: number; duration: number }>,
+): YouTubeExtractionQuality {
+  if (!Array.isArray(cues) || cues.length === 0) {
+    throw new IngestionFailure({
+      message: 'YouTube extraction contained no timestamped segments',
+      errorCode: 'PROVIDER_MALFORMED_RESPONSE',
+      userMessage: 'We could not finish processing this video because the extraction was incomplete. Please try again shortly.',
+      retryable: true,
+      provider: 'youtube',
+    });
+  }
+
+  let previousOffset = -1;
+  let timestampStartMs = Number.POSITIVE_INFINITY;
+  let timestampEndMs = 0;
+  let spokenDurationMs = 0;
+  let textLength = 0;
+  for (const [index, cue] of cues.entries()) {
+    if (
+      !cue ||
+      typeof cue.text !== 'string' ||
+      !cue.text.trim() ||
+      !Number.isFinite(cue.offset) ||
+      cue.offset < 0 ||
+      cue.offset < previousOffset ||
+      !Number.isFinite(cue.duration) ||
+      cue.duration < 0
+    ) {
+      throw new IngestionFailure({
+        message: `YouTube extraction contained an invalid segment at index ${index}`,
+        errorCode: 'PROVIDER_MALFORMED_RESPONSE',
+        userMessage: 'We could not finish processing this video because the extraction was incomplete. Please try again shortly.',
+        retryable: true,
+        provider: 'youtube',
+      });
+    }
+    previousOffset = cue.offset;
+    timestampStartMs = Math.min(timestampStartMs, cue.offset);
+    timestampEndMs = Math.max(timestampEndMs, cue.offset + cue.duration);
+    spokenDurationMs += cue.duration;
+    textLength += cue.text.trim().length;
+  }
+
+  const timestampSpanMs = Math.max(0, timestampEndMs - timestampStartMs);
+  const charactersPerMinute = timestampSpanMs > 0
+    ? textLength / (timestampSpanMs / 60_000)
+    : textLength;
+  const suspiciouslyThin =
+    timestampSpanMs >= LONG_TRANSCRIPT_SPAN_MS &&
+    textLength < THIN_TRANSCRIPT_MAX_CHARACTERS &&
+    charactersPerMinute < THIN_TRANSCRIPT_MAX_CHARACTERS_PER_MINUTE;
+
+  return {
+    segmentCount: cues.length,
+    textLength,
+    timestampStartMs,
+    timestampEndMs,
+    timestampSpanMs,
+    spokenDurationMs,
+    charactersPerMinute,
+    suspiciouslyThin,
+  };
+}
+
 async function parseYouTubeSource(
   input: ParseSourceInput,
 ): Promise<ParsedSourceOutput> {
@@ -370,6 +450,16 @@ async function parseYouTubeSource(
     strategy = transcript.strategy;
     acquisitionDurationMs = transcript.acquisitionDurationMs;
     providerLanguage = transcript.language;
+  }
+  const extractionQuality = assessYouTubeExtractionQuality(cues);
+  if (extractionQuality.suspiciouslyThin) {
+    throw new IngestionFailure({
+      message: `YouTube extraction was suspiciously thin (${extractionQuality.segmentCount} segments, ${extractionQuality.textLength} characters, ${extractionQuality.timestampSpanMs}ms span)`,
+      errorCode: 'PROVIDER_MALFORMED_RESPONSE',
+      userMessage: 'We could not finish processing this video because the extraction appeared incomplete. Please try again shortly.',
+      retryable: true,
+      provider: provider === 'persisted' ? storedTranscript?.provider || 'youtube' : provider,
+    });
   }
   await input.onParsing?.();
   if (!Array.isArray(cues) || cues.length === 0) {
@@ -417,6 +507,13 @@ async function parseYouTubeSource(
       transcriptStrategy: strategy,
       acquisitionDurationMs,
       cueCount: preserved.cues.length,
+      extractionTextLength: extractionQuality.textLength,
+      timestampStartMs: extractionQuality.timestampStartMs,
+      timestampEndMs: extractionQuality.timestampEndMs,
+      timestampSpanMs: extractionQuality.timestampSpanMs,
+      spokenDurationMs: extractionQuality.spokenDurationMs,
+      charactersPerMinute: extractionQuality.charactersPerMinute,
+      extractionQuality: 'passed',
       cues: preserved.cues,
       parsedAt: new Date().toISOString(),
     },

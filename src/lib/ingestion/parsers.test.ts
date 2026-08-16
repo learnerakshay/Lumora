@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   parseSourceContent,
   parseVttDocument,
+  assessYouTubeExtractionQuality,
 } from './parsers';
 import {
   isPrivateNetworkAddress,
@@ -12,7 +13,11 @@ import {
 import { IngestionFailure } from './errors';
 import { assertValidProcessingTransition } from '../source-store';
 import { SOURCE_LIMITS, validateSourceInput } from './validators';
-import { extractYouTubeVideoId } from './youtube-url';
+import {
+  buildYouTubeTimestampUrl,
+  canonicalizeYouTubeUrl,
+  extractYouTubeVideoId,
+} from './youtube-url';
 
 function createMinimalPdf(text: string): Uint8Array {
   const stream = `BT /F1 18 Tf 72 100 Td (${text}) Tj ET`;
@@ -311,6 +316,25 @@ test('YouTube URL validation accepts supported video links and rejects unsupport
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/playlist?list=PL123'), null);
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/'), null);
   assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch'), null);
+  assert.equal(extractYouTubeVideoId('https://www.youtube.com/watchlater?v=dQw4w9WgXcQ'), null);
+  assert.equal(extractYouTubeVideoId('https://untrusted.youtube.com/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(extractYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ/extra'), null);
+
+  for (const url of [
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=141s&list=PL123',
+    'https://youtu.be/dQw4w9WgXcQ',
+    'https://youtu.be/dQw4w9WgXcQ?si=share-token',
+    'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+  ]) {
+    assert.equal(
+      canonicalizeYouTubeUrl(url),
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    );
+  }
+  assert.equal(
+    buildYouTubeTimestampUrl('https://youtu.be/dQw4w9WgXcQ?si=token', 141_999),
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=141s',
+  );
 
   assert.equal(
     validateSourceInput({
@@ -321,6 +345,29 @@ test('YouTube URL validation accepts supported video links and rejects unsupport
     }).valid,
     true,
   );
+  const canonicalValidation = validateSourceInput({
+    workspaceId: 'workspace',
+    title: 'Canonical short URL',
+    type: 'YOUTUBE',
+    url: 'https://youtu.be/dQw4w9WgXcQ?si=share-token&t=20',
+  });
+  assert.equal(
+    canonicalValidation.normalizedUrl,
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  );
+  assert.equal(
+    validateSourceInput({
+      workspaceId: 'workspace',
+      title: 'Equivalent watch URL',
+      type: 'YOUTUBE',
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      existingSources: [{
+        title: 'Existing video',
+        url: 'https://youtu.be/dQw4w9WgXcQ?si=old-token',
+      }],
+    }).valid,
+    false,
+  );
   assert.equal(
     validateSourceInput({
       workspaceId: 'workspace',
@@ -329,6 +376,30 @@ test('YouTube URL validation accepts supported video links and rejects unsupport
       url: 'https://www.youtube.com/channel/UC123',
     }).valid,
     false,
+  );
+});
+
+test('YouTube extraction quality rejects only contextually thin long-span output', () => {
+  const short = assessYouTubeExtractionQuality([
+    { text: 'A concise short explanation.', offset: 0, duration: 20_000 },
+  ]);
+  assert.equal(short.suspiciouslyThin, false);
+
+  const thinLong = assessYouTubeExtractionQuality([
+    { text: 'Sparse opening.', offset: 0, duration: 10_000 },
+    { text: 'Sparse ending.', offset: 20 * 60_000, duration: 5_000 },
+  ]);
+  assert.equal(thinLong.suspiciouslyThin, true);
+  assert.equal(thinLong.segmentCount, 2);
+
+  assert.throws(
+    () => assessYouTubeExtractionQuality([
+      { text: 'Later', offset: 5_000, duration: 1_000 },
+      { text: 'Earlier', offset: 1_000, duration: 1_000 },
+    ]),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'PROVIDER_MALFORMED_RESPONSE',
   );
 });
 

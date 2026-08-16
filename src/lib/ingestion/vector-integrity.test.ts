@@ -130,7 +130,12 @@ interface FakeState {
     workspaceId: string;
     activeIndexId: string | null;
     currentVersion: number;
+    status: string;
+    stage: string;
+    metadata: Record<string, unknown>;
   };
+  attempt: { id: string; stage: string; completedAt: Date | null };
+  events: Array<{ attemptId: string; stage: string; details?: unknown }>;
   indexes: Array<{ id: string; sourceId: string; status: string }>;
   chunks: Array<{ indexId: string }>;
 }
@@ -142,7 +147,12 @@ function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
       workspaceId: 'workspace-1',
       activeIndexId: 'index-old',
       currentVersion: 2,
+      status: 'PROCESSING',
+      stage: 'INDEXING',
+      metadata: { stage: 'INDEXING' },
     },
+    attempt: { id: 'attempt-2', stage: 'INDEXING', completedAt: null },
+    events: [],
     indexes: [{ id: 'index-old', sourceId: 'source-1', status: 'READY' }],
     chunks: [{ indexId: 'index-old' }],
   };
@@ -155,7 +165,8 @@ function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
       const tx = {
         $queryRaw: async (strings: TemplateStringsArray) => {
           const sql = strings.join('');
-          if (sql.includes('FOR UPDATE')) return [state.source];
+          if (sql.includes('FROM "SourceProcessingAttempt"')) return [state.attempt];
+          if (sql.includes('FROM "Source"') && sql.includes('FOR UPDATE')) return [state.source];
           if (sql.includes('COUNT(*)')) {
             const current = state.indexes.at(-1)!;
             const count = state.chunks.filter((chunk) => chunk.indexId === current.id).length;
@@ -201,8 +212,25 @@ function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
         },
         source: {
           update: async ({ data }: any) => {
-            state.source.activeIndexId = data.activeIndexId;
+            Object.assign(state.source, data);
             return state.source;
+          },
+        },
+        sourceProcessingAttempt: {
+          updateMany: async ({ where, data }: any) => {
+            if (
+              state.attempt.id !== where.id ||
+              state.attempt.stage !== where.stage ||
+              state.attempt.completedAt !== where.completedAt
+            ) return { count: 0 };
+            Object.assign(state.attempt, data);
+            return { count: 1 };
+          },
+        },
+        sourceProcessingEvent: {
+          create: async ({ data }: any) => {
+            state.events.push(data);
+            return data;
           },
         },
       };
@@ -210,6 +238,8 @@ function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
         return await operation(tx);
       } catch (error) {
         state.source = snapshot.source;
+        state.attempt = snapshot.attempt;
+        state.events = snapshot.events;
         state.indexes = snapshot.indexes;
         state.chunks = snapshot.chunks;
         throw error;
@@ -241,6 +271,46 @@ test('atomic index promotion supersedes the previous index only after validation
   assert.equal(state.source.activeIndexId, result.indexId);
   assert.equal(state.indexes.find((index) => index.id === 'index-old')?.status, 'SUPERSEDED');
   assert.equal(state.indexes.find((index) => index.id === result.indexId)?.status, 'READY');
+});
+
+test('pipeline index promotion atomically completes the owning attempt and source', async () => {
+  const { database, state } = createFakeVectorDatabase();
+  const result = await saveSourceIndex({
+    ...indexInput(),
+    completion: {
+      pipelineStartedAt: Date.now(),
+      details: { tokenCount: 2, parserVersion: 'youtube-transcript-1' },
+    },
+  }, database as any);
+  assert.equal(state.source.activeIndexId, result.indexId);
+  assert.equal(state.source.status, 'COMPLETED');
+  assert.equal(state.source.stage, 'COMPLETED');
+  assert.equal(state.attempt.stage, 'COMPLETED');
+  assert.ok(state.attempt.completedAt instanceof Date);
+  assert.deepEqual(state.events, [{
+    attemptId: 'attempt-2',
+    stage: 'COMPLETED',
+    details: state.events[0].details,
+  }]);
+  assert.equal((state.source.metadata as any).indexId, result.indexId);
+});
+
+test('stale or failed attempt cannot promote a partial active index', async () => {
+  const { database, state } = createFakeVectorDatabase();
+  state.attempt.stage = 'FAILED';
+  state.attempt.completedAt = new Date();
+  await assert.rejects(
+    saveSourceIndex({
+      ...indexInput(),
+      completion: {
+        pipelineStartedAt: Date.now(),
+        details: { tokenCount: 2 },
+      },
+    }, database as any),
+    /no longer owns index promotion/,
+  );
+  assert.equal(state.source.activeIndexId, 'index-old');
+  assert.equal(state.indexes.length, 1);
 });
 
 test('pgvector failure rolls back the new index and preserves the previous active index', async () => {

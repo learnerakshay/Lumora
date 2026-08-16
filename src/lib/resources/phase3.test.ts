@@ -84,6 +84,77 @@ test('adds exactly the three confirmed interview products and differentiates int
   assert.ok(os.some(({ resource }) => resource.id === 'chaicode-operating-systems-interview-product'));
 });
 
+test('pins the verified Chai Computer Network playlist only for eligible foundational CN intent', async () => {
+  const foundationalQueries = [
+    'best YT free series to learn Computer Networks from scratch',
+    'Where should I learn Computer Networks?',
+    'Best free CN playlist?',
+    'Computer Networks roadmap for beginners',
+  ];
+  for (const query of foundationalQueries) {
+    const results = await resolveResources(input(query), { discovery: emptyDiscovery });
+    assert.equal(results[0].resource.id, 'chai-aur-computer-network', query);
+  }
+
+  const english = await resolveResources(
+    input('Best English-only Computer Networks resources'),
+    {
+      discovery: {
+        async discover() {
+          return [{
+            title: 'Computer Networks Foundations in English',
+            url: 'https://example.com/computer-networks-foundations',
+            snippet: 'An English computer networks foundations course for beginners.',
+            score: 1,
+          }];
+        },
+      },
+    },
+  );
+  assert.ok(english.length > 0);
+  // English remains the resolver's existing ranking preference. The CN pin
+  // explicitly declines to activate for a Hindi-only candidate here.
+  assert.ok(english.filter(({ resource }) => resource.id === 'chai-aur-computer-network').length <= 1);
+
+  const paid = await resolveResources(input('Best paid course for Computer Networks'), { discovery: emptyDiscovery });
+  assert.ok(paid.every(({ resource }) => resource.accessType === 'paid'));
+  assert.ok(!paid.some(({ resource }) => resource.id === 'chai-aur-computer-network'));
+});
+
+test('does not pin the foundational CN playlist for interview or unrelated queries', async () => {
+  const interviewDiscovery = {
+    title: 'Computer Networks Interview Preparation Course',
+    url: 'https://example.com/computer-networks-interview-course',
+    snippet: 'Structured computer networks interview preparation course.',
+    score: 1,
+  };
+  const interview = await resolveResources(
+    input('I need Computer Networks interview preparation'),
+    { discovery: { async discover() { return [interviewDiscovery]; } } },
+  );
+  assert.notEqual(interview[0].resource.id, 'chai-aur-computer-network');
+
+  const kubernetes = await resolveResources(input('Best Kubernetes playlist'), { discovery: emptyDiscovery });
+  assert.ok(!kubernetes.some(({ resource }) => resource.id === 'chai-aur-computer-network'));
+  assert.equal(detectResourceIntent('Explain TCP three-way handshake'), null);
+});
+
+test('deduplicates discovered copies of the pinned Chai Computer Network playlist', async () => {
+  const duplicate = {
+    title: 'Chai aur Computer Network',
+    url: 'https://www.youtube.com/playlist?si=another-token&list=PLd1s-PEC5Pio',
+    snippet: 'A computer networking foundations playlist.',
+    score: 1,
+  };
+  const results = await resolveResources(
+    input('Best free Computer Networks playlist'),
+    { discovery: { async discover() { return [duplicate]; } } },
+  );
+  assert.equal(results[0].resource.id, 'chai-aur-computer-network');
+  assert.equal(results.filter(({ resource }) => resource.id === 'chai-aur-computer-network').length, 1);
+  assert.equal(results.filter(({ resource }) => canonicalResourceUrl(resource.url) === canonicalResourceUrl(duplicate.url)).length, 1);
+});
+
 test('stores exactly six verified Udemy identities with canonical URLs and exact separate offers', () => {
   const udemy = CURATED_LEARNING_RESOURCES.filter(({ providerId }) => providerId === 'chaicode-udemy');
   assert.equal(udemy.length, 6);

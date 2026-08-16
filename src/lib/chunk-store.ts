@@ -39,6 +39,10 @@ export interface SaveSourceIndexInput {
   chunkVersion: string;
   contract: EmbeddingContract;
   chunks: IndexChunkInput[];
+  completion?: {
+    pipelineStartedAt: number;
+    details: Record<string, unknown>;
+  };
 }
 
 type VectorDatabaseClient = Pick<typeof prisma, '$queryRaw' | '$transaction'>;
@@ -97,19 +101,48 @@ export async function saveSourceIndex(
 
   return database.$transaction(
     async (tx) => {
+      let processingAttempt: {
+        id: string;
+        stage: string;
+        completedAt: Date | null;
+      } | null = null;
+      if (input.completion) {
+        const attempts = await tx.$queryRaw<Array<{
+          id: string;
+          stage: string;
+          completedAt: Date | null;
+        }>>`
+          SELECT id, stage::text, "completedAt"
+          FROM "SourceProcessingAttempt"
+          WHERE "sourceId" = ${input.sourceId}
+            AND version = ${input.sourceVersion}
+          FOR UPDATE
+        `;
+        processingAttempt = attempts[0] || null;
+        if (
+          !processingAttempt ||
+          processingAttempt.stage !== 'INDEXING' ||
+          processingAttempt.completedAt
+        ) {
+          throw new Error('Processing attempt no longer owns index promotion');
+        }
+      }
+
       const sources = await tx.$queryRaw<
         Array<{
           id: string;
           workspaceId: string;
           activeIndexId: string | null;
           currentVersion: number;
+          metadata: unknown;
         }>
       >`
         SELECT
           source.id,
           source."workspaceId",
           source."activeIndexId",
-          source."currentVersion"
+          source."currentVersion",
+          source.metadata
         FROM "Source" source
         INNER JOIN "Workspace" workspace ON workspace.id = source."workspaceId"
         WHERE source.id = ${input.sourceId}
@@ -227,9 +260,75 @@ export async function saveSourceIndex(
           indexedAt,
         },
       });
+      const completionDetails = input.completion
+        ? {
+            ...input.completion.details,
+            chunkCount: records.length,
+            indexId: createdIndex.id,
+            indexedAt: indexedAt.toISOString(),
+            sourceVersion: input.sourceVersion,
+            chunkVersion: input.chunkVersion,
+            embeddingProvider: input.contract.provider,
+            embeddingModel: input.contract.model,
+            embeddingVersion: input.contract.version,
+            vectorDimensions: input.contract.dimensions,
+            totalDurationMs: Date.now() - input.completion.pipelineStartedAt,
+          }
+        : null;
+
+      if (input.completion && processingAttempt && completionDetails) {
+        const attemptUpdated = await tx.sourceProcessingAttempt.updateMany({
+          where: {
+            id: processingAttempt.id,
+            stage: 'INDEXING',
+            completedAt: null,
+          },
+          data: {
+            stage: 'COMPLETED',
+            errorMessage: null,
+            completedAt: new Date(),
+          },
+        });
+        if (attemptUpdated.count !== 1) {
+          throw new Error('Processing attempt lost ownership during index promotion');
+        }
+        await tx.sourceProcessingEvent.create({
+          data: {
+            attemptId: processingAttempt.id,
+            stage: 'COMPLETED',
+            details: completionDetails,
+          },
+        });
+      }
+
+      const sourceMetadata = source.metadata &&
+        typeof source.metadata === 'object' &&
+        !Array.isArray(source.metadata)
+        ? source.metadata as Record<string, unknown>
+        : {};
       await tx.source.update({
         where: { id: source.id },
-        data: { activeIndexId: createdIndex.id },
+        data: input.completion && completionDetails
+          ? {
+              activeIndexId: createdIndex.id,
+              status: 'COMPLETED',
+              stage: 'COMPLETED',
+              metadata: {
+                ...sourceMetadata,
+                ...completionDetails,
+                stage: 'COMPLETED',
+                stageProgress: 100,
+                currentVersion: input.sourceVersion,
+                errorMessage: null,
+                errorCode: null,
+                errorCategory: null,
+                retryable: null,
+                failedAt: null,
+                failedStage: null,
+                processedAt: indexedAt.toISOString(),
+              },
+            }
+          : { activeIndexId: createdIndex.id },
       });
 
       return {

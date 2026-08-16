@@ -9,6 +9,7 @@ function createFailedYouTubeDatabase() {
     source: {
       id: 'source-youtube',
       workspaceId: 'workspace-1',
+      type: 'YOUTUBE',
       currentVersion: 1,
       status: 'FAILED',
       stage: 'FAILED',
@@ -22,7 +23,11 @@ function createFailedYouTubeDatabase() {
     contents: [{
       sourceId: 'source-youtube',
       version: 1,
-      originalContent: null,
+      originalContent: JSON.stringify({
+        kind: 'youtube-transcript-v1',
+        language: 'en',
+        cues: [{ text: 'Old extraction', offset: 0, duration: 1_000 }],
+      }),
       artifactData: null,
       artifactFileName: null,
       artifactMimeType: null,

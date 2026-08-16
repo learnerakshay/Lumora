@@ -1,6 +1,7 @@
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
 import type { ChatResponseMode } from '../../types';
+import { buildYouTubeTimestampUrl } from '../../lib/ingestion/youtube-url';
 
 export function citationsForResponse(
   responseMode: ChatResponseMode | null,
@@ -30,9 +31,16 @@ export function sourceRefreshDisabled(loading: boolean, refreshing: boolean): bo
   return loading || refreshing;
 }
 
+export function canReprocessSource(source: SourceRecord): boolean {
+  if (source.status === 'PENDING' || source.status === 'PROCESSING') return false;
+  if (source.status === 'FAILED') return source.metadata?.retryable === true;
+  return source.status === 'COMPLETED';
+}
+
 export type CitationNavigationTarget =
   | { kind: 'pdf'; href: string; source: SourceRecord }
   | { kind: 'website'; href: string; source: SourceRecord }
+  | { kind: 'youtube'; href: string; source: SourceRecord }
   | { kind: 'text'; source: SourceRecord }
   | { kind: 'context'; source: SourceRecord }
   | { kind: 'unavailable' };
@@ -65,8 +73,27 @@ export function resolveCitationNavigation(
     const href = externalHttpUrl(citation.url || source.url || source.metadata?.url);
     return href ? { kind: 'website', href, source } : { kind: 'context', source };
   }
+  if (source.type === 'YOUTUBE') {
+    const versionSafeUrl = citation.url || (
+      citation.sourceVersion === source.currentVersion
+        ? source.url || source.metadata?.url
+        : null
+    );
+    const href = buildYouTubeTimestampUrl(versionSafeUrl, citation.timestampStartMs);
+    return href ? { kind: 'youtube', href, source } : { kind: 'context', source };
+  }
   if (source.type === 'TEXT') return { kind: 'text', source };
   return { kind: 'context', source };
+}
+
+export function formatCitationTimestamp(timestampMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(timestampMs / 1_000));
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 export function availableCitations(

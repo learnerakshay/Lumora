@@ -4,7 +4,7 @@ import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
 import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
-import { citationEvidenceKey } from './workspace-interactions';
+import { citationEvidenceKey, formatCitationTimestamp } from './workspace-interactions';
 
 interface WorkspaceContextPanelProps {
   citations: StoredCitation[];
@@ -18,8 +18,7 @@ interface WorkspaceContextPanelProps {
 function formatLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
   if (citation.timestampStartMs != null) {
-    const seconds = Math.floor(citation.timestampStartMs / 1000);
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    return formatCitationTimestamp(citation.timestampStartMs);
   }
   return citation.kind === 'WEB' ? 'Webpage' : 'Source passage';
 }

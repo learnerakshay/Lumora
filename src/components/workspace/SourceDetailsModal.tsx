@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   Edit2,
@@ -15,10 +15,11 @@ import { SourceRecord } from '../../lib/source-store';
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { SourceStatusBadge } from './SourceStatusBadge';
-import { getYouTubeFailureMessage } from './youtube-source-ux';
+import { getYouTubeFailureMessage, getYouTubeStageLabel } from './youtube-source-ux';
 import { UsageLimitNotice } from '../usage/UsageLimitNotice';
 import { usageLimitFromPayload } from '../../lib/usage/client';
 import type { UsageLimitDetails } from '../../lib/usage/types';
+import { canReprocessSource } from './workspace-interactions';
 
 interface SourceDetailsModalProps {
   source: SourceRecord | null;
@@ -43,6 +44,7 @@ export function SourceDetailsModal({
   const [reprocessing, setReprocessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
+  const reprocessingRef = useRef(false);
 
   useEffect(() => {
     if (!source) return;
@@ -50,6 +52,7 @@ export function SourceDetailsModal({
     setIsEditingTitle(false);
     setError(null);
     setUsageLimit(null);
+    reprocessingRef.current = false;
   }, [source]);
 
   if (!isOpen || !source) return null;
@@ -85,6 +88,7 @@ export function SourceDetailsModal({
   const youtubeFailure = source.type === 'YOUTUBE' && isFailed
     ? getYouTubeFailureMessage(source.metadata)
     : null;
+  const canReprocess = canReprocessSource(source);
   const targetUrl = source.url || source.metadata?.url || null;
   const displaySize = source.fileSize || source.metadata?.fileSize || 'Auto Ingest';
 
@@ -114,6 +118,8 @@ export function SourceDetailsModal({
   };
 
   const handleReprocess = async () => {
+    if (reprocessingRef.current || isProcessing || !canReprocess) return;
+    reprocessingRef.current = true;
     try {
       setReprocessing(true);
       setError(null);
@@ -137,18 +143,22 @@ export function SourceDetailsModal({
 
       onUpdate({
         ...source,
-        status: 'PROCESSING',
+        status: 'PENDING',
         stage: 'QUEUED',
         metadata: {
           ...(source.metadata || {}),
           stage: 'QUEUED',
-          stageProgress: 10,
+          stageProgress: 5,
           errorMessage: null,
+          errorCode: null,
+          errorCategory: null,
+          retryable: null,
         },
       });
     } catch (err: any) {
       setError(err.message || 'Unable to process this source again.');
     } finally {
+      reprocessingRef.current = false;
       setReprocessing(false);
     }
   };
@@ -258,10 +268,12 @@ export function SourceDetailsModal({
               <div className="flex items-center space-x-2">
                 <Cpu className="w-4 h-4 text-sky-400" />
                 <span className="font-bold text-white uppercase text-[11px] tracking-wider font-mono">
-                  Processing: {stage.replaceAll('_', ' ')}
+                  Processing: {source.type === 'YOUTUBE'
+                    ? getYouTubeStageLabel(stage)
+                    : stage.replaceAll('_', ' ')}
                 </span>
               </div>
-              <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} />
+              <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} sourceType={source.type} />
             </div>
 
             {/* Progress Bar */}
@@ -344,7 +356,7 @@ export function SourceDetailsModal({
         {/* Footer Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 bg-slate-900/60 px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            {canReprocess && <button
               type="button"
               onClick={handleReprocess}
               disabled={reprocessing || isProcessing}
@@ -356,8 +368,12 @@ export function SourceDetailsModal({
               }
             >
               <RefreshCw className={`w-3.5 h-3.5 ${reprocessing || isProcessing ? 'animate-spin' : ''}`} />
-              <span>{reprocessing ? 'Reprocessing…' : isProcessing ? 'Processing…' : 'Reprocess'}</span>
-            </button>
+              <span>{reprocessing
+                ? isFailed ? 'Retrying…' : 'Reprocessing…'
+                : isProcessing
+                  ? 'Processing…'
+                  : isFailed ? 'Retry' : 'Reprocess'}</span>
+            </button>}
 
             <button
               type="button"

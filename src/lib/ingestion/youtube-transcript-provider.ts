@@ -66,7 +66,7 @@ async function fetchGeminiTranscript(
   if (!apiKey) {
     throw new IngestionFailure({
       message: 'GEMINI_API_KEY is not configured for YouTube acquisition',
-      errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+      errorCode: 'PROVIDER_CONFIGURATION_ERROR',
       userMessage: 'YouTube ingestion is temporarily unavailable.',
       provider: 'gemini',
     });
@@ -107,18 +107,21 @@ async function fetchGeminiTranscript(
       });
     }
 
-    const userMessage = error.classification === 'TIMEOUT'
-      ? 'YouTube extraction timed out. Please retry shortly.'
-      : error.classification === 'RATE_LIMITED'
-        ? 'YouTube extraction is temporarily rate limited. Please retry shortly.'
-        : error.classification === 'EXTRACTION_MALFORMED'
-          ? 'YouTube extraction returned invalid structured content.'
-          : error.classification === 'CONTENT_POLICY'
-            ? 'This YouTube video cannot be processed because of a content policy restriction.'
-            : 'YouTube extraction failed upstream. Please retry shortly.';
+    const errorCode = error.classification === 'TIMEOUT'
+      ? 'PROVIDER_TIMEOUT'
+      : error.classification === 'EXTRACTION_MALFORMED'
+        ? 'PROVIDER_MALFORMED_RESPONSE'
+        : error.classification === 'CONTENT_POLICY'
+          ? 'ACCESS_RESTRICTED'
+          : 'PROVIDER_TEMPORARY_FAILURE';
+    const userMessage = error.classification === 'CONTENT_POLICY'
+      ? 'This YouTube video cannot be processed because access is restricted.'
+      : error.classification === 'EXTRACTION_MALFORMED'
+        ? 'We could not finish processing this video because the extraction was incomplete. Please try again shortly.'
+        : 'We could not finish processing this video right now. Please try again shortly.';
     throw new IngestionFailure({
       message: `Gemini YouTube acquisition failed: ${error.classification}`,
-      errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+      errorCode,
       userMessage,
       retryable: error.retryable,
       provider: 'gemini',
@@ -137,6 +140,7 @@ function validateCues(value: unknown, provider: 'direct' | 'proxy'): YouTubeTran
     });
   }
 
+  let previousOffset = -1;
   const cues = value.map((cue, index) => {
     if (
       !cue ||
@@ -145,6 +149,7 @@ function validateCues(value: unknown, provider: 'direct' | 'proxy'): YouTubeTran
       !(cue as any).text.trim() ||
       !Number.isFinite((cue as any).offset) ||
       (cue as any).offset < 0 ||
+      (cue as any).offset < previousOffset ||
       !Number.isFinite((cue as any).duration) ||
       (cue as any).duration < 0
     ) {
@@ -156,6 +161,7 @@ function validateCues(value: unknown, provider: 'direct' | 'proxy'): YouTubeTran
         provider,
       });
     }
+    previousOffset = (cue as any).offset;
     return {
       text: (cue as any).text,
       offset: (cue as any).offset,

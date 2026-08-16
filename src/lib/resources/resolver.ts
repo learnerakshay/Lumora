@@ -447,6 +447,38 @@ function composeSoftly(resources: RankedResource[], limit: number): RankedResour
   return composed;
 }
 
+const CHAI_COMPUTER_NETWORK_RESOURCE_ID = 'chai-aur-computer-network';
+
+function canPinFoundationalComputerNetworks(
+  candidate: RankedResource | undefined,
+  input: ResolveResourcesInput,
+): candidate is RankedResource {
+  if (!candidate || candidate.resource.id !== CHAI_COMPUTER_NETWORK_RESOURCE_ID) return false;
+  if (!input.topics.includes('computer-networks')) return false;
+  if (input.useCase !== 'roadmap' && input.useCase !== 'technical-gap') return false;
+  if (input.language && candidate.resource.language !== input.language) return false;
+  if (input.accessType && candidate.resource.accessType !== input.accessType) return false;
+  if (input.platform && candidate.platform !== input.platform) return false;
+  if (input.resourceType && candidate.resource.type !== input.resourceType) return false;
+  if (input.deliveryMode && candidate.resource.deliveryMode !== input.deliveryMode) return false;
+  return candidate.resource.status === 'ACTIVE';
+}
+
+function pinFoundationalComputerNetworks(
+  resources: RankedResource[],
+  limit: number,
+  input: ResolveResourcesInput,
+): RankedResource[] {
+  const preferred = resources.find((candidate) =>
+    candidate.resource.id === CHAI_COMPUTER_NETWORK_RESOURCE_ID,
+  );
+  if (!canPinFoundationalComputerNetworks(preferred, input)) return resources;
+  return [
+    preferred,
+    ...resources.filter(({ resource }) => resource.id !== preferred.resource.id),
+  ].slice(0, limit);
+}
+
 export async function resolveResources(
   input: ResolveResourcesInput,
   dependencies: ResourceResolverDependencies = {},
@@ -519,7 +551,12 @@ export async function resolveResources(
 
   const constrained = [...curated, ...discovered]
     .filter((candidate) => !input.accessType || candidate.resource.accessType === input.accessType);
-  return composeSoftly(deduplicate(constrained), limit);
+  const deduplicated = deduplicate(constrained);
+  return pinFoundationalComputerNetworks(
+    composeSoftly(deduplicated, limit),
+    limit,
+    input,
+  );
 }
 
 export function clearResourceDiscoveryCache(): void {

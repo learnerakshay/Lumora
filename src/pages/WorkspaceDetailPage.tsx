@@ -33,6 +33,13 @@ import {
   resolveCitationNavigation,
 } from '../components/workspace/workspace-interactions';
 import {
+  YOUTUBE_SLOW_PROCESSING_NOTICE,
+  YOUTUBE_SLOW_PROCESSING_THRESHOLD_MS,
+  shouldShowYouTubeSlowProcessingNotice,
+  youtubeProcessingAttemptKey,
+  youtubeProcessingStartedAt,
+} from '../components/workspace/youtube-source-ux';
+import {
   getGenerationStatusLabel,
   getPersistedGenerationStatus,
   type GenerationStatusInput,
@@ -103,6 +110,11 @@ export function WorkspaceDetailPage() {
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
   const sourceRefreshRef = useRef(false);
   const sourceStatusRef = useRef<Map<string, SourceRecord['status']>>(new Map());
+  const slowYouTubeNoticeShownRef = useRef(new Set<string>());
+  const [slowYouTubeNotice, setSlowYouTubeNotice] = useState<{
+    sourceId: string;
+    attemptKey: string;
+  } | null>(null);
 
   // Fetch Workspace Detail
   const fetchWorkspace = useCallback(async () => {
@@ -250,6 +262,71 @@ export function WorkspaceDetailPage() {
       sources.map((source) => [source.id, source.status]),
     );
   }, [sources]);
+
+  useEffect(() => {
+    const activeYouTubeSources = sources.filter(
+      (source) =>
+        source.type === 'YOUTUBE' &&
+        (source.status === 'PENDING' || source.status === 'PROCESSING'),
+    );
+    if (
+      slowYouTubeNotice &&
+      !activeYouTubeSources.some(
+        (source) => youtubeProcessingAttemptKey(source) === slowYouTubeNotice.attemptKey,
+      )
+    ) {
+      setSlowYouTubeNotice(null);
+    }
+
+    const now = Date.now();
+    const candidates = activeYouTubeSources
+      .map((source) => {
+        const attemptKey = youtubeProcessingAttemptKey(source);
+        const storageKey = `lumora:youtube-slow-notice:${attemptKey}`;
+        const startedAt = youtubeProcessingStartedAt(source);
+        return { source, attemptKey, storageKey, startedAt };
+      })
+      .filter((candidate) => {
+        if (slowYouTubeNoticeShownRef.current.has(candidate.attemptKey)) return false;
+        try {
+          return candidate.startedAt !== null && !sessionStorage.getItem(candidate.storageKey);
+        } catch {
+          return candidate.startedAt !== null;
+        }
+      });
+    if (candidates.length === 0) return;
+
+    const candidate = candidates.sort(
+      (left, right) => left.startedAt! - right.startedAt!,
+    )[0];
+    const delay = Math.max(
+      0,
+      candidate.startedAt! + YOUTUBE_SLOW_PROCESSING_THRESHOLD_MS - now,
+    );
+    const timer = setTimeout(() => {
+      if (!shouldShowYouTubeSlowProcessingNotice(
+        candidate.source,
+        slowYouTubeNoticeShownRef.current,
+      )) return;
+      slowYouTubeNoticeShownRef.current.add(candidate.attemptKey);
+      try {
+        sessionStorage.setItem(candidate.storageKey, 'shown');
+      } catch {
+        // The in-memory notice still remains single-shot for this page lifecycle.
+      }
+      setSlowYouTubeNotice({
+        sourceId: candidate.source.id,
+        attemptKey: candidate.attemptKey,
+      });
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [sources, slowYouTubeNotice]);
+
+  useEffect(() => {
+    if (!slowYouTubeNotice) return;
+    const timer = setTimeout(() => setSlowYouTubeNotice(null), 8_000);
+    return () => clearTimeout(timer);
+  }, [slowYouTubeNotice]);
 
   // A persisted SENDING assistant record means server-side generation is still
   // active after a reload or transport interruption. Poll only until it reaches
@@ -790,7 +867,11 @@ export function WorkspaceDetailPage() {
     }
     setActiveCitationId(citationEvidenceKey(citation));
     setIsContextOpen(true);
-    if (navigation.kind === 'pdf' || navigation.kind === 'website') {
+    if (
+      navigation.kind === 'pdf' ||
+      navigation.kind === 'website' ||
+      navigation.kind === 'youtube'
+    ) {
       window.open(navigation.href, '_blank', 'noopener,noreferrer');
     } else if (navigation.kind === 'text') {
       setFocusedSourceCitation(citation);
@@ -921,6 +1002,25 @@ export function WorkspaceDetailPage() {
         />
         {usageLimit && (
           <UsageLimitNotice details={usageLimit} onDismiss={() => setUsageLimit(null)} />
+        )}
+        {slowYouTubeNotice && (
+          <div
+            role="status"
+            className="fixed right-4 top-20 z-40 max-w-sm rounded-2xl border border-sky-700/60 bg-[#111b29]/95 px-4 py-3 text-xs leading-5 text-sky-100 shadow-2xl shadow-black/30 backdrop-blur"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+              <span>{YOUTUBE_SLOW_PROCESSING_NOTICE}</span>
+              <button
+                type="button"
+                onClick={() => setSlowYouTubeNotice(null)}
+                aria-label="Dismiss processing notice"
+                className="rounded p-0.5 text-slate-400 hover:text-white"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         )}
 
         {/* One chat surface supports both General and Workspace-grounded answers. */}

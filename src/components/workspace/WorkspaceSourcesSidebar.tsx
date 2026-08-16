@@ -317,7 +317,7 @@ export function WorkspaceSourcesSidebar({
                         className="w-full text-left px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center space-x-2"
                       >
                         <Edit2 className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Rename or reprocess</span>
+                        <span>View and manage</span>
                       </button>
 
                       <div className="border-t border-slate-800 my-0.5" />
@@ -338,7 +338,7 @@ export function WorkspaceSourcesSidebar({
 
               {/* Status Indicator & Last Updated */}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5 text-[10px]">
-                <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} />
+                <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} sourceType={source.type} />
                 <span className="shrink-0 text-slate-500" title={`Uploaded ${new Date(source.createdAt).toLocaleString()}`}>
                   {new Date(source.createdAt).toLocaleDateString(undefined, {
                     month: 'short',

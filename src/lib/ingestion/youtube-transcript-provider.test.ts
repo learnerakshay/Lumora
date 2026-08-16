@@ -162,6 +162,38 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
   }
 });
 
+test('Gemini provider failures retain semantic timeout, temporary, malformed, access, and unavailable classes', async (context) => {
+  const cases = [
+    ['TIMEOUT', true, 'PROVIDER_TIMEOUT'],
+    ['RATE_LIMITED', true, 'PROVIDER_TEMPORARY_FAILURE'],
+    ['UPSTREAM_FAILURE', true, 'PROVIDER_TEMPORARY_FAILURE'],
+    ['EXTRACTION_MALFORMED', true, 'PROVIDER_MALFORMED_RESPONSE'],
+    ['CONTENT_POLICY', false, 'ACCESS_RESTRICTED'],
+    ['VIDEO_UNAVAILABLE', false, 'VIDEO_UNAVAILABLE'],
+  ] as const;
+
+  for (const [classification, retryable, expectedCode] of cases) {
+    await context.test(classification, async () => {
+      await assert.rejects(
+        fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+          runtimeConfig: { geminiApiKey: 'test-key' },
+          geminiAcquire: async () => {
+            throw new GeminiYouTubeAcquisitionError(
+              classification,
+              'safe test failure',
+              retryable,
+            );
+          },
+        }),
+        (error: unknown) =>
+          error instanceof IngestionFailure &&
+          error.errorCode === expectedCode &&
+          error.retryable === retryable,
+      );
+    });
+  }
+});
+
 test('configured transcript fast path succeeds without calling Gemini', async () => {
   let geminiCalls = 0;
   let proxyCalls = 0;

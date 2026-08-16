@@ -4,9 +4,11 @@ import test from 'node:test';
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import {
   citationEvidenceKey,
+  canReprocessSource,
   availableCitations,
   citationsForResponse,
   findCitationEvidence,
+  formatCitationTimestamp,
   resolveCitationNavigation,
   releaseSubmission,
   sourceRefreshDisabled,
@@ -111,6 +113,31 @@ test('PDF, Website, and Plain Text citations share deterministic navigation', ()
   });
 });
 
+test('YouTube citation timestamps resolve to the exact canonical video moment', () => {
+  const youtube = source({
+    type: 'YOUTUBE',
+    title: 'Lecture',
+    url: 'https://youtu.be/dQw4w9WgXcQ?si=current',
+  });
+  assert.deepEqual(
+    resolveCitationNavigation(citation({
+      page: null,
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=persisted',
+      timestampStartMs: 141_999,
+      timestampEndMs: 145_000,
+    }), [youtube]),
+    {
+      kind: 'youtube',
+      source: youtube,
+      href: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=141s',
+    },
+  );
+  assert.equal(formatCitationTimestamp(20_000), '0:20');
+  assert.equal(formatCitationTimestamp(141_000), '2:21');
+  assert.equal(formatCitationTimestamp(633_000), '10:33');
+  assert.equal(formatCitationTimestamp(3_735_000), '1:02:15');
+});
+
 test('deleted sources disappear from active Context while historical citations remain data', () => {
   const historical = citation();
   assert.deepEqual(availableCitations([historical], [source()]), [historical]);
@@ -163,4 +190,32 @@ test('source deletion submission gate blocks duplicate confirms and permits retr
   assert.equal(tryBeginSubmission(gate), false);
   releaseSubmission(gate);
   assert.equal(tryBeginSubmission(gate), true);
+});
+
+test('source add and reprocess surfaces use immediate submission gates', () => {
+  const addSource = readFileSync(new URL('./AddSourceModal.tsx', import.meta.url), 'utf8');
+  const details = readFileSync(new URL('./SourceDetailsModal.tsx', import.meta.url), 'utf8');
+  assert.match(addSource, /tryBeginSubmission\(submittingRef\)/);
+  assert.match(addSource, /releaseSubmission\(submittingRef\)/);
+  assert.match(details, /reprocessingRef\.current/);
+});
+
+test('temporary failures permit Retry while permanent failures do not', () => {
+  assert.equal(canReprocessSource(source({
+    type: 'YOUTUBE',
+    status: 'FAILED',
+    stage: 'FAILED',
+    metadata: { retryable: true, errorCode: 'PROVIDER_TIMEOUT' },
+  })), true);
+  assert.equal(canReprocessSource(source({
+    type: 'YOUTUBE',
+    status: 'FAILED',
+    stage: 'FAILED',
+    metadata: { retryable: false, errorCode: 'NO_SPEECH_DETECTED' },
+  })), false);
+  assert.equal(canReprocessSource(source({
+    type: 'YOUTUBE',
+    status: 'PROCESSING',
+    stage: 'FETCHING',
+  })), false);
 });

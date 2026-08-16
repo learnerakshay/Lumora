@@ -1022,6 +1022,7 @@ export function canonicalResourceUrl(value: string): string {
   if (host === 'youtu.be') {
     url.search = '';
   } else if (host === 'youtube.com' || host === 'www.youtube.com') {
+    url.hostname = 'youtube.com';
     if (url.pathname === '/playlist') {
       const list = url.searchParams.get('list');
       url.search = '';

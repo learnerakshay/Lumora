@@ -16,6 +16,7 @@ import {
   updateWorkspaceSource,
   deleteWorkspaceSource,
   getWorkspaceSourceArtifact,
+  DuplicateSourceError,
   SourceType,
 } from '../lib/source-store';
 import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
@@ -460,6 +461,12 @@ workspaceRouter.post(
         });
       });
     }
+    if (err instanceof DuplicateSourceError) {
+      const response = errorResponse(
+        new AppError(err.message, 409, 'DUPLICATE_SOURCE'),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
     logger.error('Failed to create workspace source', err);
     return res
       .status(500)
@@ -479,6 +486,17 @@ workspaceRouter.post('/:id/sources/:sourceId/reprocess', async (req: Request, re
 
     if (!source) {
       return res.status(404).json(errorResponse(new Error('Source not found')).payload);
+    }
+
+    if (source.status === 'FAILED' && source.metadata?.retryable !== true) {
+      const response = errorResponse(
+        new AppError(
+          'This source failed for a permanent reason and cannot be retried.',
+          422,
+          'SOURCE_REPROCESSING_UNAVAILABLE',
+        ),
+      );
+      return res.status(response.statusCode).json(response.payload);
     }
 
     const reservation = await checkAndReserve(res.locals.userId, 'INGESTION');

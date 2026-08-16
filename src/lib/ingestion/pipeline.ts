@@ -15,6 +15,7 @@ import { logger } from '../logger';
 import { classifyIngestionError } from './errors';
 
 const CHUNK_VERSION = 'semantic-1200-200-v1';
+export const YOUTUBE_HEARTBEAT_INTERVAL_MS = 30_000;
 
 export interface IngestionOptions {
   sourceId: string;
@@ -41,6 +42,37 @@ function requiresRemoteFetch(
   return false;
 }
 
+export async function runWithPeriodicHeartbeat<T>(
+  operation: () => Promise<T>,
+  heartbeat: () => Promise<void>,
+  intervalMs = YOUTUBE_HEARTBEAT_INTERVAL_MS,
+): Promise<T> {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatError: unknown = null;
+
+  const schedule = () => {
+    timer = setTimeout(async () => {
+      try {
+        await heartbeat();
+      } catch (error) {
+        heartbeatError = error;
+      }
+      if (!stopped && !heartbeatError) schedule();
+    }, intervalMs);
+  };
+
+  schedule();
+  try {
+    const result = await operation();
+    if (heartbeatError) throw heartbeatError;
+    return result;
+  } finally {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function processSourcePipeline(options: IngestionOptions): Promise<{
   success: boolean;
   chunkCount: number;
@@ -56,8 +88,11 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     throw new Error(`Persisted artifact not found for source ${options.sourceId}`);
   }
   const version = artifact.version;
-  const claimed = await claimProcessingAttempt({ sourceId: options.sourceId, version });
-  if (!claimed) {
+  const processingAttemptId = await claimProcessingAttempt({
+    sourceId: options.sourceId,
+    version,
+  });
+  if (!processingAttemptId) {
     logger.info('Ingestion claim skipped because the attempt is already claimed or obsolete', {
       sourceId: options.sourceId,
       version,
@@ -85,6 +120,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     logger.info('Ingestion stage completed', {
       sourceId: options.sourceId,
       version,
+      processingAttemptId,
       sourceType: options.type,
       stage: previousStage,
       durationMs: previousStageDurationMs,
@@ -118,6 +154,8 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   logger.info('Starting claimed ingestion attempt', {
     sourceId: options.sourceId,
     version,
+    processingAttemptId,
+    attemptNumber: version,
     sourceType: options.type,
   });
 
@@ -133,7 +171,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       parsingTransitionCompleted = true;
     }
 
-    const parsed = await parseSourceContent({
+    const parse = () => parseSourceContent({
       type: options.type,
       title: options.title,
       sourceUrl: artifact.sourceUrl,
@@ -150,6 +188,9 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       },
       onHeartbeat: heartbeat,
     });
+    const parsed = options.type === 'YOUTUBE'
+      ? await runWithPeriodicHeartbeat(parse, heartbeat)
+      : await parse();
 
     if (!parsingTransitionCompleted) {
       throw new Error('Parser did not enter the PARSING stage');
@@ -223,6 +264,19 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       vectorDimensions: embeddingBatch.contract.dimensions,
       chunkVersion: CHUNK_VERSION,
     });
+    const tokenCount = chunks.reduce(
+      (total, chunk) => total + chunk.tokenEstimate,
+      0,
+    );
+    const youtubeAcquisitionProvider = options.type === 'YOUTUBE'
+      ? parsed.metadata.transcriptProvider || 'gemini'
+      : null;
+    const ingestionProvider = options.type === 'YOUTUBE'
+      ? `${youtubeAcquisitionProvider}+openai`
+      : 'openai';
+    const ingestionModel = options.type === 'YOUTUBE'
+      ? `${youtubeAcquisitionProvider === 'gemini' ? 'gemini-3.6-flash' : youtubeAcquisitionProvider} + ${embeddingBatch.contract.model}`
+      : embeddingBatch.contract.model;
     const committedIndex = await saveSourceIndex({
       workspaceId: options.workspaceId,
       sourceId: options.sourceId,
@@ -233,42 +287,52 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
         ...chunk,
         embedding: embeddingBatch.vectors[index],
       })),
+      completion: {
+        pipelineStartedAt,
+        details: {
+          tokenCount,
+          processingAttemptId,
+          attemptNumber: version,
+          provider: ingestionProvider,
+          model: ingestionModel,
+          ...(embeddingBatch.inputTokens !== undefined
+            ? { inputTokens: embeddingBatch.inputTokens }
+            : {}),
+          textLength: parsed.cleanText.length,
+          parserVersion: parsed.parserVersion,
+          ...(options.type === 'YOUTUBE'
+            ? {
+                videoId: parsed.metadata.videoId,
+                transcriptProvider: parsed.metadata.transcriptProvider,
+                transcriptStrategy: parsed.metadata.transcriptStrategy,
+                acquisitionDurationMs: parsed.metadata.acquisitionDurationMs,
+                segmentCount: parsed.metadata.cueCount,
+                extractionTextLength: parsed.metadata.extractionTextLength,
+                timestampSpanMs: parsed.metadata.timestampSpanMs,
+                charactersPerMinute: parsed.metadata.charactersPerMinute,
+                extractionQuality: parsed.metadata.extractionQuality,
+              }
+            : {}),
+        },
+      },
     });
-    if (committedIndex.chunkCount !== chunks.length || committedIndex.chunkCount === 0) {
-      throw new Error('Chunk persistence did not save the complete processed source');
-    }
-
-    const tokenCount = committedIndex.chunks.reduce(
-      (total, chunk) => total + chunk.tokenCount,
-      0,
-    );
-    await enterStage('COMPLETED', {
-      chunkCount: committedIndex.chunkCount,
-      tokenCount,
-      provider: options.type === 'YOUTUBE' ? 'gemini+openai' : 'openai',
-      model:
-        options.type === 'YOUTUBE'
-          ? `gemini-3.6-flash + ${embeddingBatch.contract.model}`
-          : embeddingBatch.contract.model,
-      ...(embeddingBatch.inputTokens !== undefined
-        ? { inputTokens: embeddingBatch.inputTokens }
-        : {}),
-      textLength: parsed.cleanText.length,
-      parserVersion: parsed.parserVersion,
-      indexId: committedIndex.indexId,
-      indexedAt: committedIndex.indexedAt,
-      sourceVersion: committedIndex.sourceVersion,
-      chunkVersion: committedIndex.chunkVersion,
-      embeddingProvider: embeddingBatch.contract.provider,
-      embeddingModel: embeddingBatch.contract.model,
-      embeddingVersion: embeddingBatch.contract.version,
-      vectorDimensions: embeddingBatch.contract.dimensions,
-      totalDurationMs: Date.now() - pipelineStartedAt,
+    const indexingDurationMs = Date.now() - stageStartedAt;
+    logger.info('Ingestion stage completed', {
+      sourceId: options.sourceId,
+      version,
+      sourceType: options.type,
+      stage: 'INDEXING',
+      processingAttemptId,
+      durationMs: indexingDurationMs,
+      nextStage: 'COMPLETED',
     });
+    currentStage = 'COMPLETED';
+    stageStartedAt = Date.now();
 
     logger.info('Completed ingestion attempt', {
       sourceId: options.sourceId,
       version,
+      processingAttemptId,
       sourceType: options.type,
       chunkCount: committedIndex.chunkCount,
       tokenCount,
@@ -279,11 +343,8 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       claimed: true,
       chunkCount: committedIndex.chunkCount,
       tokenCount,
-      provider: options.type === 'YOUTUBE' ? 'gemini+openai' : 'openai',
-      model:
-        options.type === 'YOUTUBE'
-          ? `gemini-3.6-flash + ${embeddingBatch.contract.model}`
-          : embeddingBatch.contract.model,
+      provider: ingestionProvider,
+      model: ingestionModel,
       ...(embeddingBatch.inputTokens !== undefined
         ? { inputTokens: embeddingBatch.inputTokens }
         : {}),
@@ -294,6 +355,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     logger.error('Ingestion attempt failed', error, {
       sourceId: options.sourceId,
       version,
+      processingAttemptId,
       sourceType: options.type,
       stage: currentStage,
       stageDurationMs: failedStageDurationMs,
@@ -312,6 +374,8 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
         nextStage: 'FAILED',
         errorMessage: classification.userMessage,
         details: {
+          processingAttemptId,
+          attemptNumber: version,
           errorCode: classification.errorCode,
           errorCategory: classification.errorCategory,
           retryable: classification.retryable,

@@ -1,11 +1,13 @@
 import React from 'react';
 import { AlertCircle, CheckCircle2, Clock3, Loader2 } from 'lucide-react';
-import { ProcessingStage, SourceStatus } from '../../lib/source-store';
+import { ProcessingStage, SourceStatus, SourceType } from '../../lib/source-store';
+import { getYouTubeStageLabel } from './youtube-source-ux';
 
 interface SourceStatusBadgeProps {
   status: SourceStatus;
   stage?: ProcessingStage;
   metadata?: Record<string, any> | null;
+  sourceType?: SourceType;
   className?: string;
 }
 
@@ -27,6 +29,7 @@ export function SourceStatusBadge({
   status,
   stage: sourceStage,
   metadata,
+  sourceType,
   className = '',
 }: SourceStatusBadgeProps) {
   const stage = (sourceStage || metadata?.stage || status) as ProcessingStage;
@@ -37,7 +40,9 @@ export function SourceStatusBadge({
     ? 'Failed'
     : isCompleted
       ? 'Ready'
-      : STAGE_LABELS[stage] || 'Processing';
+      : sourceType === 'YOUTUBE'
+        ? getYouTubeStageLabel(stage)
+        : STAGE_LABELS[stage] || 'Processing';
 
   const styles = isFailed
     ? 'border-rose-800/60 bg-rose-950/70 text-rose-300'

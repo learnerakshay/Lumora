@@ -1,5 +1,5 @@
 import { SourceType } from '../source-store';
-import { extractYouTubeVideoId } from './youtube-url';
+import { canonicalizeYouTubeUrl, extractYouTubeVideoId } from './youtube-url';
 
 export const SOURCE_LIMITS = {
   PDF_BYTES: 20 * 1024 * 1024,
@@ -45,7 +45,7 @@ export function validateSourceInput(data: {
     return { valid: false, error: 'Source title cannot exceed 200 characters.' };
   }
 
-  const normalizedUrl = url ? normalizeHttpsUrl(url) : undefined;
+  let normalizedUrl = url ? normalizeHttpsUrl(url) : undefined;
   if (url && !normalizedUrl) {
     return {
       valid: false,
@@ -53,9 +53,19 @@ export function validateSourceInput(data: {
     };
   }
 
+  if (type === 'YOUTUBE' && normalizedUrl) {
+    normalizedUrl = canonicalizeYouTubeUrl(normalizedUrl) || undefined;
+  }
+
+  const incomingYouTubeId = type === 'YOUTUBE' && normalizedUrl
+    ? extractYouTubeVideoId(normalizedUrl)
+    : null;
   const duplicate = existingSources.some((source) => {
     if (source.title.trim().toLowerCase() === cleanTitle.toLowerCase()) return true;
     const existingUrl = source.url || source.metadata?.url;
+    if (incomingYouTubeId && existingUrl) {
+      return extractYouTubeVideoId(existingUrl) === incomingYouTubeId;
+    }
     return Boolean(
       normalizedUrl &&
         existingUrl &&

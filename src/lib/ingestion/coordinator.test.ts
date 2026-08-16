@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isProcessingAttemptStale } from '../source-store';
 import { IngestionCoordinator } from './coordinator';
+import { runWithPeriodicHeartbeat } from './pipeline';
 
 const job = {
   sourceId: 'source-1',
@@ -123,4 +124,22 @@ test('coordinator commits successful ingestion and discards failed ingestion res
   failureCoordinator.dispatch({ ...job, usageEventId: 'usage-failure' });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(discarded, ['usage-failure']);
+});
+
+test('long YouTube acquisition maintains its persisted processing lease', async () => {
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => { finish = resolve; });
+  let heartbeats = 0;
+  const operation = runWithPeriodicHeartbeat(
+    async () => {
+      await pending;
+      return 'complete';
+    },
+    async () => { heartbeats += 1; },
+    5,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 18));
+  finish();
+  assert.equal(await operation, 'complete');
+  assert.ok(heartbeats >= 2);
 });

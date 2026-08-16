@@ -61,7 +61,7 @@ test('Gemini acquisition sends video before prompt and accepts structured output
   assert.equal(result.segments.length, 2);
 });
 
-test('Gemini acquisition rejects malformed JSON without retry', async () => {
+test('Gemini acquisition retries malformed JSON once and preserves its classification', async () => {
   let attempts = 0;
   await assert.rejects(
     acquireGeminiYouTubeTranscript(
@@ -78,9 +78,30 @@ test('Gemini acquisition rejects malformed JSON without retry', async () => {
     (error: unknown) =>
       error instanceof GeminiYouTubeAcquisitionError &&
       error.classification === 'EXTRACTION_MALFORMED' &&
-      error.retryable === false,
+      error.retryable === true,
   );
-  assert.equal(attempts, 1);
+  assert.equal(attempts, 2);
+});
+
+test('Gemini acquisition rejects malformed language metadata', async () => {
+  await assert.rejects(
+    acquireGeminiYouTubeTranscript(
+      { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+      {
+        logger: silentLogger,
+        retryBackoffMs: 0,
+        createInteraction: async () => ({
+          output_text: JSON.stringify({
+            language: 'English language',
+            segments: [{ text: 'Speech', startSeconds: 0, endSeconds: 1 }],
+          }),
+        }),
+      },
+    ),
+    (error: unknown) =>
+      error instanceof GeminiYouTubeAcquisitionError &&
+      error.classification === 'EXTRACTION_MALFORMED',
+  );
 });
 
 test('Gemini acquisition rejects undeclared response fields', async () => {
@@ -264,6 +285,32 @@ test('Gemini acquisition rejects invalid and unordered timestamps', async (conte
       );
     });
   }
+});
+
+test('Gemini acquisition enforces one total latency budget across retries and verification', async () => {
+  let attempts = 0;
+  const startedAt = Date.now();
+  await assert.rejects(
+    acquireGeminiYouTubeTranscript(
+      { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+      {
+        logger: silentLogger,
+        timeoutMs: 100,
+        totalTimeoutMs: 25,
+        retryBackoffMs: 0,
+        createInteraction: async () => {
+          attempts += 1;
+          return new Promise(() => undefined);
+        },
+      },
+    ),
+    (error: unknown) =>
+      error instanceof GeminiYouTubeAcquisitionError &&
+      error.classification === 'TIMEOUT' &&
+      error.retryable === true,
+  );
+  assert.equal(attempts, 1);
+  assert.ok(Date.now() - startedAt < 100);
 });
 
 test('primary success emits final structured logs and never starts verification', async () => {

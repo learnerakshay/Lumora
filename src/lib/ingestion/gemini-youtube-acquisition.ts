@@ -3,6 +3,7 @@ import { logger as defaultLogger } from '../logger';
 
 export const GEMINI_YOUTUBE_MODEL = 'gemini-3.6-flash';
 export const GEMINI_YOUTUBE_TIMEOUT_MS = 120_000;
+export const GEMINI_YOUTUBE_TOTAL_TIMEOUT_MS = 180_000;
 
 const RETRY_BACKOFF_MS = 500;
 const MAX_PRIMARY_ATTEMPTS = 2;
@@ -54,6 +55,7 @@ interface GeminiYouTubeDependencies {
   ) => Promise<InteractionResponse>;
   logger?: Pick<typeof defaultLogger, 'info' | 'error'>;
   timeoutMs?: number;
+  totalTimeoutMs?: number;
   retryBackoffMs?: number;
 }
 
@@ -183,7 +185,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
     throw new GeminiYouTubeAcquisitionError(
       'EXTRACTION_MALFORMED',
       'Gemini returned no structured transcript output.',
-      false,
+      true,
     );
   }
 
@@ -194,7 +196,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
     throw new GeminiYouTubeAcquisitionError(
       'EXTRACTION_MALFORMED',
       'Gemini returned invalid transcript JSON.',
-      false,
+      true,
       error,
     );
   }
@@ -202,7 +204,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
     throw new GeminiYouTubeAcquisitionError(
       'EXTRACTION_MALFORMED',
       'Gemini returned an invalid transcript structure.',
-      false,
+      true,
     );
   }
 
@@ -211,17 +213,21 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
     throw new GeminiYouTubeAcquisitionError(
       'EXTRACTION_MALFORMED',
       'Gemini returned an invalid transcript structure.',
-      false,
+      true,
     );
   }
 
   const language = (value as { language?: unknown }).language;
   const segments = (value as { segments?: unknown }).segments;
-  if (typeof language !== 'string' || !language.trim() || !Array.isArray(segments)) {
+  if (
+    typeof language !== 'string' ||
+    !/^(?:[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*|und)$/.test(language.trim()) ||
+    !Array.isArray(segments)
+  ) {
     throw new GeminiYouTubeAcquisitionError(
       'EXTRACTION_MALFORMED',
       'Gemini returned an invalid transcript structure.',
-      false,
+      true,
     );
   }
   if (segments.length === 0) {
@@ -238,7 +244,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
       throw new GeminiYouTubeAcquisitionError(
         'EXTRACTION_MALFORMED',
         `Gemini returned an invalid transcript segment at index ${index}.`,
-        false,
+        true,
       );
     }
     const segmentKeys = Object.keys(segment);
@@ -251,7 +257,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
       throw new GeminiYouTubeAcquisitionError(
         'EXTRACTION_MALFORMED',
         `Gemini returned an invalid transcript segment at index ${index}.`,
-        false,
+        true,
       );
     }
     const { text, startSeconds, endSeconds } = segment as {
@@ -273,7 +279,7 @@ function parseAndValidateOutput(outputText: string | undefined): GeminiYouTubeAc
       throw new GeminiYouTubeAcquisitionError(
         'EXTRACTION_MALFORMED',
         `Gemini returned an invalid transcript segment at index ${index}.`,
-        false,
+        true,
       );
     }
     previousStart = startSeconds;
@@ -288,6 +294,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
   youtubeUrl: string;
 }, dependencies: GeminiYouTubeDependencies = {}): Promise<GeminiYouTubeAcquisitionResult> {
   const timeoutMs = dependencies.timeoutMs ?? GEMINI_YOUTUBE_TIMEOUT_MS;
+  const totalTimeoutMs = dependencies.totalTimeoutMs ?? GEMINI_YOUTUBE_TOTAL_TIMEOUT_MS;
   const retryBackoffMs = dependencies.retryBackoffMs ?? RETRY_BACKOFF_MS;
   const log = dependencies.logger ?? defaultLogger;
   const client = dependencies.createInteraction
@@ -299,6 +306,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
   let verificationAttempted = false;
   let primarySegmentCount: number | null = null;
   let verificationSegmentCount: number | null = null;
+  const acquisitionStartedAt = Date.now();
 
   const logFinalClassification = (
     finalClassification: 'SUCCESS' | GeminiYouTubeFailureClassification,
@@ -320,6 +328,17 @@ export async function acquireGeminiYouTubeTranscript(input: {
 
   for (let attempt = 1; attempt <= MAX_PRIMARY_ATTEMPTS + 1; attempt += 1) {
     const startedAt = Date.now();
+    const remainingBudgetMs = totalTimeoutMs - (startedAt - acquisitionStartedAt);
+    if (remainingBudgetMs <= 0) {
+      const failure = new GeminiYouTubeAcquisitionError(
+        'TIMEOUT',
+        'Gemini YouTube acquisition exceeded its total latency budget.',
+        true,
+      );
+      logFinalClassification(failure.classification, failure.retryable);
+      throw failure;
+    }
+    const attemptTimeoutMs = Math.min(timeoutMs, remainingBudgetMs);
     if (verifyingNoSpeech) {
       log.info('YOUTUBE_NO_SPEECH_VERIFICATION_STARTED', {
         videoId: input.videoId,
@@ -345,7 +364,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
           const error = new Error('Gemini YouTube acquisition timed out.');
           error.name = 'AbortError';
           reject(error);
-        }, timeoutMs);
+        }, attemptTimeoutMs);
       });
       const interaction = await Promise.race([
         createInteraction({
@@ -365,13 +384,15 @@ export async function acquireGeminiYouTubeTranscript(input: {
             schema: TRANSCRIPT_SCHEMA,
           },
         }, {
-          timeout: timeoutMs,
+          timeout: attemptTimeoutMs,
           maxRetries: 0,
           fetchOptions: { signal: controller.signal },
         }),
         timeoutFailure,
       ]);
+      const outputParsingStartedAt = Date.now();
       const result = parseAndValidateOutput(interaction.output_text);
+      const outputParsingDurationMs = Date.now() - outputParsingStartedAt;
       if (verifyingNoSpeech) {
         verificationSegmentCount = result.segments.length;
         log.info('YOUTUBE_NO_SPEECH_VERIFICATION_RESULT', {
@@ -395,6 +416,7 @@ export async function acquireGeminiYouTubeTranscript(input: {
         model: GEMINI_YOUTUBE_MODEL,
         stage: 'ACQUISITION_SUCCESS',
         durationMs: Date.now() - startedAt,
+        outputParsingDurationMs,
         segmentCount: result.segments.length,
         language: result.language,
       });
@@ -448,7 +470,18 @@ export async function acquireGeminiYouTubeTranscript(input: {
         logFinalClassification(failure.classification, failure.retryable);
         throw failure;
       }
-      await new Promise((resolve) => setTimeout(resolve, retryBackoffMs));
+      const remainingAfterAttemptMs = totalTimeoutMs - (Date.now() - acquisitionStartedAt);
+      if (remainingAfterAttemptMs <= 0) {
+        logFinalClassification('TIMEOUT', true);
+        throw new GeminiYouTubeAcquisitionError(
+          'TIMEOUT',
+          'Gemini YouTube acquisition exceeded its total latency budget.',
+          true,
+        );
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(retryBackoffMs, remainingAfterAttemptMs)),
+      );
     } finally {
       if (timer) clearTimeout(timer);
     }

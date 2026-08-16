@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   FileText,
@@ -12,11 +12,12 @@ import {
   Loader2,
 } from 'lucide-react';
 import { SourceType, SourceRecord } from '../../lib/source-store';
-import { extractYouTubeVideoId } from '../../lib/ingestion/youtube-url';
+import { canonicalizeYouTubeUrl, extractYouTubeVideoId } from '../../lib/ingestion/youtube-url';
 import { YOUTUBE_INGESTION_GUIDANCE } from './youtube-source-ux';
 import { UsageLimitNotice } from '../usage/UsageLimitNotice';
 import { usageLimitFromPayload } from '../../lib/usage/client';
 import type { UsageLimitDetails } from '../../lib/usage/types';
+import { releaseSubmission, tryBeginSubmission } from './workspace-interactions';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -81,6 +82,7 @@ export function AddSourceModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usageLimit, setUsageLimit] = useState<UsageLimitDetails | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -140,12 +142,14 @@ export function AddSourceModal({
       }
       finalSize = 'Auto Ingest';
     } else if (selectedType === 'YOUTUBE') {
-      if (!finalUrl || !extractYouTubeVideoId(finalUrl)) {
+      const videoId = finalUrl ? extractYouTubeVideoId(finalUrl) : null;
+      if (!videoId) {
         setError('Enter a valid YouTube video URL.');
         return;
       }
+      finalUrl = canonicalizeYouTubeUrl(finalUrl)!;
       if (!finalTitle) {
-        finalTitle = `YouTube Video (${finalUrl.substring(finalUrl.length - 11)})`;
+        finalTitle = `YouTube Video (${videoId})`;
       }
       finalSize = 'Auto Transcript';
     } else if (selectedType === 'TEXT') {
@@ -160,6 +164,7 @@ export function AddSourceModal({
       payloadRawContent = textContent;
     }
 
+    if (!tryBeginSubmission(submittingRef)) return;
     try {
       setSubmitting(true);
       const formData = new FormData();
@@ -202,11 +207,13 @@ export function AddSourceModal({
     } catch (err: any) {
       setError(err.message || 'Error creating source.');
     } finally {
+      releaseSubmission(submittingRef);
       setSubmitting(false);
     }
   };
 
   const handleClose = () => {
+    releaseSubmission(submittingRef);
     setTitleInput('');
     setUrlInput('');
     setTextContent('');

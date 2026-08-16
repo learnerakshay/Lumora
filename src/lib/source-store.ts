@@ -69,6 +69,13 @@ export interface RecoveredIngestionAttempt {
   version: number;
 }
 
+export class DuplicateSourceError extends Error {
+  constructor() {
+    super('A source with the same title or URL already exists in this Workspace.');
+    this.name = 'DuplicateSourceError';
+  }
+}
+
 const DEFAULT_STALE_AFTER_MS = 15 * 60 * 1_000;
 const NON_TERMINAL_STAGES: ProcessingStage[] = [
   'CREATED',
@@ -184,15 +191,7 @@ export async function createSource(data: {
   fileSize?: string;
   metadata?: Record<string, any>;
   artifact: SourceArtifactInput;
-}): Promise<SourceRecord> {
-  const workspace = await prisma.workspace.findFirst({
-    where: { OR: [{ id: data.workspaceId }, { slug: data.workspaceId }] },
-    select: { id: true },
-  });
-  if (!workspace) {
-    throw new Error('Workspace not found');
-  }
-
+}, database: Pick<typeof prisma, '$transaction'> = prisma): Promise<SourceRecord> {
   const checksum = calculateChecksum(data.artifact);
   const metadata = {
     ...(data.metadata || {}),
@@ -205,39 +204,73 @@ export async function createSource(data: {
     automaticRecoveryCount: 0,
   };
 
-  const created = await prisma.source.create({
-    data: {
-      workspaceId: workspace.id,
-      title: data.title.trim(),
-      type: data.type,
-      status: 'PENDING',
-      stage: 'CREATED',
-      currentVersion: 1,
-      metadata,
-      contents: {
-        create: {
-          version: 1,
-          originalContent: data.artifact.originalContent || null,
-          artifactData: data.artifact.artifactData || null,
-          artifactFileName: data.artifact.fileName || null,
-          artifactMimeType: data.artifact.mimeType || null,
-          artifactSize: data.artifact.size ?? null,
-          sourceUrl: data.artifact.sourceUrl || data.url || null,
-          rawContent: '',
-          cleanText: '',
-          parserMetadata: null,
-          parserVersion: 'pending',
-          checksum,
+  const created = await database.$transaction(async (tx) => {
+    // Serialize source creation within a Workspace so two identical requests
+    // cannot both pass validation before either row is visible.
+    const workspaces = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM "Workspace"
+      WHERE id = ${data.workspaceId} OR slug = ${data.workspaceId}
+      FOR UPDATE
+    `;
+    const workspace = workspaces[0];
+    if (!workspace) throw new Error('Workspace not found');
+
+    const existingSources = await tx.source.findMany({
+      where: { workspaceId: workspace.id },
+      select: { title: true, metadata: true },
+    });
+    const normalizedTitle = data.title.trim().toLowerCase();
+    const normalizedUrl = data.url || data.artifact.sourceUrl || null;
+    const duplicate = existingSources.some((source) => {
+      if (source.title.trim().toLowerCase() === normalizedTitle) return true;
+      const existingMetadata = source.metadata &&
+        typeof source.metadata === 'object' &&
+        !Array.isArray(source.metadata)
+        ? source.metadata as Record<string, unknown>
+        : null;
+      return Boolean(
+        normalizedUrl &&
+        existingMetadata &&
+        existingMetadata.url === normalizedUrl,
+      );
+    });
+    if (duplicate) throw new DuplicateSourceError();
+
+    return tx.source.create({
+      data: {
+        workspaceId: workspace.id,
+        title: data.title.trim(),
+        type: data.type,
+        status: 'PENDING',
+        stage: 'CREATED',
+        currentVersion: 1,
+        metadata,
+        contents: {
+          create: {
+            version: 1,
+            originalContent: data.artifact.originalContent || null,
+            artifactData: data.artifact.artifactData || null,
+            artifactFileName: data.artifact.fileName || null,
+            artifactMimeType: data.artifact.mimeType || null,
+            artifactSize: data.artifact.size ?? null,
+            sourceUrl: data.artifact.sourceUrl || data.url || null,
+            rawContent: '',
+            cleanText: '',
+            parserMetadata: null,
+            parserVersion: 'pending',
+            checksum,
+          },
+        },
+        processingAttempts: {
+          create: {
+            version: 1,
+            stage: 'CREATED',
+            events: { create: { stage: 'CREATED' } },
+          },
         },
       },
-      processingAttempts: {
-        create: {
-          version: 1,
-          stage: 'CREATED',
-          events: { create: { stage: 'CREATED' } },
-        },
-      },
-    },
+    });
   });
 
   return toSourceRecord(created);
@@ -343,7 +376,7 @@ export async function persistParsedSourceArtifact(data: {
 export async function claimProcessingAttempt(data: {
   sourceId: string;
   version: number;
-}): Promise<boolean> {
+}): Promise<string | null> {
   return prisma.$transaction(async (tx) => {
     const attempt = await tx.sourceProcessingAttempt.findUnique({
       where: {
@@ -354,7 +387,7 @@ export async function claimProcessingAttempt(data: {
       },
       include: { source: true },
     });
-    if (!attempt || attempt.source.currentVersion !== data.version) return false;
+    if (!attempt || attempt.source.currentVersion !== data.version) return null;
 
     const claimed = await tx.sourceProcessingAttempt.updateMany({
       where: {
@@ -368,7 +401,7 @@ export async function claimProcessingAttempt(data: {
         errorMessage: null,
       },
     });
-    if (claimed.count !== 1) return false;
+    if (claimed.count !== 1) return null;
 
     const metadata = (attempt.source.metadata as Record<string, any>) || {};
     const sourceClaimed = await tx.source.updateMany({
@@ -396,7 +429,7 @@ export async function claimProcessingAttempt(data: {
         details: { claim: 'database-cas' },
       },
     });
-    return true;
+    return attempt.id;
   });
 }
 
@@ -423,6 +456,7 @@ async function createVersionFromArtifact(
   input: {
     sourceId: string;
     version: number;
+    reuseParsedArtifact?: boolean;
     artifact: {
       originalContent: string | null;
       artifactData: Uint8Array | null;
@@ -439,7 +473,9 @@ async function createVersionFromArtifact(
     data: {
       sourceId: input.sourceId,
       version: input.version,
-      originalContent: input.artifact.originalContent,
+      originalContent: input.reuseParsedArtifact === false
+        ? null
+        : input.artifact.originalContent,
       artifactData: input.artifact.artifactData,
       artifactFileName: input.artifact.artifactFileName,
       artifactMimeType: input.artifact.artifactMimeType,
@@ -447,9 +483,13 @@ async function createVersionFromArtifact(
       sourceUrl: input.artifact.sourceUrl,
       rawContent: '',
       cleanText: '',
-      parserMetadata: input.artifact.parserMetadata as Prisma.InputJsonValue | undefined,
+      parserMetadata: input.reuseParsedArtifact === false
+        ? undefined
+        : input.artifact.parserMetadata as Prisma.InputJsonValue | undefined,
       parserVersion: 'pending',
-      checksum: input.artifact.checksum,
+      checksum: input.reuseParsedArtifact === false
+        ? calculateChecksum({ sourceUrl: input.artifact.sourceUrl })
+        : input.artifact.checksum,
     },
   });
   await tx.sourceProcessingAttempt.create({
@@ -540,6 +580,10 @@ export async function createReprocessingVersion(
           errorCode: null,
           errorCategory: null,
           retryable: null,
+          failedAt: null,
+          failedStage: null,
+          provider: null,
+          httpStatus: null,
           automaticRecoveryCount: 0,
         },
       },
@@ -550,6 +594,7 @@ export async function createReprocessingVersion(
     await createVersionFromArtifact(tx, {
       sourceId,
       version,
+      reuseParsedArtifact: source.type !== 'YOUTUBE',
       artifact: original,
     });
 

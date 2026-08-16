@@ -22,7 +22,7 @@ import type { SourceRecord } from '../../lib/source-store';
 import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presentation';
-import { citationsForResponse } from './workspace-interactions';
+import { citationsForResponse, formatCitationTimestamp } from './workspace-interactions';
 import { LearningResourceSection } from './LearningResourceSection';
 
 interface WorkspaceChatAreaProps {
@@ -215,8 +215,7 @@ function createMarkdownComponents(
 function formatCitationLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
   if (citation.timestampStartMs != null) {
-    const totalSeconds = Math.floor(citation.timestampStartMs / 1000);
-    return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+    return formatCitationTimestamp(citation.timestampStartMs);
   }
   return citation.kind === 'WEB' ? 'Web' : 'Source';
 }
