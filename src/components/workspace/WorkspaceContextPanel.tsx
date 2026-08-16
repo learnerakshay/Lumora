@@ -64,9 +64,9 @@ export function WorkspaceContextPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {citations.length === 0 ? (
-          <div className="mt-4 rounded-2xl border border-slate-800/80 bg-[#111925]/80 px-4 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-            <span className="lumora-empty-icon-strong mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-cyan-300">
-              <Quote className="h-6 w-6" strokeWidth={1.8} />
+          <div className="mt-3 px-3 py-5 text-center">
+            <span className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] text-cyan-300">
+              <Quote className="h-4 w-4" strokeWidth={1.8} />
             </span>
             <p className="mt-3 text-xs font-semibold text-slate-300">
               {responseMode === 'GENERAL'
@@ -100,7 +100,7 @@ export function WorkspaceContextPanel({
                   onClick={() => onSelectCitation(citation)}
                   aria-current={isActive ? 'true' : undefined}
                   style={{ animationDelay: `${Math.min(index, 5) * 80}ms` }}
-                  className={`animate-fade-in group w-full rounded-2xl border bg-[#111925] p-3.5 text-left shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-[background-color,border-color,box-shadow] duration-200 hover:border-cyan-700/55 hover:bg-[#141d2a] hover:shadow-[0_12px_26px_rgba(0,0,0,0.14)] ${isActive ? 'border-cyan-400/70 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_0_24px_rgba(34,211,238,0.12)]' : 'border-slate-800/75'}`}
+                  className={`animate-fade-in group w-full rounded-2xl border bg-[#111925] p-3.5 text-left shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-[background-color,border-color,box-shadow] duration-200 hover:border-cyan-700/55 hover:bg-[#141d2a] hover:shadow-[0_12px_26px_rgba(0,0,0,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${isActive ? 'border-cyan-400/70 bg-cyan-950/20 shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_0_24px_rgba(34,211,238,0.12)]' : 'border-slate-800/75'}`}
                 >
                   <div className="flex items-start gap-2.5">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950/70">

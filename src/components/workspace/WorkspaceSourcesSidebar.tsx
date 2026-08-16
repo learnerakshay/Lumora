@@ -10,6 +10,7 @@ import {
   Trash2,
   Info,
   RefreshCw,
+  Plus,
 } from 'lucide-react';
 import { SourceRecord, SourceType } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
@@ -30,6 +31,7 @@ interface WorkspaceSourcesSidebarProps {
   onSelectSourceDetails: (source: SourceRecord) => void;
   onRequestDeleteSource: (source: SourceRecord) => void;
   onRefreshSources?: () => void | Promise<void>;
+  onOpenAddSource?: () => void;
 }
 
 export function WorkspaceSourcesSidebar({
@@ -40,6 +42,7 @@ export function WorkspaceSourcesSidebar({
   onSelectSourceDetails,
   onRequestDeleteSource,
   onRefreshSources,
+  onOpenAddSource,
 }: WorkspaceSourcesSidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<SourceType | 'ALL'>('ALL');
@@ -226,6 +229,11 @@ export function WorkspaceSourcesSidebar({
                   : 'Add a PDF, webpage, plain text, or YouTube video to start learning.'}
               </p>
             </div>
+            {!searchTerm && selectedTypeFilter === 'ALL' && onOpenAddSource && (
+              <button type="button" onClick={onOpenAddSource} className="mx-auto inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.07] px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-300/40 hover:bg-cyan-400/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+                <Plus className="h-3.5 w-3.5" /> Add Source
+              </button>
+            )}
           </div>
         ) : (
           /* Source Cards List */

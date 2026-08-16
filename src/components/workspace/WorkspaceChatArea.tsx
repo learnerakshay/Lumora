@@ -36,6 +36,7 @@ interface WorkspaceChatAreaProps {
   generationStatusLabel?: string | null;
   regeneratingMessageId?: string | null;
   error?: string | null;
+  loadingHistory: boolean;
   sourceCount: number;
   processingSourceCount: number;
   sources: SourceRecord[];
@@ -45,6 +46,7 @@ interface WorkspaceChatAreaProps {
   onClearHistory: () => void;
   onDeleteQuery: (userMessageId: string) => Promise<boolean>;
   onRegenerateResponse: (assistantMessage: StoredMessage) => void;
+  onOpenAddSource: () => void;
 }
 
 const KEYWORDS = new Set([
@@ -230,6 +232,7 @@ export function WorkspaceChatArea({
   generationStatusLabel,
   regeneratingMessageId,
   error,
+  loadingHistory,
   sourceCount,
   processingSourceCount,
   sources,
@@ -239,11 +242,15 @@ export function WorkspaceChatArea({
   onClearHistory,
   onDeleteQuery,
   onRegenerateResponse,
+  onOpenAddSource,
 }: WorkspaceChatAreaProps) {
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<string | null>(null);
+  const deleteButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
   const availableSourceIds = useMemo(
     () => new Set(sources.map(({ id }) => id)),
     [sources],
@@ -269,15 +276,23 @@ export function WorkspaceChatArea({
     stickToBottomRef.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
   };
 
+  useEffect(() => {
+    if (!pendingDeleteMessageId) return;
+    const trigger = deleteButtonRefs.current[pendingDeleteMessageId];
+    const frame = requestAnimationFrame(() => cancelDeleteRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingDeleteMessageId(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKeyDown);
+      trigger?.focus();
+    };
+  }, [pendingDeleteMessageId]);
+
   const handleDeleteQuery = async (messageId: string) => {
     if (deletingMessageId || isGenerating) return;
-    if (
-      !window.confirm(
-        'Delete this query and its assistant response? This cannot be undone.',
-      )
-    ) {
-      return;
-    }
     const feed = feedRef.current;
     const previousScrollTop = feed?.scrollTop ?? 0;
     setDeletingMessageId(messageId);
@@ -290,6 +305,7 @@ export function WorkspaceChatArea({
       }
     } finally {
       setDeletingMessageId(null);
+      setPendingDeleteMessageId(null);
     }
   };
 
@@ -340,17 +356,26 @@ export function WorkspaceChatArea({
             </div>
           )}
 
-          {messages.length === 0 && !isGenerating && (
+          {loadingHistory && (
+            <div aria-busy="true" aria-label="Loading conversation" className="flex min-h-[340px] items-center justify-center py-8">
+              <div className="w-full max-w-2xl space-y-4">
+                {[1, 2, 3].map((item) => <div key={item} className={`animate-pulse rounded-2xl border border-slate-800/70 bg-slate-900/45 ${item === 2 ? 'ml-auto h-20 max-w-[72%]' : 'h-12 max-w-[86%]'}`} />)}
+              </div>
+            </div>
+          )}
+
+          {messages.length === 0 && !isGenerating && !loadingHistory && !error && (
             <div className="flex min-h-[340px] items-center justify-center py-8 text-center">
-              <div className="w-full max-w-xl">
-                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-800/60 bg-sky-950/40 text-sky-300"><Sparkles className="h-5 w-5" /></div>
-                <h2 className="mt-4 text-xl font-semibold text-white">{hasIndexedSources ? 'What would you like to understand?' : 'Ask anything to get started'}</h2>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Lumora uses strong matching Workspace evidence when available and clearly discloses general answers.' : 'Lumora can answer with general knowledge now. Add sources anytime for grounded answers with citations.'}</p>
-                <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              <div className="w-full max-w-xl rounded-2xl border border-slate-800/70 bg-slate-900/25 px-5 py-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] sm:px-8">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300"><Sparkles className="h-4 w-4" /></div>
+                <h2 className="mt-4 text-lg font-semibold text-white">{hasIndexedSources ? 'Learn from this Workspace' : 'Start learning with Lumora'}</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Ask about your sources, then use the evidence in Context to go deeper.' : 'Ask anything now, or add sources when you want grounded learning with citations.'}</p>
+                {!hasIndexedSources && <button type="button" onClick={onOpenAddSource} className="mt-5 rounded-xl bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Add your first source</button>}
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {(hasIndexedSources
-                    ? ['Summarize the key ideas', 'Explain the hardest concept', 'What should I learn first?']
-                    : ['Build me a learning roadmap', 'Explain a difficult concept', 'Help me plan what to learn']).map((question) => (
-                    <button key={question} type="button" onClick={() => onSubmitMessage(question)} className="rounded-xl border border-slate-800 bg-slate-900/55 px-3 py-3 text-left text-xs leading-5 text-slate-300 transition hover:border-sky-700/70 hover:bg-slate-900 hover:text-white">{question}</button>
+                    ? ['Summarize my sources', 'Quiz me from this Workspace', 'What should I learn first?']
+                    : ['Explain a concept', 'Build a learning roadmap', 'Compare two technologies']).map((question) => (
+                    <button key={question} type="button" onClick={() => onSubmitMessage(question)} className="rounded-full border border-slate-700/80 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-400/35 hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{question}</button>
                   ))}
                 </div>
               </div>
@@ -389,7 +414,7 @@ export function WorkspaceChatArea({
                   {isUser ? (
                     <div>
                       <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
-                      <div className="mt-2 flex justify-end gap-1 border-t border-cyan-500/15 pt-2 opacity-70 transition-opacity duration-150 sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
+                      <div className="relative mt-2 flex justify-end gap-1 border-t border-cyan-500/15 pt-2 opacity-70 transition-opacity duration-150 sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
                         <button
                           type="button"
                           onClick={() => void handleCopyMessage(message)}
@@ -404,8 +429,9 @@ export function WorkspaceChatArea({
                           {copiedMessageId === message.id ? 'Copied' : 'Copy'}
                         </button>
                         <button
+                          ref={(element) => { deleteButtonRefs.current[message.id] = element; }}
                           type="button"
-                          onClick={() => void handleDeleteQuery(message.id)}
+                          onClick={() => setPendingDeleteMessageId(message.id)}
                           disabled={isGenerating || Boolean(deletingMessageId)}
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-slate-400 transition-colors hover:bg-rose-400/10 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label="Delete this query and its response"
@@ -413,6 +439,13 @@ export function WorkspaceChatArea({
                           <Trash2 className="h-3 w-3" />
                           {deletingMessageId === message.id ? 'Deleting…' : 'Delete'}
                         </button>
+                        {pendingDeleteMessageId === message.id && (
+                          <div role="dialog" aria-label="Delete this conversation turn" className="fixed inset-x-3 bottom-3 z-50 rounded-2xl border border-rose-900/60 bg-[#151b27] p-4 text-left shadow-2xl shadow-black/50 sm:absolute sm:bottom-full sm:right-0 sm:left-auto sm:mb-2 sm:w-72">
+                            <p className="text-xs font-semibold text-white">Delete this conversation turn?</p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-400">This will remove your question and Lumora&apos;s response.</p>
+                            <div className="mt-3 flex justify-end gap-2"><button ref={cancelDeleteRef} type="button" onClick={() => setPendingDeleteMessageId(null)} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">Cancel</button><button type="button" onClick={() => void handleDeleteQuery(message.id)} className="rounded-lg border border-rose-800/70 bg-rose-950/55 px-2.5 py-1.5 text-[11px] font-semibold text-rose-200 transition hover:bg-rose-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400">Delete</button></div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -614,7 +647,7 @@ export function WorkspaceChatArea({
                       ))}
                     </div>
                     <span>
-                      {generationStatusLabel || 'Finding relevant context and preparing a grounded response…'}
+                      {generationStatusLabel || 'Thinking…'}
                     </span>
                   </div>
                 )}

@@ -140,6 +140,23 @@ test('source deletion uses the Lumora modal with no native confirm or alert flow
   assert.match(modal, /Delete Source/);
 });
 
+test('conversation hydration waits for history and chat deletion uses a Lumora confirmation surface', () => {
+  const chat = readFileSync(
+    new URL('./WorkspaceChatArea.tsx', import.meta.url),
+    'utf8',
+  );
+  const page = readFileSync(
+    new URL('../../pages/WorkspaceDetailPage.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(chat, /window\.confirm/);
+  assert.match(chat, /loadingHistory/);
+  assert.match(chat, /Loading conversation/);
+  assert.match(chat, /Delete this conversation turn\?/);
+  assert.match(page, /const \[loadingHistory, setLoadingHistory\] = useState\(true\)/);
+  assert.match(page, /loadingHistory=\{loadingHistory\}/);
+});
+
 test('source deletion submission gate blocks duplicate confirms and permits retry', () => {
   const gate = { current: false };
   assert.equal(tryBeginSubmission(gate), true);

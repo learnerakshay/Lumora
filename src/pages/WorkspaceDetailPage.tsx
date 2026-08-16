@@ -68,6 +68,7 @@ export function WorkspaceDetailPage() {
 
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [loadingSources, setLoadingSources] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [refreshingSources, setRefreshingSources] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
@@ -192,6 +193,8 @@ export function WorkspaceDetailPage() {
           err.message || 'Unable to refresh conversation history.',
         );
       }
+    } finally {
+      if (requestedAtRevision === conversationRevisionRef.current) setLoadingHistory(false);
     }
   }, [workspaceId]);
 
@@ -203,6 +206,7 @@ export function WorkspaceDetailPage() {
     operationGateRef.current = new ConversationOperationGate();
     conversationRevisionRef.current += 1;
     setMessages([]);
+    setLoadingHistory(true);
     setStreamingResponseMode(null);
     setContextCitations(null);
     setActiveCitationId(null);
@@ -281,6 +285,7 @@ export function WorkspaceDetailPage() {
     const isCurrentOperation = () =>
       streamGuardRef.current.isCurrent(capturedWorkspaceId, operationId);
     conversationRevisionRef.current += 1;
+    setLoadingHistory(false);
 
     const isRegeneration = Boolean(regenerateAssistant);
     const tempUserMsg: StoredMessage = {
@@ -630,6 +635,7 @@ export function WorkspaceDetailPage() {
       if (!response.ok) throw new Error('Failed to clear conversation history.');
       conversationRevisionRef.current += 1;
       setMessages([]);
+      setLoadingHistory(false);
       setContextCitations(null);
       setActiveCitationId(null);
       setActivityError(null);
@@ -862,6 +868,7 @@ export function WorkspaceDetailPage() {
           onSelectSourceDetails={handleOpenSourceDetails}
           onRequestDeleteSource={setSourcePendingDeletion}
           onRefreshSources={handleRefreshSources}
+          onOpenAddSource={handleOpenAddSource}
         />
       </div>
 
@@ -893,6 +900,7 @@ export function WorkspaceDetailPage() {
               }}
               onRequestDeleteSource={setSourcePendingDeletion}
               onRefreshSources={handleRefreshSources}
+              onOpenAddSource={handleOpenAddSource}
             />
           </div>
         </div>
@@ -927,6 +935,7 @@ export function WorkspaceDetailPage() {
             generationStatusLabel={generationStatusLabel}
             regeneratingMessageId={regeneratingMessageId}
             error={activityError || historyError}
+            loadingHistory={loadingHistory}
             sources={visibleSources}
             hasIndexedSources={hasIndexedSources}
             sourceCount={visibleSources.length}
@@ -938,6 +947,7 @@ export function WorkspaceDetailPage() {
             onClearHistory={handleClearHistory}
             onDeleteQuery={handleDeleteQuery}
             onRegenerateResponse={handleRegenerateResponse}
+            onOpenAddSource={handleOpenAddSource}
         />
 
         {/* Bottom Prompt Composer */}

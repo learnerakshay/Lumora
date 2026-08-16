@@ -177,9 +177,6 @@ export function WorkspaceHeader({
             <p className="text-xs font-semibold text-white truncate">
               {user?.fullName || 'User'}
             </p>
-            <p className="text-[10px] text-slate-400 font-mono truncate">
-              {user?.email || 'authenticated'}
-            </p>
           </div>
         </div>
       </div>

@@ -105,7 +105,7 @@ export function WorkspacePromptComposer({
                   type="button"
                   onClick={canCancelGeneration ? onCancelGeneration : undefined}
                   disabled={!canCancelGeneration}
-                  className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-800/80 bg-rose-950/70 px-3 text-xs font-semibold text-rose-300 transition-colors hover:border-rose-700 hover:bg-rose-900/70 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-400"
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-800/80 bg-rose-950/70 px-3 text-xs font-semibold text-rose-300 transition-colors hover:border-rose-700 hover:bg-rose-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:cursor-wait disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-400"
                   aria-label={canCancelGeneration ? 'Stop response generation' : 'Server is completing response generation'}
                 >
                   <StopCircle className="h-3.5 w-3.5" />
@@ -116,7 +116,7 @@ export function WorkspacePromptComposer({
                   type="button"
                   onClick={handleSubmit}
                   disabled={!promptText.trim()}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-[background-color,color,box-shadow,opacity] duration-200 ${promptText.trim() ? 'bg-cyan-300 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.18)] hover:bg-cyan-200 hover:shadow-[0_10px_24px_rgba(34,211,238,0.25)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-[background-color,color,box-shadow,opacity] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${promptText.trim() ? 'bg-cyan-300 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.18)] hover:bg-cyan-200 hover:shadow-[0_10px_24px_rgba(34,211,238,0.25)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
                   aria-label="Send chat prompt"
                 >
                   <Send className="h-4 w-4" />
