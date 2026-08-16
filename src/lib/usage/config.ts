@@ -1,4 +1,4 @@
-export const USAGE_WINDOW_MS = 24 * 60 * 60 * 1_000;
+export const USAGE_WINDOW_MS = 12 * 60 * 60 * 1_000;
 export const USAGE_RESERVATION_TIMEOUT_MS = 5 * 60 * 1_000;
 
 export const PLAN_NAMES = ['FREE', 'CORE', 'MAX'] as const;
@@ -21,7 +21,7 @@ export const METERED_USAGE_ACTIONS: readonly MeteredUsageAction[] = [
 ];
 
 export const PLAN_LIMITS = {
-  FREE: { CHAT: 8, INGESTION: 3, AI_ACTION: 5 },
+  FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8 },
   CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25 },
   MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80 },
 } as const satisfies Record<PlanName, Record<MeteredUsageAction, number>>;

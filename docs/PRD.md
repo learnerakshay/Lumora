@@ -41,11 +41,11 @@ Authenticate with Clerk, create/open a Workspace, add PDF/website/text/YouTube/V
 
 ### Usage and plans
 
-**IMPLEMENTED:** Chat, Ingestion, and AI Action are metered in a rolling 24-hour window. A pending reservation precedes work; successful work commits, failed/aborted work can discard, and stale reservations expire after five minutes.
+**IMPLEMENTED:** Chat, Ingestion, and AI Action are metered in a rolling 12-hour window. A pending reservation precedes work; successful work commits, failed/aborted work can discard, and stale reservations expire after five minutes.
 
 | Plan | Chat | Ingestion | AI Action |
 |---|---:|---:|---:|
-| Free | 8 | 3 | 5 |
+| Free | 10 | 4 | 8 |
 | Core | 40 | 15 | 25 |
 | Max | 150 | 50 | 80 |
 

@@ -8,10 +8,10 @@ const committed = (createdAt: string) => ({ status: 'COMMITTED' as const, create
 const pending = (createdAt: string) => ({ status: 'PENDING' as const, createdAt: new Date(createdAt) });
 
 test('empty rolling window has full remaining capacity', () => {
-  assert.deepEqual(calculateUsageWindow({ events: [], limit: 8, now }), {
+  assert.deepEqual(calculateUsageWindow({ events: [], limit: 10, now }), {
     used: 0,
-    limit: 8,
-    remaining: 8,
+    limit: 10,
+    remaining: 10,
     reserved: 0,
     nextAvailableAt: null,
   });
@@ -23,30 +23,30 @@ test('committed events consume visible usage and recover from the oldest event',
       committed('2026-08-14T11:00:00.000Z'),
       committed('2026-08-14T10:00:00.000Z'),
     ],
-    limit: 8,
+    limit: 10,
     now,
   });
   assert.equal(result.used, 2);
-  assert.equal(result.remaining, 6);
-  assert.equal(result.nextAvailableAt, '2026-08-15T10:00:00.000Z');
+  assert.equal(result.remaining, 8);
+  assert.equal(result.nextAvailableAt, '2026-08-14T22:00:00.000Z');
 });
 
-test('the exact 24-hour boundary is included while an older event is excluded', () => {
+test('the exact 12-hour boundary expires while a newer event remains', () => {
   const result = calculateUsageWindow({
     events: [
-      committed('2026-08-13T12:00:00.000Z'),
-      committed('2026-08-13T11:59:59.999Z'),
-      committed('2026-08-13T12:00:00.001Z'),
+      committed('2026-08-14T00:00:00.000Z'),
+      committed('2026-08-13T23:59:59.999Z'),
+      committed('2026-08-14T00:00:00.001Z'),
     ],
-    limit: 8,
+    limit: 10,
     now,
   });
-  assert.equal(result.used, 2);
-  assert.equal(result.nextAvailableAt, '2026-08-14T12:00:00.000Z');
+  assert.equal(result.used, 1);
+  assert.equal(result.nextAvailableAt, '2026-08-14T12:00:00.001Z');
 });
 
 test('aging an event outside the rolling window restores remaining capacity', () => {
-  const event = committed('2026-08-13T12:00:00.000Z');
+  const event = committed('2026-08-14T00:00:00.001Z');
   assert.equal(calculateUsageWindow({ events: [event], limit: 1, now }).remaining, 0);
   assert.equal(
     calculateUsageWindow({
@@ -79,11 +79,50 @@ test('stale pending reservations do not hold capacity', () => {
 });
 
 test('plan configuration keeps distinct limits per plan and action type', () => {
-  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 8, INGESTION: 3, AI_ACTION: 5 });
+  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 10, INGESTION: 4, AI_ACTION: 8 });
   assert.equal(PLAN_LIMITS.CORE.CHAT, 40);
   assert.equal(PLAN_LIMITS.CORE.INGESTION, 15);
   assert.equal(PLAN_LIMITS.MAX.AI_ACTION, 80);
-  assert.equal(USAGE_WINDOW_MS, 86_400_000);
+  assert.equal(USAGE_WINDOW_MS, 43_200_000);
+});
+
+test('FREE capacities allow their configured action counts and block the next reservation', () => {
+  const cases = [
+    { action: 'CHAT', limit: PLAN_LIMITS.FREE.CHAT },
+    { action: 'INGESTION', limit: PLAN_LIMITS.FREE.INGESTION },
+    { action: 'AI_ACTION', limit: PLAN_LIMITS.FREE.AI_ACTION },
+  ] as const;
+  for (const { action, limit } of cases) {
+    const events = Array.from({ length: limit }, (_, index) =>
+      committed(new Date(now.getTime() - (index + 1) * 1_000).toISOString()),
+    );
+    const result = calculateUsageWindow({ events, limit, now });
+    assert.equal(result.used, limit, `${action} should allow ${limit} committed events`);
+    assert.equal(result.remaining, 0);
+    assert.equal(result.reserved >= limit, true, `${action} next reservation is blocked`);
+  }
+});
+
+test('each committed event recovers independently after 12 continuous hours', () => {
+  const events = [
+    committed('2026-08-14T10:00:00.000Z'),
+    committed('2026-08-14T11:00:00.000Z'),
+  ];
+  const atTenPm = calculateUsageWindow({
+    events,
+    limit: 2,
+    now: new Date('2026-08-14T22:00:00.000Z'),
+  });
+  assert.equal(atTenPm.used, 1);
+  assert.equal(atTenPm.nextAvailableAt, '2026-08-14T23:00:00.000Z');
+
+  const atElevenPm = calculateUsageWindow({
+    events,
+    limit: 2,
+    now: new Date('2026-08-14T23:00:00.000Z'),
+  });
+  assert.equal(atElevenPm.used, 0);
+  assert.equal(atElevenPm.nextAvailableAt, null);
 });
 
 test('provider cost uses exact reported tokens and centralized pricing', () => {

@@ -20,7 +20,7 @@ Lumora helps learners, builders, and researchers turn PDFs, websites, notes, vid
 - **IMPLEMENTED — Evidence-gated grounding:** retrieval is Workspace-scoped, restricted to active compatible indexes, deduplicated, then checked for requested-topic coverage.
 - **IMPLEMENTED — Durable provenance:** messages and citations persist together; Context can reveal a source passage, URL, page, or timestamp for a historical answer.
 - **IMPLEMENTED — Resource intelligence:** learning-resource requests combine a curated catalog with optional Tavily discovery, canonical URL deduplication, and intent-aware ranking.
-- **IMPLEMENTED — Cost-aware Usage:** chat, ingestion, and AI Actions use atomic reservations and 24-hour rolling limits.
+- **IMPLEMENTED — Cost-aware Usage:** chat, ingestion, and AI Actions use atomic reservations and 12-hour rolling limits.
 
 ## Technology and delivery
 
@@ -30,11 +30,11 @@ The Vite client and bundled Express server build to `dist`; Vercel provides the 
 
 ## Current plan limits
 
-**IMPLEMENTED:** limits are per user/action in a rolling 24-hour window. Customer pricing and checkout are **PLANNED**.
+**IMPLEMENTED:** limits are per user/action in a rolling 12-hour window. Customer pricing and checkout are **PLANNED**.
 
 | Plan | Chat | Ingestion | AI Action |
 |---|---:|---:|---:|
-| Free | 8 | 3 | 5 |
+| Free | 10 | 4 | 8 |
 | Core | 40 | 15 | 25 |
 | Max | 150 | 50 | 80 |
 

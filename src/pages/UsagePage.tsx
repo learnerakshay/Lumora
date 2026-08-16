@@ -36,7 +36,7 @@ export function UsagePage() {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Rolling capacity</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-              Lumora measures completed, expensive actions over the previous 24 hours. Capacity returns continuously as each action ages out.
+              Lumora measures completed, expensive actions over the previous 12 hours. Capacity returns continuously as each action ages out.
             </p>
           </div>
           {summary && (
@@ -63,7 +63,7 @@ export function UsagePage() {
         {summary && (
           <>
             <section aria-labelledby="usage-breakdown-title">
-              <h2 id="usage-breakdown-title" className="mb-3 text-sm font-semibold text-white">Previous 24 hours</h2>
+              <h2 id="usage-breakdown-title" className="mb-3 text-sm font-semibold text-white">Previous 12 hours</h2>
               <div className="grid gap-4 lg:grid-cols-3">
                 {ACTIONS.map(({ type, label, description, icon: Icon }) => {
                   const action = summary.perAction[type];
@@ -94,7 +94,7 @@ export function UsagePage() {
             <section aria-labelledby="plan-comparison-title" className="overflow-hidden rounded-2xl border border-slate-700/65 bg-[#101722] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
               <div className="border-b border-slate-800/80 px-5 py-5">
                 <h2 id="plan-comparison-title" className="text-sm font-semibold text-white">Plan comparison</h2>
-                <p className="mt-1 text-xs text-slate-500">Upgrade according to your needs. Every allowance uses the same rolling 24-hour window.</p>
+                <p className="mt-1 text-xs text-slate-500">Upgrade according to your needs. Every allowance uses the same rolling 12-hour window.</p>
               </div>
               <div className="grid gap-3 p-4 md:grid-cols-3">
                 {PLANS.map((plan) => {

@@ -86,7 +86,7 @@ sequenceDiagram
  DB-->>API: allowed / limit
  API->>API: perform work
  API->>DB: COMMIT usage or discard
- Note over DB: committed window is 24h; stale pending expires after 5m
+ Note over DB: committed window is 12h; stale pending expires after 5m
 ```
 
 **IMPLEMENTED:** `UsageEvent` can persist provider, model, input tokens, output tokens, and estimated model cost when reported usage maps to the configured repository pricing constants. This is backend event-level observability. It is **not** customer billing, an admin finance dashboard, invoice reconciliation, or token-priced Usage enforcement. The constants are **CONFIGURED COST-ESTIMATION CONSTANTS IN THE REPOSITORY**, not guaranteed current provider prices, and should be updated when provider pricing changes.

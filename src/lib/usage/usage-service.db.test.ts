@@ -56,6 +56,23 @@ test('real advisory lock permits exactly one simultaneous final-capacity reserva
   }
 });
 
+test('FREE plan enforces 10 chat, 4 ingestion, and 8 AI Action reservations', { skip: !runDatabaseTests }, async () => {
+  const userId = `usage-free-limits-${randomUUID()}`;
+  try {
+    await prisma.user.create({ data: { id: userId, plan: 'FREE' } });
+    for (const [actionType, allowedCount] of [['CHAT', 10], ['INGESTION', 4], ['AI_ACTION', 8]] as const) {
+      for (let index = 0; index < allowedCount; index += 1) {
+        const result = await checkAndReserve(userId, actionType);
+        assert.ok(result.allowed, `${actionType} reservation ${index + 1} should be allowed`);
+      }
+      const blocked = await checkAndReserve(userId, actionType);
+      assert.equal(blocked.allowed, false, `${actionType} reservation ${allowedCount + 1} should be blocked`);
+    }
+  } finally {
+    await prisma.user.deleteMany({ where: { id: userId } });
+  }
+});
+
 test('real service commits success, discards failure, and isolates users', { skip: !runDatabaseTests }, async () => {
   const userId = `usage-accounting-${randomUUID()}`;
   const otherUserId = `usage-other-${randomUUID()}`;

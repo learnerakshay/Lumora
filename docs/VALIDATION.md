@@ -13,7 +13,7 @@
 | Ingestion | parsing, recovery/reprocess, embeddings, index promotion, URL safety | ingestion test suite | VALIDATED |
 | YouTube acquisition | URL/provider/relay validation and Gemini fallback paths | YouTube acquisition/provider/relay tests | VALIDATED |
 | Resource intent | intent gating, JS YouTube recommendations, Udemy canonical dedupe/access metadata, project-proof, free-only Docker | normalization/resolver/phase tests | VALIDATED |
-| Usage | rolling limits, one CHAT event route boundary, centralized cost estimation | usage-window, API-routing, route-contract tests | VALIDATED |
+| Usage | 12-hour rolling limits, independent recovery, one CHAT event route boundary, centralized cost estimation | usage-window, API-routing, route-contract tests | VALIDATED |
 | Usage database | locks, isolation, token/cost persistence when DB test config is available | usage-service.db test | IMPLEMENTED / LIVE UNVERIFIED |
 | Responsive Workspace | responsive UI/component behavior | component tests; no device matrix | IMPLEMENTED / LIVE UNVERIFIED |
 

@@ -43,14 +43,14 @@ test('rolling recovery wording is relative and never claims a daily reset', () =
 test('header displays one real quota instead of a fabricated combined denominator', () => {
   const summary: UsageSummary = {
     plan: 'CORE',
-    windowHours: 24,
+    windowHours: 12,
     perAction: {
       CHAT: { used: 18, limit: 40, remaining: 22, nextAvailableAt: null },
       INGESTION: { used: 10, limit: 15, remaining: 5, nextAvailableAt: null },
       AI_ACTION: { used: 3, limit: 25, remaining: 22, nextAvailableAt: null },
     },
     planLimits: {
-      FREE: { CHAT: 8, INGESTION: 3, AI_ACTION: 5 },
+      FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8 },
       CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25 },
       MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80 },
     },

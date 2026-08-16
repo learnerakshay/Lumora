@@ -9,7 +9,7 @@ export interface UsageActionSummary {
 
 export interface UsageSummary {
   plan: PlanName;
-  windowHours: 24;
+  windowHours: 12;
   perAction: Record<MeteredUsageAction, UsageActionSummary>;
   planLimits: Record<PlanName, Record<MeteredUsageAction, number>>;
 }

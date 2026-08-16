@@ -31,7 +31,7 @@ export function calculateUsageWindow(input: {
   const committed = input.events
     .filter(
       (event) =>
-        event.status === 'COMMITTED' && event.createdAt.getTime() >= windowStart,
+        event.status === 'COMMITTED' && event.createdAt.getTime() > windowStart,
     )
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   const pending = input.events.filter(
@@ -102,7 +102,7 @@ export async function checkAndReserve(
         userId,
         actionType: actionType as UsageActionType,
         OR: [
-          { status: 'COMMITTED', createdAt: { gte: windowStart } },
+          { status: 'COMMITTED', createdAt: { gt: windowStart } },
           { status: 'PENDING', createdAt: { gte: staleBefore } },
         ],
       },
@@ -183,7 +183,7 @@ export async function getUsageSummary(
       userId,
       actionType: { in: [...METERED_USAGE_ACTIONS] as UsageActionType[] },
       OR: [
-        { status: 'COMMITTED', createdAt: { gte: windowStart } },
+        { status: 'COMMITTED', createdAt: { gt: windowStart } },
         { status: 'PENDING', createdAt: { gte: staleBefore } },
       ],
     },
@@ -204,7 +204,7 @@ export async function getUsageSummary(
   }
   return {
     plan,
-    windowHours: 24,
+    windowHours: 12,
     perAction,
     planLimits: PLAN_LIMITS,
   };

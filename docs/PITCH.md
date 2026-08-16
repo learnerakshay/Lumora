@@ -33,7 +33,7 @@ The system couples source isolation, parser safety, versioned pgvector indexes, 
 
 ## Business model and pricing rationale
 
-**IMPLEMENTED:** Free/Core/Max Usage tiers: 8/3/5, 40/15/25, and 150/50/80 chat/ingestion/AI Action units per rolling 24 hours. Customer pricing, checkout, and subscription billing are **PLANNED**.
+**IMPLEMENTED:** Free/Core/Max Usage tiers: 10/4/8, 40/15/25, and 150/50/80 chat/ingestion/AI Action units per rolling 12 hours. Customer pricing, checkout, and subscription billing are **PLANNED**.
 
 Value (persistent, attributable Workspace knowledge) drives willingness to pay; embeddings, chat/actions, and occasional search drive cost; action limits bound cost exposure. The following model is a transparent owner-adjustable **SCENARIO**, not a forecast or actual commercial result.
 
@@ -84,7 +84,7 @@ External model/search/video availability and transcript quality are **IMPLEMENTE
 
 **Strongest claims:** grounded answers earn evidence; Workspace isolation is enforced through storage/retrieval; citation provenance survives conversation history; resource intelligence is separate from answer evidence; ingestion uses versioned active indexes; Usage has atomic rolling limits; responsive web is ready for a live demo.
 
-**Key engineering metrics:** five source types; 1,536-dimensional vectors; 1,200-character chunks with 200 overlap; 3,500-token context budget; four tool rounds; 24-hour Usage window; five-minute stale reservation expiry.
+**Key engineering metrics:** five source types; 1,536-dimensional vectors; 1,200-character chunks with 200 overlap; 3,500-token context budget; four tool rounds; 12-hour Usage window; five-minute stale reservation expiry.
 
 **Strongest validation:** focused automated tests cover ingestion, retrieval, citations, lifecycle/recovery, tools, resources, Usage, and UI helpers. Live production verification is intentionally not claimed.
 
