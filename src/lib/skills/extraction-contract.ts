@@ -12,6 +12,28 @@ import {
 const shortText = z.string().trim().min(1).max(200);
 const longText = z.string().trim().min(1).max(600);
 
+// A model asked for a required string with no "not stated" option will fill
+// blanks with "" rather than fabricate content. For genuinely optional
+// fields, treat that "" (or whitespace) exactly like an omitted value and
+// normalize it to null instead of failing the whole extraction over it.
+function optionalText(maxLength: number) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim().length === 0 ? null : value),
+    z.string().trim().max(maxLength).nullable(),
+  );
+}
+
+// Same "" -> omitted normalization, applied per array item, so one blank
+// filler entry (e.g. an empty technology or outcome string) is dropped
+// instead of invalidating the entire array.
+function filteredStringArray(itemSchema: z.ZodString, maxItems: number) {
+  return z.preprocess(
+    (value) =>
+      Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item.trim().length > 0) : value,
+    z.array(itemSchema).max(maxItems).default([]),
+  );
+}
+
 const rawSkillSchema = z.object({
   label: shortText,
   category: z.enum(['language', 'framework', 'tool', 'platform', 'concept']),
@@ -20,33 +42,33 @@ const rawSkillSchema = z.object({
 
 const rawProjectSchema = z.object({
   name: shortText,
-  description: longText,
-  technologies: z.array(shortText).max(30).default([]),
+  description: optionalText(600),
+  technologies: filteredStringArray(shortText, 30),
   hasLink: z.boolean(),
-  outcomes: z.array(longText).max(10).default([]),
+  outcomes: filteredStringArray(longText, 10),
 });
 
 const rawExperienceSchema = z.object({
   title: shortText,
-  organization: shortText,
+  organization: optionalText(200),
   durationMonths: z.number().int().min(0).max(600).nullable(),
-  responsibilities: z.array(longText).max(15).default([]),
-  technologies: z.array(shortText).max(30).default([]),
+  responsibilities: filteredStringArray(longText, 15),
+  technologies: filteredStringArray(shortText, 30),
 });
 
 const rawEducationSchema = z.object({
   credential: shortText,
-  field: shortText,
-  institution: shortText,
+  field: optionalText(200),
+  institution: optionalText(200),
 });
 
 const rawCertificationSchema = z.object({
   name: shortText,
-  issuer: shortText,
+  issuer: optionalText(200),
 });
 
 export const rawExtractedProfileSchema = z.object({
-  headline: shortText.nullable(),
+  headline: optionalText(200),
   yearsOfExperienceStated: z.number().min(0).max(60).nullable(),
   skills: z.array(rawSkillSchema).max(80),
   projects: z.array(rawProjectSchema).max(30),
@@ -98,7 +120,7 @@ export function assignExtractionIds(raw: RawExtractedProfile): ExtractedProfile 
   const projects: ExtractedProject[] = raw.projects.map((project, index) => ({
     id: `project-${index}`,
     name: project.name,
-    description: project.description,
+    description: project.description ?? null,
     technologies: project.technologies,
     hasLink: project.hasLink,
     outcomes: project.outcomes,
@@ -106,7 +128,7 @@ export function assignExtractionIds(raw: RawExtractedProfile): ExtractedProfile 
   const experience: ExtractedExperience[] = raw.experience.map((entry, index) => ({
     id: `experience-${index}`,
     title: entry.title,
-    organization: entry.organization,
+    organization: entry.organization ?? null,
     durationMonths: entry.durationMonths ?? null,
     responsibilities: entry.responsibilities,
     technologies: entry.technologies,
@@ -114,13 +136,13 @@ export function assignExtractionIds(raw: RawExtractedProfile): ExtractedProfile 
   const education: ExtractedEducation[] = raw.education.map((entry, index) => ({
     id: `education-${index}`,
     credential: entry.credential,
-    field: entry.field,
-    institution: entry.institution,
+    field: entry.field ?? null,
+    institution: entry.institution ?? null,
   }));
   const certifications: ExtractedCertification[] = raw.certifications.map((entry, index) => ({
     id: `certification-${index}`,
     name: entry.name,
-    issuer: entry.issuer,
+    issuer: entry.issuer ?? null,
   }));
 
   return {
@@ -163,7 +185,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         required: ['name', 'description', 'technologies', 'hasLink', 'outcomes'],
         properties: {
           name: { type: 'string' },
-          description: { type: 'string' },
+          description: { type: ['string', 'null'] },
           technologies: { type: 'array', items: { type: 'string' } },
           hasLink: { type: 'boolean' },
           outcomes: { type: 'array', items: { type: 'string' } },
@@ -178,7 +200,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         required: ['title', 'organization', 'durationMonths', 'responsibilities', 'technologies'],
         properties: {
           title: { type: 'string' },
-          organization: { type: 'string' },
+          organization: { type: ['string', 'null'] },
           durationMonths: { type: ['number', 'null'] },
           responsibilities: { type: 'array', items: { type: 'string' } },
           technologies: { type: 'array', items: { type: 'string' } },
@@ -193,8 +215,8 @@ export const EXTRACTION_JSON_SCHEMA = {
         required: ['credential', 'field', 'institution'],
         properties: {
           credential: { type: 'string' },
-          field: { type: 'string' },
-          institution: { type: 'string' },
+          field: { type: ['string', 'null'] },
+          institution: { type: ['string', 'null'] },
         },
       },
     },
@@ -206,7 +228,7 @@ export const EXTRACTION_JSON_SCHEMA = {
         required: ['name', 'issuer'],
         properties: {
           name: { type: 'string' },
-          issuer: { type: 'string' },
+          issuer: { type: ['string', 'null'] },
         },
       },
     },

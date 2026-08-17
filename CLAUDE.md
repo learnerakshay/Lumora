@@ -111,6 +111,7 @@ Stages are persisted (`SourceProcessingAttempt` / `SourceProcessingEvent`) with 
 - Pure functions take an injected dependencies object for testability (`RetrievalDependencies`, `CoordinatorDependencies`, provider deps).
 - Tests are colocated as `*.test.ts` beside the unit.
 - Both `bun.lock` and `package-lock.json` are committed; npm is what the scripts assume.
+- **OpenAI strict-mode JSON-schema output (`text.format.type: 'json_schema', strict: true`) requires every property in `required`, with no way to omit one the model has nothing to say about.** If a property's JSON-schema `type` is a bare `'string'` (not `['string', 'null']`), the model is left with no legal way to represent "not stated" and reliably emits `""` instead — which then fails a Zod `.min(1)` on that field and looks like a validation bug, not a schema-design bug. Any field that is genuinely optional must declare `type: ['string', 'null']` in the JSON schema *and* accept `""` alongside `null` on the Zod side (normalize both to `null`); only fields essential to identifying the item — the ones where empty content really does mean "reject and retry" — should stay a bare required string. See `src/lib/skills/extraction-contract.ts` (`optionalText`, `filteredStringArray`) for the pattern.
 
 ## Known issues (Phase 4)
 

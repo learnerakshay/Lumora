@@ -53,7 +53,7 @@ export function normalizeExtractedProfile(profile: ExtractedProfile): Normalized
       upsert(tech, topic, level, {
         kind: 'EXPERIENCE',
         id: experience.id,
-        label: `${experience.title} @ ${experience.organization}`,
+        label: experience.organization ? `${experience.title} @ ${experience.organization}` : experience.title,
       });
     }
   }

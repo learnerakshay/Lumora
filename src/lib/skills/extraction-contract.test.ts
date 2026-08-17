@@ -136,3 +136,101 @@ test('isEmptyRawExtraction is false when a well-formed extraction has real conte
   if (!parsed.success) return;
   assert.equal(isEmptyRawExtraction(parsed.data), false);
 });
+
+// Regression for the production failure: "Too small: expected string to
+// have >=1 characters" when the model returned "" for optional descriptive
+// fields it had nothing to state. Each of these must now parse successfully
+// with the blank field normalized to null, not rejected.
+test('an empty string on each optional descriptive field parses successfully and normalizes to null', () => {
+  const fixtureWithBlanks = {
+    headline: '',
+    yearsOfExperienceStated: null,
+    skills: [{ label: 'React', category: 'framework', context: 'SKILLS_SECTION' }],
+    projects: [
+      { name: 'Portfolio', description: '', technologies: [], hasLink: false, outcomes: [] },
+    ],
+    experience: [
+      { title: 'Engineer', organization: '', durationMonths: null, responsibilities: [], technologies: [] },
+    ],
+    education: [{ credential: 'B.Tech', field: '', institution: '   ' }],
+    certifications: [{ name: 'AWS Certified', issuer: '' }],
+  };
+  const result = parseRawExtractedProfile(fixtureWithBlanks);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.data.headline, null);
+  assert.equal(result.data.projects[0]?.description, null);
+  assert.equal(result.data.experience[0]?.organization, null);
+  assert.equal(result.data.education[0]?.field, null);
+  assert.equal(result.data.education[0]?.institution, null);
+  assert.equal(result.data.certifications[0]?.issuer, null);
+});
+
+test('an explicit null on an optional descriptive field still parses successfully', () => {
+  const fixtureWithNulls = {
+    headline: null,
+    yearsOfExperienceStated: null,
+    skills: [],
+    projects: [
+      { name: 'Portfolio', description: null, technologies: [], hasLink: false, outcomes: [] },
+    ],
+    experience: [
+      { title: 'Engineer', organization: null, durationMonths: null, responsibilities: [], technologies: [] },
+    ],
+    education: [{ credential: 'B.Tech', field: null, institution: null }],
+    certifications: [{ name: 'AWS Certified', issuer: null }],
+  };
+  const result = parseRawExtractedProfile(fixtureWithNulls);
+  assert.equal(result.success, true);
+});
+
+test('a blank filler string inside a technologies/outcomes/responsibilities array is dropped, not rejected', () => {
+  const fixtureWithBlankArrayItems = {
+    ...validFixture,
+    projects: [
+      {
+        name: 'Portfolio',
+        description: 'A portfolio site',
+        technologies: ['React', '', '   ', 'Node.js'],
+        hasLink: true,
+        outcomes: ['', 'Live in production'],
+      },
+    ],
+  };
+  const result = parseRawExtractedProfile(fixtureWithBlankArrayItems);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.deepEqual(result.data.projects[0]?.technologies, ['React', 'Node.js']);
+  assert.deepEqual(result.data.projects[0]?.outcomes, ['Live in production']);
+});
+
+test('essential identifying fields (skill label, project name, experience title, credential) remain required and reject an empty string', () => {
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      skills: [{ label: '', category: 'framework', context: 'SKILLS_SECTION' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      projects: [{ ...validFixture.projects[0], name: '' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      experience: [{ ...validFixture.experience[0], title: '' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      education: [{ ...validFixture.education[0], credential: '' }],
+    }).success,
+    false,
+  );
+});

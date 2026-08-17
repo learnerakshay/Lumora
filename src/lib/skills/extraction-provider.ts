@@ -23,7 +23,13 @@ const MAX_RESUME_CHARS = 30_000;
 const EXTRACTION_TIMEOUT_MS = 60_000;
 const MAX_ATTEMPTS = 2;
 
-const EXTRACTION_INSTRUCTIONS = `You transcribe the literal content of a resume into structured JSON. The resume may be provided as text or as an image — if it is an image, read every visible word carefully before transcribing. You are not a recruiter or career coach: never rate skill proficiency, never infer a skill the resume does not name, and never invent projects, employers, dates, or outcomes. If a field is not stated, use null or an empty array rather than guessing. Set "hasLink" on a project only when the resume text contains an actual URL for it. Copy skill, technology, organization, and institution names as written. If the provided content is not a legible resume at all, return every field empty rather than fabricating one.`;
+// Shown to users on any exhausted-retry extraction failure. Raw provider/Zod
+// detail (field paths, issue messages) is never sent to the client — it is
+// only ever passed to logger.warn, which the API route does not forward.
+const STABLE_UNREADABLE_RESUME_MESSAGE =
+  "We couldn't reliably read this resume. Try a clearer image, PDF, or paste the resume text.";
+
+const EXTRACTION_INSTRUCTIONS = `You transcribe the literal content of a resume into structured JSON. The resume may be provided as text or as an image — if it is an image, read every visible word carefully before transcribing. You are not a recruiter or career coach: never rate skill proficiency, never infer a skill the resume does not name, and never invent projects, employers, dates, or outcomes. If a field is not stated, use null (never an empty string) or an empty array rather than guessing. Set "hasLink" on a project only when the resume text contains an actual URL for it. Copy skill, technology, organization, and institution names as written. If the provided content is not a legible resume at all, return every field empty rather than fabricating one.`;
 
 function safeProviderMessage(status: number): string {
   if (status === 429) return 'The AI provider is rate limited. Please try again shortly.';
@@ -174,18 +180,14 @@ async function runExtraction(source: ExtractionSource): Promise<ExtractionResult
     };
   }
 
-  if (lastFailureWasUnreadable) {
-    throw new SkillExtractionError(
-      'We could not read any resume content from what you provided. Try a clearer image, a text-based PDF, or paste the text directly.',
-      'EXTRACTION_EMPTY_CONTENT',
-      422,
-    );
-  }
-  throw new SkillExtractionError(
-    `The AI provider could not produce a valid resume extraction: ${lastError}`,
-    'EXTRACTION_SCHEMA_INVALID',
-    422,
-  );
+  const code = lastFailureWasUnreadable ? 'EXTRACTION_EMPTY_CONTENT' : 'EXTRACTION_SCHEMA_INVALID';
+  logger.warn('Skill extraction exhausted all attempts', {
+    code,
+    attempts: MAX_ATTEMPTS,
+    sourceKind: source.kind,
+    detail: lastError,
+  });
+  throw new SkillExtractionError(STABLE_UNREADABLE_RESUME_MESSAGE, code, 422);
 }
 
 export async function extractProfileFromResumeText(input: { resumeText: string }): Promise<ExtractionResult> {

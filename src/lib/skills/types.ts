@@ -13,7 +13,7 @@ export interface ExtractedSkill {
 export interface ExtractedProject {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   technologies: string[];
   hasLink: boolean;
   outcomes: string[];
@@ -22,7 +22,7 @@ export interface ExtractedProject {
 export interface ExtractedExperience {
   id: string;
   title: string;
-  organization: string;
+  organization: string | null;
   durationMonths: number | null;
   responsibilities: string[];
   technologies: string[];
@@ -31,14 +31,14 @@ export interface ExtractedExperience {
 export interface ExtractedEducation {
   id: string;
   credential: string;
-  field: string;
-  institution: string;
+  field: string | null;
+  institution: string | null;
 }
 
 export interface ExtractedCertification {
   id: string;
   name: string;
-  issuer: string;
+  issuer: string | null;
 }
 
 export const EXTRACTION_CONTRACT_VERSION = 'skill-extraction-1';

@@ -76,12 +76,136 @@ test('a schema-invalid response is retried once before succeeding', async () => 
   }
 });
 
-test('a schema-invalid response on every attempt throws a typed extraction error rather than a fabricated profile', async () => {
+test('a schema-invalid response on every attempt throws a typed extraction error with a stable message, never raw Zod detail', async () => {
   const originalFetch = globalThis.fetch;
   let callCount = 0;
   globalThis.fetch = (async () => {
     callCount += 1;
     return jsonResponse(responsesPayload(JSON.stringify({ skills: 'not an array' })));
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => extractProfileFromResumeText({ resumeText: 'resume text' }),
+      (error: unknown) => {
+        assert.ok(error instanceof SkillExtractionError);
+        assert.equal(error.code, 'EXTRACTION_SCHEMA_INVALID');
+        assert.equal(error.statusCode, 422);
+        assert.equal(
+          error.message,
+          "We couldn't reliably read this resume. Try a clearer image, PDF, or paste the resume text.",
+        );
+        assert.doesNotMatch(error.message, /zod|expected|received|too small|too big/i);
+        return true;
+      },
+    );
+    assert.equal(callCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// Regression: production returned "Too small: expected string to have >=1
+// characters" for a valid JPG resume. Root cause was the OpenAI JSON schema
+// declaring optional descriptive fields (project description, experience
+// organization, education field/institution, certification issuer) as
+// plain non-nullable strings, so the model filled unstated ones with "" and
+// Zod's min(1) rejected the whole extraction. These fields must now accept
+// "" or null and normalize to null without retrying or failing.
+test('an empty string on an optional descriptive field normalizes to null and succeeds on the first attempt', async () => {
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  const extractionWithBlankOptionalFields = {
+    headline: '',
+    yearsOfExperienceStated: 2,
+    skills: [{ label: 'React', category: 'framework', context: 'SKILLS_SECTION' }],
+    projects: [
+      {
+        name: 'Portfolio site',
+        description: '',
+        technologies: ['React'],
+        hasLink: false,
+        outcomes: [],
+      },
+    ],
+    experience: [
+      {
+        title: 'Software Engineer',
+        organization: '',
+        durationMonths: 6,
+        responsibilities: [],
+        technologies: [],
+      },
+    ],
+    education: [{ credential: 'B.Tech', field: '', institution: '' }],
+    certifications: [{ name: 'AWS Certified', issuer: '' }],
+  };
+  globalThis.fetch = (async () => {
+    callCount += 1;
+    return jsonResponse(responsesPayload(JSON.stringify(extractionWithBlankOptionalFields)));
+  }) as typeof fetch;
+  try {
+    const result = await extractProfileFromResumeImage({ imageBase64: 'ZmFrZQ==', imageMimeType: 'image/jpeg' });
+    assert.equal(callCount, 1);
+    assert.equal(result.profile.headline, null);
+    assert.equal(result.profile.projects[0]?.description, null);
+    assert.equal(result.profile.experience[0]?.organization, null);
+    assert.equal(result.profile.education[0]?.field, null);
+    assert.equal(result.profile.education[0]?.institution, null);
+    assert.equal(result.profile.certifications[0]?.issuer, null);
+    assert.equal(result.profile.experience[0]?.title, 'Software Engineer');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a blank filler string inside a technologies or outcomes array is dropped rather than failing the extraction', async () => {
+  const extractionWithBlankArrayItems = {
+    headline: 'Engineer',
+    yearsOfExperienceStated: 1,
+    skills: [],
+    projects: [
+      {
+        name: 'Notes app',
+        description: 'A notes app',
+        technologies: ['React', '', '  '],
+        hasLink: false,
+        outcomes: ['', 'Shipped to 100 users'],
+      },
+    ],
+    experience: [],
+    education: [],
+    certifications: [],
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    jsonResponse(responsesPayload(JSON.stringify(extractionWithBlankArrayItems)))) as typeof fetch;
+  try {
+    const result = await extractProfileFromResumeText({ resumeText: 'resume text' });
+    assert.deepEqual(result.profile.projects[0]?.technologies, ['React']);
+    assert.deepEqual(result.profile.projects[0]?.outcomes, ['Shipped to 100 users']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('an empty string on an essential identifying field (skill label) still fails validation and retries, unweakened', async () => {
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  globalThis.fetch = (async () => {
+    callCount += 1;
+    return jsonResponse(
+      responsesPayload(
+        JSON.stringify({
+          headline: null,
+          yearsOfExperienceStated: null,
+          skills: [{ label: '', category: 'framework', context: 'SKILLS_SECTION' }],
+          projects: [],
+          experience: [],
+          education: [],
+          certifications: [],
+        }),
+      ),
+    );
   }) as typeof fetch;
   try {
     await assert.rejects(
@@ -140,7 +264,10 @@ test('an image with no legible resume content is rejected with a distinct, clear
         assert.ok(error instanceof SkillExtractionError);
         assert.equal(error.code, 'EXTRACTION_EMPTY_CONTENT');
         assert.equal(error.statusCode, 422);
-        assert.match(error.message, /could not read/i);
+        assert.equal(
+          error.message,
+          "We couldn't reliably read this resume. Try a clearer image, PDF, or paste the resume text.",
+        );
         return true;
       },
     );
