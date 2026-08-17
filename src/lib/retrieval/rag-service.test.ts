@@ -266,6 +266,68 @@ test('createCitation never throws for chunks produced from a long real YouTube t
   }
 });
 
+test('a previously-misrouted source-specific YouTube question grounds with valid citations end-to-end', () => {
+  // Regression for a production report: "According to this video, how does
+  // the speaker suggest developers turn viral trends into engineering
+  // projects?" retrieved real evidence but assessWorkspaceEvidenceSufficiency
+  // returned coveredTopicGroupCount: 0, forcing an incorrect GENERAL
+  // fallback. Exercises the full real path: chunk a real transcript, run the
+  // real evidence gate against the real query, then validate citations for
+  // every chunk the gate would expose.
+  const cues = Array.from({ length: 30 }, (_, index) => ({
+    text:
+      index % 3 === 0
+        ? `Segment ${index}. Once something goes viral online, there is usually enough of a real trend underneath it.`
+        : index % 3 === 1
+          ? `Segment ${index}. Engineers can scope that trend into an actual project within a weekend.`
+          : `Segment ${index}. The project starts rough, then gets polished into something people would ship.`,
+    offsetMs: index * 5_000,
+    durationMs: 5_000,
+  }));
+  const formatMs = (ms: number) => {
+    const totalSeconds = ms / 1000;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = (totalSeconds % 60).toFixed(3).padStart(6, '0');
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds}`;
+  };
+  const cleanText = cleanExtractedText(
+    cues
+      .map((cue) => `[${formatMs(cue.offsetMs)} - ${formatMs(cue.offsetMs + cue.durationMs)}] ${cue.text}`)
+      .join('\n'),
+  );
+  const semanticChunks = generateSemanticChunks(cleanText, { targetChunkSize: 1_200, overlapSize: 200 });
+  assert.ok(semanticChunks.length > 1);
+
+  const query =
+    'According to this video, how does the speaker suggest developers turn viral trends into engineering projects?';
+  const assessment = assessWorkspaceEvidenceSufficiency(
+    query,
+    semanticChunks.map((semanticChunk) => ({
+      content: semanticChunk.content,
+      sourceTitle: 'How Viral Trends Become Engineering Projects',
+    })),
+  );
+  assert.equal(assessment.sufficient, true);
+  assert.equal(assessment.reason, 'complete_topic_coverage');
+
+  for (const [index, semanticChunk] of semanticChunks.entries()) {
+    const citation = createCitation(
+      chunk({
+        id: `chunk-${index}`,
+        chunkIndex: index,
+        sourceType: 'YOUTUBE',
+        sourceTitle: 'How Viral Trends Become Engineering Projects',
+        sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        content: semanticChunk.content,
+        sourceCleanText: cleanText,
+      }),
+    );
+    assert.ok(Number.isInteger(citation.timestampStartMs));
+    assert.ok(Number.isInteger(citation.timestampEndMs));
+  }
+});
+
 test('retrieval validates ownership before generating a query embedding', async () => {
   const { dependencies, state } = retrievalDependencies([], false);
   await assert.rejects(

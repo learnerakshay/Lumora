@@ -47,20 +47,27 @@ const QUERY_SCAFFOLDING = new Set([
   'a', 'about', 'according', 'an', 'answer', 'answers', 'are', 'as', 'at', 'be',
   'become', 'beginner', 'best', 'between', 'build', 'can', 'compare', 'concept',
   'concepts', 'content', 'contents', 'could', 'create', 'describe', 'did',
-  'difference', 'differences', 'do', 'does',
+  'difference', 'differences', 'discuss', 'discussed', 'discusses', 'discussing',
+  'do', 'does',
   'document', 'documents', 'engineering', 'engineer', 'example', 'examples',
   'explain', 'file', 'files', 'for', 'from', 'give', 'guide', 'have', 'help',
   'how', 'i', 'in', 'information', 'inside', 'interview', 'into', 'is', 'it',
-  'important', 'its', 'key', 'learn', 'learning', 'make', 'material', 'materials',
+  'important', 'its', 'key', 'learn', 'learning', 'main', 'make', 'material',
+  'materials',
   'me', 'most', 'my', 'note', 'notes', 'of', 'on', 'one', 'ones', 'overview',
   'pdf', 'pdfs', 'plan', 'please', 'pros',
   'implement', 'question', 'questions', 'roadmap', 'say', 'said', 'should',
   'show', 'source',
-  'sources', 'step', 'steps', 'summarize', 'summary', 'takeaway', 'takeaways',
-  'tell', 'that', 'the', 'their', 'these', 'this', 'to', 'understand', 'uploaded',
+  'sources', 'speaker', 'speakers', 'step', 'steps', 'suggest', 'suggested',
+  'suggests', 'summarize', 'summary', 'takeaway', 'takeaways',
+  'tell', 'that', 'the', 'their', 'these', 'this', 'to', 'topic', 'topics',
+  'understand', 'uploaded',
   'upload', 'use', 'using', 'versus', 'want', 'what', 'when', 'where', 'which',
   'video', 'videos', 'website', 'websites', 'why', 'with', 'work', 'works',
   'workspace', 'would', 'youtube', 'you', 'your',
+  // Ordinal/duration references locate WHERE in a source to look ("the
+  // first 2 minutes"), not WHAT topic to require evidence for.
+  'first', 'second', 'seconds', 'minute', 'minutes', 'hour', 'hours',
 ]);
 
 const STEM_EXEMPTIONS = new Set([
