@@ -85,8 +85,11 @@ async function fetchGeminiTranscript(
       language: acquisition.language,
       cues: acquisition.segments.map((segment) => ({
         text: segment.text,
-        offset: segment.startSeconds * 1_000,
-        duration: (segment.endSeconds - segment.startSeconds) * 1_000,
+        // Citation persistence requires integer millisecond timestamps.
+        // Gemini reports fractional seconds, so seconds->ms multiplication
+        // can land on a non-integer (e.g. 1.2345 * 1000 = 1234.5).
+        offset: Math.round(segment.startSeconds * 1_000),
+        duration: Math.round((segment.endSeconds - segment.startSeconds) * 1_000),
         lang: acquisition.language,
       })),
     };

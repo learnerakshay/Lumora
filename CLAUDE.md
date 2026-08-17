@@ -112,23 +112,21 @@ Stages are persisted (`SourceProcessingAttempt` / `SourceProcessingEvent`) with 
 - Tests are colocated as `*.test.ts` beside the unit.
 - Both `bun.lock` and `package-lock.json` are committed; npm is what the scripts assume.
 
-## Known critical issue (Phase 4)
+## Known issues (Phase 4)
 
-A YouTube source can reach READY while grounded chat fails with `CITATION_VALIDATION_FAILED` / "YOUTUBE citation timestamp could not be derived". Two confirmed, independent defects — both reproducible with the repo's own modules:
+**Resolved.** A YouTube source could reach READY while grounded chat failed with `CITATION_VALIDATION_FAILED` / "YOUTUBE citation timestamp could not be derived". Two confirmed, independent defects, both fixed:
 
-- **Inline timestamp markers never survive chunking.** `parseYouTubeSource` emits `[HH:MM:SS.mmm - HH:MM:SS.mmm]` lines joined by single `\n`, so `cleanText` is one paragraph; `generateSemanticChunks` then takes its long-paragraph branch and splits on `/[^.!?]+[.!?]+/`, which breaks at the `.` inside the millisecond field. Zero chunks retain a complete marker, so `findTranscriptRange` always falls through to the `parserMetadata.cues` substring match — which itself fails once a single cue's text approaches the 1200-char chunk target. VTT is affected identically.
-- **Non-integer milliseconds.** Gemini offsets are `startSeconds * 1000`; the cue fallback returns them unrounded, and `validateCitationInput` requires `Number.isInteger`.
+- **Inline timestamp markers didn't survive chunking.** `parseYouTubeSource` emits `[HH:MM:SS.mmm - HH:MM:SS.mmm]` lines joined by single `\n`, so `cleanText` is one paragraph; `generateSemanticChunks`'s long-paragraph sentence splitter used a negated character class (`[^.!?]+[.!?]+(\s+|$)`) that treated every embedded `.` — including the non-terminal decimal point in `HH:MM:SS.mmm` — as a required boundary. Since that boundary is never followed by whitespace, no match could complete there, and the scan silently discarded everything up to the next real sentence-ending period, shredding or dropping the timestamp bracket entirely. Fixed in `generateSemanticChunks` (`src/lib/ingestion/chunker.ts`) by matching lazily up to a terminator that IS followed by whitespace/end (`[\s\S]+?[.!?]+(?=\s|$)\s*`), which keeps non-terminal periods (timestamps, decimal numbers, version strings) as ordinary content instead of dropping them. VTT was affected identically and is fixed the same way. Regression tests: `src/lib/ingestion/chunker.test.ts`, plus an end-to-end chunk→`createCitation` test in `src/lib/retrieval/rag-service.test.ts`.
+- **Non-integer milliseconds.** Gemini offsets were `startSeconds * 1000` unrounded; `validateCitationInput` requires `Number.isInteger`. Fixed with `Math.round(...)` on both `offset` and `duration` in `fetchGeminiTranscript` (`src/lib/ingestion/youtube-transcript-provider.ts`). Regression test in `youtube-transcript-provider.test.ts`.
 
-Also reported: a source-specific query about a READY video answering as GENERAL. The likely cause is the lexical gate in `assessWorkspaceEvidenceSufficiency` (a query token the speaker never literally says yields `missing_topic_coverage`); confirm against the "Workspace evidence did not cover the complete chat request" log before changing anything.
-
-When working this area, trace the whole path — segment → persisted metadata → chunk → index → retrieval → evidence → citation → validator → frontend timestamp navigation — rather than rewriting acquisition.
+**Still open, unconfirmed:** a report of a source-specific query about a READY video answering as GENERAL instead of grounded. Not investigated as part of the fix above. The likely cause is the lexical gate in `assessWorkspaceEvidenceSufficiency` (a query token the speaker never literally says yields `missing_topic_coverage`); confirm against the "Workspace evidence did not cover the complete chat request" log before changing anything. Trace the whole path — segment → persisted metadata → chunk → index → retrieval → evidence → citation → validator → frontend timestamp navigation — rather than assuming root cause.
 
 ## Remaining phases
 
 1. **Skill Intelligence / Role Gap Analysis** — resume/profile extraction, skill + evidence extraction, ~4–5 target roles, deterministic explainable gap analysis.
 2. **Gap-to-Learning / Learning Path** — turn Phase 1 gaps into projects, skills, and resources via existing Resource Intelligence; "Create Learning Workspace" starts **empty** (never silently auto-ingest recommendations).
 3. **Payments** — FREE/CORE/MAX, server-side verification, entitlement sync, upgrade/downgrade/cancel, failed-payment and webhook reliability, preserving the existing Usage architecture.
-4. **YouTube pipeline / grounded citation repair** (see above).
+4. **YouTube pipeline / grounded citation repair** — the two confirmed timestamp-derivation defects are fixed (see above); the GENERAL-fallback report is still open.
 5. **Real-user UX, bugs, polish** — empty/loading/error states, source states, recovery, mobile, accessibility.
 
 Phases 1–3 have **no implementation** today. `SKILL_INTELLIGENCE` and `LEARNING_PATH` exist only as unused `UsageActionType` enum values, and `PLAN_LIMITS` covers only `CHAT` / `INGESTION` / `AI_ACTION` — add limits there before metering either new action.

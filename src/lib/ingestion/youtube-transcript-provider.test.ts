@@ -162,6 +162,55 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
   }
 });
 
+test('Gemini seconds-to-milliseconds conversion always yields integer cue timestamps', async () => {
+  const originalEnv = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    VITE_CLERK_PUBLISHABLE_KEY: process.env.VITE_CLERK_PUBLISHABLE_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    NODE_ENV: process.env.NODE_ENV,
+  };
+  Object.assign(process.env, {
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+    CLERK_SECRET_KEY: 'test-clerk-secret',
+    VITE_CLERK_PUBLISHABLE_KEY: 'test-clerk-publishable',
+    GEMINI_API_KEY: 'test-gemini-key',
+    NODE_ENV: 'test',
+  });
+  try {
+    const result = await fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+      geminiAcquire: async () => ({
+        language: 'en',
+        segments: [
+          // Fractional seconds beyond 3 decimal places multiply into a
+          // non-integer millisecond value (e.g. 1.2345 * 1000 = 1234.5),
+          // which downstream citation persistence rejects.
+          { text: 'First', startSeconds: 1.2345, endSeconds: 5.6789 },
+          { text: 'Second', startSeconds: 12.3456, endSeconds: 16.7 },
+          { text: 'Third', startSeconds: 0.001, endSeconds: 0.5005 },
+        ],
+      }),
+    });
+    for (const cue of result.cues) {
+      assert.ok(Number.isInteger(cue.offset), `offset for "${cue.text}" must be an integer`);
+      assert.ok(Number.isInteger(cue.duration), `duration for "${cue.text}" must be an integer`);
+    }
+    assert.deepEqual(
+      result.cues.map((cue) => [cue.offset, cue.duration]),
+      [
+        [1_235, 4_444],
+        [12_346, 4_354],
+        [1, 499],
+      ],
+    );
+  } finally {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('Gemini provider failures retain semantic timeout, temporary, malformed, access, and unavailable classes', async (context) => {
   const cases = [
     ['TIMEOUT', true, 'PROVIDER_TIMEOUT'],

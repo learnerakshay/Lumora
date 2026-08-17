@@ -8,6 +8,8 @@ import {
   searchWorkspaceChunks,
 } from './rag-service';
 import { assessWorkspaceEvidenceSufficiency } from '../chat/grounding-router';
+import { cleanExtractedText } from '../ingestion/cleaner';
+import { generateSemanticChunks } from '../ingestion/chunker';
 
 const contract = {
   provider: 'openai' as const,
@@ -218,6 +220,50 @@ test('citations preserve PDF page, website URL, and transcript timestamps', () =
   );
   assert.equal(vtt.timestampStartMs, 4_000);
   assert.equal(vtt.timestampEndMs, 6_000);
+});
+
+test('createCitation never throws for chunks produced from a long real YouTube transcript', () => {
+  // End-to-end regression for the production CITATION_VALIDATION_FAILED /
+  // "YOUTUBE citation timestamp could not be derived" failure: a long,
+  // single-paragraph transcript (single-newline-joined, like
+  // parseYouTubeSource emits) chunked with the real chunker, then every
+  // resulting chunk run through the real citation derivation.
+  const cues = Array.from({ length: 45 }, (_, index) => ({
+    text: `Segment number ${index} explains concept ${index} in careful detail, covering topic ${index} and why item ${index} matters here.`,
+    offsetMs: index * 4_000,
+    durationMs: 4_000,
+  }));
+  const formatMs = (ms: number) => {
+    const totalSeconds = ms / 1000;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = (totalSeconds % 60).toFixed(3).padStart(6, '0');
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds}`;
+  };
+  const cleanText = cleanExtractedText(
+    cues
+      .map((cue) => `[${formatMs(cue.offsetMs)} - ${formatMs(cue.offsetMs + cue.durationMs)}] ${cue.text}`)
+      .join('\n'),
+  );
+  const chunks = generateSemanticChunks(cleanText, { targetChunkSize: 1_200, overlapSize: 200 });
+  assert.ok(chunks.length > 1);
+
+  for (const [index, semanticChunk] of chunks.entries()) {
+    const citation = createCitation(
+      chunk({
+        id: `chunk-${index}`,
+        chunkIndex: index,
+        sourceType: 'YOUTUBE',
+        sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        content: semanticChunk.content,
+        sourceCleanText: cleanText,
+      }),
+    );
+    assert.notEqual(citation.timestampStartMs, null, `chunk ${index} must derive a start timestamp`);
+    assert.notEqual(citation.timestampEndMs, null, `chunk ${index} must derive an end timestamp`);
+    assert.ok(Number.isInteger(citation.timestampStartMs));
+    assert.ok(Number.isInteger(citation.timestampEndMs));
+  }
 });
 
 test('retrieval validates ownership before generating a query embedding', async () => {

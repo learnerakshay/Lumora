@@ -48,7 +48,14 @@ export function generateSemanticChunks(
         currentChunkText = currentChunkText.slice(-overlap);
       }
 
-      const sentences = para.match(/[^.!?]+[.!?]+(\s+|$)/g) || [para];
+      // A negated-class prefix (`[^.!?]+`) would treat any embedded "." as a
+      // required sentence boundary, including non-terminal decimal points
+      // (timestamps like "00:00:00.000", version numbers like "1.2.3").
+      // Since that boundary is never followed by whitespace, no match can
+      // complete there and the scan silently drops everything up to the next
+      // real terminator. Matching greedily-but-lazily up to a terminator that
+      // IS followed by whitespace/end keeps non-terminal periods as content.
+      const sentences = para.match(/[\s\S]+?[.!?]+(?=\s|$)\s*/g) || [para];
       for (const sentence of sentences) {
         if (currentChunkText.length + sentence.length > targetSize && currentChunkText.length >= minSize) {
           const tokens = estimateTokenCount(currentChunkText);
