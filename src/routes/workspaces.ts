@@ -93,6 +93,7 @@ import type { ChatStreamEvent } from '../types';
 import { detectResourceIntent } from '../lib/resources/normalization';
 import { resolveResources } from '../lib/resources/resolver';
 import { toLearningResourceRecommendation } from '../lib/resources/domain';
+import { isYouTubeRecommendationQuery, promoteIngestedYouTubeSources } from '../lib/resources/ingested-youtube-boost';
 
 export const workspaceRouter = Router();
 
@@ -1001,6 +1002,33 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             reason: error instanceof Error ? error.name : 'unknown',
           });
           return [];
+        })
+        .then(async (recommendations) => {
+          if (!isYouTubeRecommendationQuery(resourceIntent.query)) return recommendations;
+          try {
+            const workspaceSources = await getWorkspaceSources(workspaceId);
+            const ingestedYouTubeSources = workspaceSources
+              .filter((source) => source.type === 'YOUTUBE' && source.status === 'COMPLETED')
+              .map((source) => ({
+                id: source.id,
+                title: source.title,
+                url: (source.metadata?.url as string | undefined) || source.url || null,
+              }));
+            return promoteIngestedYouTubeSources({
+              query: resourceIntent.query,
+              topics: resourceIntent.topics,
+              level: resourceIntent.level,
+              ingestedYouTubeSources,
+              recommendations,
+            });
+          } catch (error) {
+            logger.warn('Ingested YouTube source boost failed closed', {
+              workspaceId,
+              operationId,
+              reason: error instanceof Error ? error.name : 'unknown',
+            });
+            return recommendations;
+          }
         })
     : Promise.resolve([]);
 
