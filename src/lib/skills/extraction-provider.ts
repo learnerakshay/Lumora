@@ -5,6 +5,7 @@ import {
   assignExtractionIds,
   isEmptyRawExtraction,
   parseRawExtractedProfile,
+  type ExtractionValidationIssue,
 } from './extraction-contract';
 import type { ExtractedProfile } from './types';
 
@@ -30,6 +31,17 @@ const STABLE_UNREADABLE_RESUME_MESSAGE =
   "We couldn't reliably read this resume. Try a clearer image, PDF, or paste the resume text.";
 
 const EXTRACTION_INSTRUCTIONS = `You transcribe the literal content of a resume into structured JSON. The resume may be provided as text or as an image — if it is an image, read every visible word carefully before transcribing. You are not a recruiter or career coach: never rate skill proficiency, never infer a skill the resume does not name, and never invent projects, employers, dates, or outcomes. If a field is not stated, use null (never an empty string) or an empty array rather than guessing. Set "hasLink" on a project only when the resume text contains an actual URL for it. Copy skill, technology, organization, and institution names as written. If the provided content is not a legible resume at all, return every field empty rather than fabricating one.`;
+
+// The only fields ever logged from a validation issue: field path, zod
+// check code, and the configured bound it tripped. Never the field's value.
+function safeIssueLog(issue: ExtractionValidationIssue) {
+  return {
+    path: issue.path,
+    code: issue.code,
+    ...(issue.maximum !== undefined ? { maximum: issue.maximum } : {}),
+    ...(issue.minimum !== undefined ? { minimum: issue.minimum } : {}),
+  };
+}
 
 function safeProviderMessage(status: number): string {
   if (status === 429) return 'The AI provider is rate limited. Please try again shortly.';
@@ -137,12 +149,14 @@ async function runExtraction(source: ExtractionSource): Promise<ExtractionResult
   }
 
   let lastError = 'The AI provider returned no extraction output.';
+  let lastIssues: ExtractionValidationIssue[] = [];
   let lastFailureWasUnreadable = false;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const payload = await callResponsesApi(source, env.OPENAI_API_KEY, env.CHAT_MODEL);
     const text = extractOutputText(payload);
     if (!text) {
       lastError = 'The AI provider returned no extraction output.';
+      lastIssues = [];
       lastFailureWasUnreadable = false;
       continue;
     }
@@ -152,6 +166,7 @@ async function runExtraction(source: ExtractionSource): Promise<ExtractionResult
       json = JSON.parse(text);
     } catch {
       lastError = 'The AI provider returned malformed JSON.';
+      lastIssues = [];
       lastFailureWasUnreadable = false;
       continue;
     }
@@ -159,13 +174,19 @@ async function runExtraction(source: ExtractionSource): Promise<ExtractionResult
     const parsed = parseRawExtractedProfile(json);
     if (!('data' in parsed)) {
       lastError = parsed.error;
+      lastIssues = parsed.issues;
       lastFailureWasUnreadable = false;
-      logger.warn('Skill extraction output failed schema validation', { attempt, error: parsed.error });
+      logger.warn('Skill extraction output failed schema validation', {
+        attempt,
+        sourceKind: source.kind,
+        issues: parsed.issues.map(safeIssueLog),
+      });
       continue;
     }
 
     if (isEmptyRawExtraction(parsed.data)) {
       lastError = 'No resume content could be identified in what was provided.';
+      lastIssues = [];
       lastFailureWasUnreadable = true;
       continue;
     }
@@ -186,6 +207,7 @@ async function runExtraction(source: ExtractionSource): Promise<ExtractionResult
     attempts: MAX_ATTEMPTS,
     sourceKind: source.kind,
     detail: lastError,
+    issues: lastIssues.map(safeIssueLog),
   });
   throw new SkillExtractionError(STABLE_UNREADABLE_RESUME_MESSAGE, code, 422);
 }

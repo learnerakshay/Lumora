@@ -234,3 +234,95 @@ test('essential identifying fields (skill label, project name, experience title,
     false,
   );
 });
+
+// Regression for the production failure: "Too big: expected string to have
+// <=200 characters" on a valid PDF resume. Root cause was project.name,
+// experience.title, education.credential, and certification.name (all
+// resume-authored titles that legitimately run long, e.g. a tagline-heavy
+// hackathon project name) sharing the same 200-char bound as genuinely
+// atomic fields like a single skill label. Each now has 300 chars of
+// headroom and must accept realistic long-but-legitimate content.
+const LEGITIMATE_LONG_TITLE =
+  'AI-Powered Resume Analyzer & Skill Gap Detection Platform — a full-stack hackathon build using GPT-4 structured extraction, vector-based topic classification, and a fully deterministic real-time role-matching and gap-analysis engine for early-career developers.'; // 261 chars, was previously rejected at the 200-char bound
+
+test('a project name between 200 and 300 characters is accepted, not rejected as too long', () => {
+  assert.ok(LEGITIMATE_LONG_TITLE.length > 200 && LEGITIMATE_LONG_TITLE.length <= 300);
+  const result = parseRawExtractedProfile({
+    ...validFixture,
+    projects: [{ ...validFixture.projects[0], name: LEGITIMATE_LONG_TITLE }],
+  });
+  assert.equal(result.success, true);
+});
+
+test('an experience title between 200 and 300 characters is accepted', () => {
+  const result = parseRawExtractedProfile({
+    ...validFixture,
+    experience: [{ ...validFixture.experience[0], title: LEGITIMATE_LONG_TITLE }],
+  });
+  assert.equal(result.success, true);
+});
+
+test('an education credential between 200 and 300 characters is accepted', () => {
+  const result = parseRawExtractedProfile({
+    ...validFixture,
+    education: [{ ...validFixture.education[0], credential: LEGITIMATE_LONG_TITLE }],
+  });
+  assert.equal(result.success, true);
+});
+
+test('a certification name between 200 and 300 characters is accepted', () => {
+  const result = parseRawExtractedProfile({
+    ...validFixture,
+    certifications: [{ name: LEGITIMATE_LONG_TITLE, issuer: 'Example Issuer' }],
+  });
+  assert.equal(result.success, true);
+});
+
+test('a headline between 200 and 300 characters is accepted', () => {
+  const result = parseRawExtractedProfile({ ...validFixture, headline: LEGITIMATE_LONG_TITLE });
+  assert.equal(result.success, true);
+});
+
+test('title fields still enforce a hard ceiling beyond 300 characters — the bound is wider, not removed', () => {
+  const tooLong = 'x'.repeat(301);
+  assert.equal(
+    parseRawExtractedProfile({ ...validFixture, projects: [{ ...validFixture.projects[0], name: tooLong }] })
+      .success,
+    false,
+  );
+  assert.equal(
+    parseRawExtractedProfile({ ...validFixture, headline: tooLong }).success,
+    false,
+  );
+});
+
+test('atomic fields (skill label, a single technology token) remain bounded at 200 characters, unwidened', () => {
+  const tooLong = 'x'.repeat(201);
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      skills: [{ label: tooLong, category: 'framework', context: 'SKILLS_SECTION' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    parseRawExtractedProfile({
+      ...validFixture,
+      projects: [{ ...validFixture.projects[0], technologies: [tooLong] }],
+    }).success,
+    false,
+  );
+});
+
+test('a failed parse reports structured, path-addressable issues instead of only a joined message', () => {
+  const result = parseRawExtractedProfile({
+    ...validFixture,
+    projects: [{ ...validFixture.projects[0], name: 'x'.repeat(301) }],
+  });
+  assert.equal(result.success, false);
+  if (result.success) return;
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0].path, 'projects.0.name');
+  assert.equal(result.issues[0].code, 'too_big');
+  assert.equal(result.issues[0].maximum, 300);
+});

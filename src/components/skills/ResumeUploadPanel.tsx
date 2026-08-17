@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, FileType, Image as ImageIcon, Sparkles, Upload, X } from 'lucide-react';
+import { AlertCircle, FileType, Image as ImageIcon, Sparkles, Type, Upload, X } from 'lucide-react';
 
 const ACCEPTED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -18,6 +18,7 @@ interface ResumeUploadPanelProps {
   onSubmit: (event: React.FormEvent) => void;
   submitting: boolean;
   submitError: string | null;
+  usageCaption?: string | null;
 }
 
 function formatFileSize(bytes: number): string {
@@ -33,6 +34,7 @@ export function ResumeUploadPanel({
   onSubmit,
   submitting,
   submitError,
+  usageCaption,
 }: ResumeUploadPanelProps) {
   const [mode, setMode] = useState<'file' | 'text'>('file');
   const [dragActive, setDragActive] = useState(false);
@@ -70,7 +72,13 @@ export function ResumeUploadPanel({
     if (inputRef.current) inputRef.current.value = '';
   };
 
+  const switchMode = (tab: 'file' | 'text') => {
+    setLocalFileError(null);
+    setMode(tab);
+  };
+
   const canSubmit = Boolean(selectedFile) || resumeText.trim().length > 0;
+  const visibleError = localFileError || submitError;
 
   return (
     <motion.form
@@ -79,31 +87,35 @@ export function ResumeUploadPanel({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="overflow-hidden rounded-2xl border border-slate-700/65 bg-gradient-to-br from-[#121b28] to-[#101722] shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_16px_36px_rgba(0,0,0,0.16)]"
+      className="overflow-hidden rounded-2xl border border-slate-700/60 bg-[#101722] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_16px_36px_rgba(0,0,0,0.18)]"
     >
-      <div className="flex items-center gap-1 border-b border-slate-800/80 p-1.5">
-        {(['file', 'text'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setMode(tab)}
-            className={`relative flex-1 rounded-xl px-4 py-2.5 text-xs font-semibold transition ${
-              mode === tab ? 'text-slate-950' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {mode === tab && (
-              <motion.span
-                layoutId="upload-tab-highlight"
-                className="absolute inset-0 rounded-xl bg-cyan-300"
-                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-              />
-            )}
-            <span className="relative">{tab === 'file' ? 'Upload file' : 'Paste text'}</span>
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 pt-4">
+        <div className="flex items-center gap-5">
+          {(['file', 'text'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => switchMode(tab)}
+              className={`relative flex items-center gap-1.5 pb-3 text-xs font-semibold transition ${
+                mode === tab ? 'text-cyan-300' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab === 'file' ? <Upload className="h-3.5 w-3.5" /> : <Type className="h-3.5 w-3.5" />}
+              {tab === 'file' ? 'Upload file' : 'Paste text'}
+              {mode === tab && (
+                <motion.span
+                  layoutId="upload-tab-underline"
+                  className="absolute -bottom-px left-0 right-0 h-[2px] rounded-full bg-cyan-300"
+                  transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+        {usageCaption && <span className="pb-3 text-[10px] font-medium text-slate-500">{usageCaption}</span>}
       </div>
 
-      <div className="p-6">
+      <div className="p-5">
         <AnimatePresence mode="wait">
           {mode === 'file' ? (
             <motion.div
@@ -114,9 +126,9 @@ export function ResumeUploadPanel({
               transition={{ duration: 0.16 }}
             >
               {selectedFile ? (
-                <div className="flex items-center gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/[0.06] p-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-cyan-400/25 bg-cyan-400/[0.08] text-cyan-300">
-                    {selectedFile.type === 'application/pdf' ? <FileType className="h-4.5 w-4.5" /> : <ImageIcon className="h-4.5 w-4.5" />}
+                <div className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.05] p-3.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-400/25 bg-cyan-400/[0.08] text-cyan-300">
+                    {selectedFile.type === 'application/pdf' ? <FileType className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-semibold text-slate-100">{selectedFile.name}</p>
@@ -136,29 +148,29 @@ export function ResumeUploadPanel({
                   onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
                   onDragLeave={() => setDragActive(false)}
                   onDrop={handleDrop}
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition ${
                     dragActive
-                      ? 'border-cyan-300 bg-cyan-400/[0.08] scale-[1.01]'
-                      : 'border-slate-700 hover:border-cyan-400/40 hover:bg-slate-900/40'
+                      ? 'border-cyan-300 bg-cyan-400/[0.07]'
+                      : 'border-slate-700/80 hover:border-cyan-400/35 hover:bg-slate-900/40'
                   }`}
                 >
                   <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="sr-only" onChange={handleInputChange} />
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300">
-                    <Upload className="h-4.5 w-4.5" />
-                  </span>
-                  <span className="text-sm font-semibold text-slate-100">Drop your resume here, or click to browse</span>
-                  <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                  <motion.span
+                    animate={dragActive ? { scale: 1.08 } : { scale: 1 }}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300"
+                  >
+                    <Upload className="h-4 w-4" />
+                  </motion.span>
+                  <span className="text-[13px] font-semibold text-slate-100">Drop your resume here, or click to browse</span>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
                     {FORMAT_CHIPS.map(({ label, icon: Icon }) => (
-                      <span key={label} className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/70 px-2.5 py-1 text-[10px] font-medium text-slate-400">
-                        <Icon className="h-3 w-3" /> {label}
+                      <span key={label} className="inline-flex items-center gap-1 rounded-full border border-slate-700/80 bg-slate-900/60 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        <Icon className="h-2.5 w-2.5" /> {label}
                       </span>
                     ))}
+                    <span className="text-[10px] text-slate-600">· up to 5 MB</span>
                   </div>
-                  <span className="text-[10px] text-slate-600">One file · up to 5 MB</span>
                 </label>
-              )}
-              {localFileError && (
-                <p className="mt-3 flex items-center gap-1.5 text-xs text-rose-300"><AlertCircle className="h-3.5 w-3.5 shrink-0" /> {localFileError}</p>
               )}
             </motion.div>
           ) : (
@@ -173,42 +185,45 @@ export function ResumeUploadPanel({
                 value={resumeText}
                 onChange={(event) => onTextChange(event.target.value)}
                 placeholder="Paste the full text of your resume here…"
-                rows={9}
-                className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950/40 p-4 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-cyan-400/40 focus:outline-none"
+                rows={7}
+                className="w-full resize-none rounded-xl border border-slate-700/80 bg-slate-950/40 p-3.5 text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:border-cyan-400/40 focus:outline-none"
               />
-              <p className="mt-2 text-[10px] text-slate-600">Plain text works best — headings, bullet points, and line breaks are all fine.</p>
+              <p className="mt-1.5 text-[10px] text-slate-600">Plain text works best — headings, bullet points, and line breaks are all fine.</p>
             </motion.div>
           )}
         </AnimatePresence>
 
         <AnimatePresence>
-          {submitError && (
+          {visibleError && (
             <motion.p
+              key={visibleError}
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-4 flex items-center gap-1.5 overflow-hidden text-xs text-rose-300"
+              className="mt-3 flex items-center gap-1.5 overflow-hidden rounded-lg border border-rose-800/50 bg-rose-950/25 px-3 py-2 text-xs text-rose-200"
             >
-              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {submitError}
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {visibleError}
             </motion.p>
           )}
         </AnimatePresence>
 
-        <motion.button
-          type="submit"
-          disabled={submitting || !canSubmit}
-          whileTap={canSubmit && !submitting ? { scale: 0.98 } : undefined}
-          className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-300 to-sky-400 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/15 transition hover:from-cyan-200 hover:to-sky-300 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-500 disabled:shadow-none sm:w-auto sm:px-8"
-        >
-          {submitting ? (
-            <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}>
+        <div className="mt-5 flex items-center justify-end">
+          <motion.button
+            type="submit"
+            disabled={submitting || !canSubmit}
+            whileTap={canSubmit && !submitting ? { scale: 0.98 } : undefined}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/10 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none sm:w-auto sm:px-7"
+          >
+            {submitting ? (
+              <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}>
+                <Sparkles className="h-4 w-4" />
+              </motion.span>
+            ) : (
               <Sparkles className="h-4 w-4" />
-            </motion.span>
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          {submitting ? 'Analyzing your resume…' : 'Analyze resume'}
-        </motion.button>
+            )}
+            {submitting ? 'Analyzing your resume…' : 'Analyze resume'}
+          </motion.button>
+        </div>
       </div>
     </motion.form>
   );

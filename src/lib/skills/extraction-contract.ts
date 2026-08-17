@@ -9,7 +9,16 @@ import {
   type ExtractedSkill,
 } from './types';
 
+// Atomic values: a single skill name or a single technology token. These are
+// never legitimately long, so the tight bound stays strict.
 const shortText = z.string().trim().min(1).max(200);
+// Resume-authored titles: project names, job titles, degree names,
+// certification names. Real resumes routinely tack a tagline or
+// specialization onto these ("AI-Powered Resume Analyzer & Skill Gap
+// Detection Platform Using GPT-4 and Vector Search"), so 200 chars was an
+// arbitrary bound that rejected legitimate content — 300 gives real headroom
+// while still being a hard, protective ceiling on an identifying field.
+const titleText = z.string().trim().min(1).max(300);
 const longText = z.string().trim().min(1).max(600);
 
 // A model asked for a required string with no "not stated" option will fill
@@ -41,7 +50,7 @@ const rawSkillSchema = z.object({
 });
 
 const rawProjectSchema = z.object({
-  name: shortText,
+  name: titleText,
   description: optionalText(600),
   technologies: filteredStringArray(shortText, 30),
   hasLink: z.boolean(),
@@ -49,7 +58,7 @@ const rawProjectSchema = z.object({
 });
 
 const rawExperienceSchema = z.object({
-  title: shortText,
+  title: titleText,
   organization: optionalText(200),
   durationMonths: z.number().int().min(0).max(600).nullable(),
   responsibilities: filteredStringArray(longText, 15),
@@ -57,18 +66,18 @@ const rawExperienceSchema = z.object({
 });
 
 const rawEducationSchema = z.object({
-  credential: shortText,
+  credential: titleText,
   field: optionalText(200),
   institution: optionalText(200),
 });
 
 const rawCertificationSchema = z.object({
-  name: shortText,
+  name: titleText,
   issuer: optionalText(200),
 });
 
 export const rawExtractedProfileSchema = z.object({
-  headline: optionalText(200),
+  headline: optionalText(300),
   yearsOfExperienceStated: z.number().min(0).max(60).nullable(),
   skills: z.array(rawSkillSchema).max(80),
   projects: z.array(rawProjectSchema).max(30),
@@ -84,14 +93,42 @@ export type RawEducation = z.infer<typeof rawEducationSchema>;
 export type RawCertification = z.infer<typeof rawCertificationSchema>;
 export type RawExtractedProfile = z.infer<typeof rawExtractedProfileSchema>;
 
+// Safe to log in full: path/code/message describe the shape of the failure
+// (e.g. "projects.0.name" / "too_big" / a length constraint), never the
+// resume content that triggered it.
+export interface ExtractionValidationIssue {
+  path: string;
+  code: string;
+  message: string;
+  maximum?: number;
+  minimum?: number;
+}
+
 export type ExtractionParseResult =
   | { success: true; data: RawExtractedProfile }
-  | { success: false; error: string };
+  | { success: false; error: string; issues: ExtractionValidationIssue[] };
+
+function toValidationIssue(issue: z.core.$ZodIssue): ExtractionValidationIssue {
+  const maximum = 'maximum' in issue && typeof issue.maximum === 'number' ? issue.maximum : undefined;
+  const minimum = 'minimum' in issue && typeof issue.minimum === 'number' ? issue.minimum : undefined;
+  return {
+    path: issue.path.length ? issue.path.join('.') : '(root)',
+    code: issue.code,
+    message: issue.message,
+    ...(maximum !== undefined ? { maximum } : {}),
+    ...(minimum !== undefined ? { minimum } : {}),
+  };
+}
 
 export function parseRawExtractedProfile(payload: unknown): ExtractionParseResult {
   const result = rawExtractedProfileSchema.safeParse(payload);
   if (result.success) return { success: true, data: result.data };
-  return { success: false, error: result.error.issues.map((issue) => issue.message).join('; ') };
+  const issues = result.error.issues.map(toValidationIssue);
+  return {
+    success: false,
+    error: issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+    issues,
+  };
 }
 
 // A schema-valid but entirely blank extraction means the source had nothing

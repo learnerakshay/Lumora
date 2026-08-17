@@ -76,6 +76,66 @@ test('a schema-invalid response is retried once before succeeding', async () => 
   }
 });
 
+// Regression for the production failure: "Too big: expected string to have
+// <=200 characters" on a valid PDF resume, caused by a legitimately long
+// project name / experience title / education credential / certification
+// name sharing the old 200-char bound with atomic fields.
+const LEGITIMATE_LONG_TITLE =
+  'AI-Powered Resume Analyzer & Skill Gap Detection Platform — a full-stack hackathon build using GPT-4 structured extraction, vector-based topic classification, and a fully deterministic real-time role-matching and gap-analysis engine for early-career developers.';
+
+test('a legitimately long project name (>200, <=300 chars) succeeds on the first attempt without retrying', async () => {
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  const extractionWithLongTitle = {
+    ...validExtraction,
+    projects: [
+      { name: LEGITIMATE_LONG_TITLE, description: null, technologies: ['React'], hasLink: true, outcomes: [] },
+    ],
+  };
+  globalThis.fetch = (async () => {
+    callCount += 1;
+    return jsonResponse(responsesPayload(JSON.stringify(extractionWithLongTitle)));
+  }) as typeof fetch;
+  try {
+    const result = await extractProfileFromResumeText({ resumeText: 'resume text' });
+    assert.equal(callCount, 1);
+    assert.equal(result.profile.projects[0]?.name, LEGITIMATE_LONG_TITLE);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('schema validation failures are logged with field path, code, and configured max, never the resume content', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const secretMarker = 'SECRET_RESUME_CONTENT_MARKER_98213';
+  const overlongName = `${secretMarker} ${'x'.repeat(300)}`;
+  const warnCalls: unknown[][] = [];
+  t.mock.method(console, 'warn', (...args: unknown[]) => {
+    warnCalls.push(args);
+  });
+  globalThis.fetch = (async () =>
+    jsonResponse(
+      responsesPayload(
+        JSON.stringify({
+          ...validExtraction,
+          projects: [{ name: overlongName, description: null, technologies: [], hasLink: false, outcomes: [] }],
+        }),
+      ),
+    )) as typeof fetch;
+  try {
+    await assert.rejects(() => extractProfileFromResumeText({ resumeText: 'resume text' }));
+    const loggedText = warnCalls.map((call) => call.join(' ')).join('\n');
+    assert.doesNotMatch(loggedText, new RegExp(secretMarker));
+    assert.match(loggedText, /"path":"projects\.0\.name"/);
+    assert.match(loggedText, /"code":"too_big"/);
+    assert.match(loggedText, /"maximum":300/);
+    assert.match(loggedText, /"sourceKind":"text"/);
+    assert.match(loggedText, /"attempt":[01]/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('a schema-invalid response on every attempt throws a typed extraction error with a stable message, never raw Zod detail', async () => {
   const originalFetch = globalThis.fetch;
   let callCount = 0;
