@@ -102,6 +102,12 @@ enum SkillProfileStatus {
   FAILED
 }
 
+enum LearningPlanStatus {
+  BUILDING
+  READY
+  FAILED
+}
+
 model User {
   id            String         @id
   plan          Plan           @default(FREE)
@@ -109,6 +115,7 @@ model User {
   updatedAt     DateTime       @updatedAt
   usageEvents   UsageEvent[]
   skillProfiles SkillProfile[]
+  learningPlans LearningPlan[]
 }
 
 model UsageEvent {
@@ -141,6 +148,8 @@ model Workspace {
   sources  Source[]
   messages Message[]
   chunks   Chunk[]
+
+  learningWorkspaceLinks LearningWorkspaceLink[]
 
   @@index([slug])
   @@index([userId])
@@ -329,7 +338,47 @@ model RoleAnalysis {
   gaps          Json
   createdAt     DateTime     @default(now())
 
+  learningPlans LearningPlan[]
+
   @@index([profileId])
+}
+
+model LearningPlan {
+  id             String             @id @default(cuid())
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysisId     String
+  analysis       RoleAnalysis       @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  version        Int
+  status         LearningPlanStatus @default(BUILDING)
+  roleId         String
+  engineVersion  String
+  narrativeModel String?
+  selectedGapIds Json
+  path           Json?
+  readiness      Json?
+  errorMessage   String?            @db.Text
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  workspaceLinks LearningWorkspaceLink[]
+
+  @@unique([userId, version])
+  @@index([userId])
+  @@index([analysisId])
+}
+
+model LearningWorkspaceLink {
+  id          String       @id @default(cuid())
+  planId      String
+  plan        LearningPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+
+  @@unique([planId, workspaceId])
+  @@index([planId])
+  @@index([workspaceId])
 }
 
 model Citation {

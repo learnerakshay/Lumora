@@ -79,12 +79,14 @@ test('stale pending reservations do not hold capacity', () => {
 });
 
 test('plan configuration keeps distinct limits per plan and action type', () => {
-  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 10, INGESTION: 4, AI_ACTION: 8, SKILL_INTELLIGENCE: 2 });
+  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 10, INGESTION: 4, AI_ACTION: 8, SKILL_INTELLIGENCE: 2, LEARNING_PATH: 2 });
   assert.equal(PLAN_LIMITS.CORE.CHAT, 40);
   assert.equal(PLAN_LIMITS.CORE.INGESTION, 15);
   assert.equal(PLAN_LIMITS.MAX.AI_ACTION, 80);
   assert.equal(PLAN_LIMITS.CORE.SKILL_INTELLIGENCE, 6);
   assert.equal(PLAN_LIMITS.MAX.SKILL_INTELLIGENCE, 15);
+  assert.equal(PLAN_LIMITS.CORE.LEARNING_PATH, 6);
+  assert.equal(PLAN_LIMITS.MAX.LEARNING_PATH, 15);
   assert.equal(USAGE_WINDOW_MS, 43_200_000);
 });
 

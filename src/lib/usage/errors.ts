@@ -6,6 +6,7 @@ const ACTION_LABELS = {
   INGESTION: 'source ingestion',
   AI_ACTION: 'AI Action',
   SKILL_INTELLIGENCE: 'Skill Intelligence',
+  LEARNING_PATH: 'Learning Path',
 } as const;
 
 export function usageLimitError(details: UsageLimitDetails): AppError {

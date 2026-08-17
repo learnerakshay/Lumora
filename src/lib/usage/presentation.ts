@@ -10,6 +10,7 @@ const HEADER_ACTIONS: ReadonlyArray<{
   { actionType: 'INGESTION', label: 'Ingestion', compactLabel: 'Ingest' },
   { actionType: 'AI_ACTION', label: 'AI Actions', compactLabel: 'Action' },
   { actionType: 'SKILL_INTELLIGENCE', label: 'Skill Intelligence', compactLabel: 'Skills' },
+  { actionType: 'LEARNING_PATH', label: 'Learning Path', compactLabel: 'Learning' },
 ];
 
 export function selectHeaderUsage(summary: UsageSummary) {

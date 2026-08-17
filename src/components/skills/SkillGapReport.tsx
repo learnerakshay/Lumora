@@ -5,18 +5,29 @@ import {
   Award,
   Briefcase,
   Check,
+  CheckSquare,
   ChevronDown,
   Crown,
   Flame,
+  GraduationCap,
+  Loader2,
   MessagesSquare,
+  Square,
   Wrench,
   Zap,
 } from 'lucide-react';
 import type { Gap, GapCategory, GapReport, GapSeverity, TargetRole } from '../../lib/skills/types';
+import { MAX_SELECTED_GAPS, type GapSelectionState } from './gap-selection';
 
 interface SkillGapReportProps {
   roles: TargetRole[];
   report: GapReport;
+  // All selection props are optional so the Phase 1 read-only report is
+  // rendered identically when a caller doesn't opt into gap selection.
+  selection?: GapSelectionState;
+  onToggleGap?: (roleId: string, gapId: string) => void;
+  onBuildPlan?: (roleId: string) => void;
+  buildingRoleId?: string | null;
 }
 
 const CATEGORY_META: Record<
@@ -74,8 +85,16 @@ function PriorityFocus({ gaps, roles }: { gaps: Gap[]; roles: TargetRole[] }) {
   );
 }
 
-export function SkillGapReport({ roles, report }: SkillGapReportProps) {
+export function SkillGapReport({
+  roles,
+  report,
+  selection,
+  onToggleGap,
+  onBuildPlan,
+  buildingRoleId,
+}: SkillGapReportProps) {
   const [expandedRoleId, setExpandedRoleId] = useState<string | null>(roles[0]?.roleId ?? null);
+  const selectionEnabled = Boolean(onToggleGap);
 
   return (
     <div>
@@ -192,15 +211,50 @@ export function SkillGapReport({ roles, report }: SkillGapReportProps) {
                               <span className="rounded-full bg-black/25 px-1.5 py-px text-[9px] font-bold text-slate-200">{categoryGaps.length}</span>
                             </p>
                             <ul className="space-y-2">
-                              {categoryGaps.map((gap) => (
-                                <li key={gap.id} className="rounded-lg border border-slate-800 bg-[#0d131d] p-3">
-                                  <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <p className="text-xs font-medium text-slate-100">{gap.subject}</p>
-                                    <SeverityBadge severity={gap.severity} />
-                                  </div>
-                                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{gap.rationale}</p>
-                                </li>
-                              ))}
+                              {categoryGaps.map((gap) => {
+                                const selected = selectionEnabled && selection?.roleId === role.roleId && selection.selectedGapIds.includes(gap.id);
+                                const disabledByLimit =
+                                  selectionEnabled &&
+                                  !selected &&
+                                  selection?.roleId === role.roleId &&
+                                  (selection?.selectedGapIds.length ?? 0) >= MAX_SELECTED_GAPS;
+                                const content = (
+                                  <>
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                      <p className="text-xs font-medium text-slate-100">{gap.subject}</p>
+                                      <SeverityBadge severity={gap.severity} />
+                                    </div>
+                                    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{gap.rationale}</p>
+                                  </>
+                                );
+                                if (!selectionEnabled) {
+                                  return (
+                                    <li key={gap.id} className="rounded-lg border border-slate-800 bg-[#0d131d] p-3">
+                                      {content}
+                                    </li>
+                                  );
+                                }
+                                return (
+                                  <li key={gap.id}>
+                                    <button
+                                      type="button"
+                                      onClick={() => onToggleGap?.(role.roleId, gap.id)}
+                                      disabled={disabledByLimit}
+                                      aria-pressed={selected}
+                                      className={`flex w-full items-start gap-2.5 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                        selected
+                                          ? 'border-cyan-400/40 bg-cyan-400/[0.06]'
+                                          : 'border-slate-800 bg-[#0d131d] hover:border-slate-700'
+                                      }`}
+                                    >
+                                      <span className={`mt-0.5 shrink-0 ${selected ? 'text-cyan-300' : 'text-slate-600'}`}>
+                                        {selected ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+                                      </span>
+                                      <div className="min-w-0 flex-1">{content}</div>
+                                    </button>
+                                  </li>
+                                );
+                              })}
                             </ul>
                           </div>
                         );
@@ -208,6 +262,31 @@ export function SkillGapReport({ roles, report }: SkillGapReportProps) {
 
                       {roleGaps.length === 0 && role.matchedRequirements.length === 0 && (
                         <p className="text-xs text-slate-500">No signal for this role yet.</p>
+                      )}
+
+                      {onBuildPlan && roleGaps.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3">
+                          <span className="text-[11px] text-slate-400">
+                            {selection?.roleId === role.roleId && selection.selectedGapIds.length > 0
+                              ? `${selection.selectedGapIds.length} gap${selection.selectedGapIds.length === 1 ? '' : 's'} selected`
+                              : 'Select gaps above to build a learning plan'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onBuildPlan(role.roleId)}
+                            disabled={
+                              buildingRoleId === role.roleId ||
+                              !(selection?.roleId === role.roleId && selection.selectedGapIds.length > 0)
+                            }
+                            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-cyan-300 px-3 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                          >
+                            {buildingRoleId === role.roleId ? (
+                              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building…</>
+                            ) : (
+                              <><GraduationCap className="h-3.5 w-3.5" /> Build learning plan</>
+                            )}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </motion.div>

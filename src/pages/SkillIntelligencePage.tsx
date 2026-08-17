@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -27,6 +28,13 @@ import {
   buildStartOverState,
   type UploadAttemptState,
 } from '../components/skills/skill-intelligence-interactions';
+import { blankGapSelection, toggleGapSelection, type GapSelectionState } from '../components/skills/gap-selection';
+import {
+  blankBuildPlanAttempt,
+  failBuildingPlan,
+  startBuildingPlan,
+  type BuildPlanAttemptState,
+} from '../components/learning/learning-plan-interactions';
 import { tryBeginSubmission, releaseSubmission, type SubmissionGate } from '../components/workspace/workspace-interactions';
 import type { SkillProfileRecord, RoleAnalysisRecord } from '../lib/skills/skill-profile-store';
 
@@ -48,6 +56,7 @@ async function parseJsonResponse(response: Response): Promise<any> {
 }
 
 export function SkillIntelligencePage() {
+  const navigate = useNavigate();
   const [view, setView] = useState<ViewState>('loading');
   const [profileState, setProfileState] = useState<ProfileState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,6 +67,10 @@ export function SkillIntelligencePage() {
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [startingOver, setStartingOver] = useState(false);
   const submissionGate = useRef<SubmissionGate>({ current: false });
+  const buildPlanGate = useRef<SubmissionGate>({ current: false });
+
+  const [gapSelection, setGapSelection] = useState<GapSelectionState>(blankGapSelection());
+  const [buildPlanAttempt, setBuildPlanAttempt] = useState<BuildPlanAttemptState>(blankBuildPlanAttempt());
 
   const { summary: usageSummary } = useUsage();
   const skillIntelUsage = usageSummary?.perAction.SKILL_INTELLIGENCE;
@@ -172,7 +185,33 @@ export function SkillIntelligencePage() {
       setLoadError(reset.loadError);
       setReanalyzeError(reset.reanalyzeError);
       setUpload(reset.upload);
+      setGapSelection(blankGapSelection());
+      setBuildPlanAttempt(blankBuildPlanAttempt());
       setStartingOver(false);
+    }
+  };
+
+  const handleBuildPlan = async (roleId: string) => {
+    if (!tryBeginSubmission(buildPlanGate.current)) return;
+    setBuildPlanAttempt(startBuildingPlan(roleId));
+    try {
+      const response = await fetch(`${API_PATHS.learning}/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleId, gapIds: gapSelection.selectedGapIds }),
+      });
+      const payload = await parseJsonResponse(response);
+      if (!response.ok || !payload?.success) {
+        const limitError = usageLimitFromPayload(payload);
+        throw new Error(limitError?.message || payload?.error?.message || 'Could not build a learning plan for this role.');
+      }
+      notifyUsageChanged();
+      setBuildPlanAttempt(blankBuildPlanAttempt());
+      navigate(`/learning/${payload.data.plan.id}`);
+    } catch (error: any) {
+      setBuildPlanAttempt(failBuildingPlan(error.message || 'Could not build a learning plan for this role.'));
+    } finally {
+      releaseSubmission(buildPlanGate.current);
     }
   };
 
@@ -307,7 +346,29 @@ export function SkillIntelligencePage() {
                     <Sparkles className="h-4 w-4 text-cyan-300" />
                     <h2 className="text-sm font-semibold text-white">Target roles &amp; gaps</h2>
                   </div>
-                  <SkillGapReport roles={profileState.analysis.selectedRoles} report={profileState.analysis.gaps} />
+
+                  <AnimatePresence>
+                    {buildPlanAttempt.buildError && (
+                      <motion.p
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        role="alert"
+                        className="mb-3 flex items-center gap-1.5 overflow-hidden rounded-lg border border-rose-800/50 bg-rose-950/25 px-3 py-2 text-xs text-rose-200"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {buildPlanAttempt.buildError}
+                      </motion.p>
+                    )}
+                  </AnimatePresence>
+
+                  <SkillGapReport
+                    roles={profileState.analysis.selectedRoles}
+                    report={profileState.analysis.gaps}
+                    selection={gapSelection}
+                    onToggleGap={(roleId, gapId) => setGapSelection((current) => toggleGapSelection(current, roleId, gapId))}
+                    onBuildPlan={(roleId) => void handleBuildPlan(roleId)}
+                    buildingRoleId={buildPlanAttempt.buildingRoleId}
+                  />
                 </div>
               ) : (
                 <div className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-[#101722] p-5 text-sm text-slate-400">

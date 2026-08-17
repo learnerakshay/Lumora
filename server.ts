@@ -9,6 +9,7 @@ import { errorResponse, successResponse } from './src/lib/api-response';
 import { workspaceRouter } from './src/routes/workspaces';
 import { usageRouter } from './src/routes/usage';
 import { skillsRouter } from './src/routes/skills';
+import { learningRouter } from './src/routes/learning';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
@@ -33,6 +34,7 @@ async function startServer() {
   app.use(API_PATHS.workspaces, workspaceRouter);
   app.use(API_PATHS.usage, usageRouter);
   app.use(API_PATHS.skills, skillsRouter);
+  app.use(API_PATHS.learning, learningRouter);
 
   // Health check API
   app.get('/api/health', async (_req, res) => {
