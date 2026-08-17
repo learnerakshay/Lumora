@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Gauge, Loader2, MessageSquare, Sparkles, Upload } from 'lucide-react';
+import { Brain, Check, Gauge, Loader2, MessageSquare, Sparkles, Upload } from 'lucide-react';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
 import { formatRecoveryLabel } from '../components/usage/UsageLimitNotice';
 import { useUsage } from '../components/usage/UsageProvider';
@@ -14,6 +14,7 @@ const ACTIONS: Array<{
   { type: 'CHAT', label: 'Grounded chat', description: 'Completed AI answers', icon: MessageSquare },
   { type: 'INGESTION', label: 'Source ingestion', description: 'Sources processed and indexed', icon: Upload },
   { type: 'AI_ACTION', label: 'AI Actions', description: 'Completed action workflows', icon: Sparkles },
+  { type: 'SKILL_INTELLIGENCE', label: 'Skill Intelligence', description: 'Resume gap analyses run', icon: Brain },
 ];
 
 const PLANS: PlanName[] = ['FREE', 'CORE', 'MAX'];
@@ -105,6 +106,7 @@ export function UsagePage() {
                       <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><MessageSquare className="h-3 w-3" />Chat</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].CHAT}</strong></li>
                       <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><Upload className="h-3 w-3" />Ingestion</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].INGESTION}</strong></li>
                       <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><Sparkles className="h-3 w-3" />AI Actions</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].AI_ACTION}</strong></li>
+                      <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><Brain className="h-3 w-3" />Skill Intelligence</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].SKILL_INTELLIGENCE}</strong></li>
                     </ul>
                     {current && <p className="mt-4 flex items-center gap-1.5 text-[10px] font-medium text-cyan-200"><Check className="h-3 w-3" /> Your current access</p>}
                   </article>;

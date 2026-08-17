@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PLAN_LIMITS, USAGE_WINDOW_MS, estimateProviderCostUsd } from './config';
+import { METERED_USAGE_ACTIONS, PLAN_LIMITS, USAGE_WINDOW_MS, estimateProviderCostUsd } from './config';
 import { calculateUsageWindow, shouldCommitChatUsage } from './service';
 
 const now = new Date('2026-08-14T12:00:00.000Z');
@@ -79,11 +79,25 @@ test('stale pending reservations do not hold capacity', () => {
 });
 
 test('plan configuration keeps distinct limits per plan and action type', () => {
-  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 10, INGESTION: 4, AI_ACTION: 8 });
+  assert.deepEqual(PLAN_LIMITS.FREE, { CHAT: 10, INGESTION: 4, AI_ACTION: 8, SKILL_INTELLIGENCE: 2 });
   assert.equal(PLAN_LIMITS.CORE.CHAT, 40);
   assert.equal(PLAN_LIMITS.CORE.INGESTION, 15);
   assert.equal(PLAN_LIMITS.MAX.AI_ACTION, 80);
+  assert.equal(PLAN_LIMITS.CORE.SKILL_INTELLIGENCE, 6);
+  assert.equal(PLAN_LIMITS.MAX.SKILL_INTELLIGENCE, 15);
   assert.equal(USAGE_WINDOW_MS, 43_200_000);
+});
+
+test('every metered usage action has a configured limit for every plan', () => {
+  for (const plan of ['FREE', 'CORE', 'MAX'] as const) {
+    for (const action of METERED_USAGE_ACTIONS) {
+      assert.equal(
+        typeof PLAN_LIMITS[plan][action],
+        'number',
+        `${plan}.${action} must have a configured numeric limit`,
+      );
+    }
+  }
 });
 
 test('FREE capacities allow their configured action counts and block the next reservation', () => {

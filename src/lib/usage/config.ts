@@ -12,18 +12,19 @@ export const USAGE_ACTION_TYPES = [
   'LEARNING_PATH',
 ] as const;
 export type UsageActionName = (typeof USAGE_ACTION_TYPES)[number];
-export type MeteredUsageAction = 'INGESTION' | 'CHAT' | 'AI_ACTION';
+export type MeteredUsageAction = 'INGESTION' | 'CHAT' | 'AI_ACTION' | 'SKILL_INTELLIGENCE';
 
 export const METERED_USAGE_ACTIONS: readonly MeteredUsageAction[] = [
   'CHAT',
   'INGESTION',
   'AI_ACTION',
+  'SKILL_INTELLIGENCE',
 ];
 
 export const PLAN_LIMITS = {
-  FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8 },
-  CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25 },
-  MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80 },
+  FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8, SKILL_INTELLIGENCE: 2 },
+  CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25, SKILL_INTELLIGENCE: 6 },
+  MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80, SKILL_INTELLIGENCE: 15 },
 } as const satisfies Record<PlanName, Record<MeteredUsageAction, number>>;
 
 export const PROVIDER_PRICING_USD_PER_MILLION_TOKENS = {

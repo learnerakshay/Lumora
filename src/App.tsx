@@ -10,6 +10,7 @@ import { SignUpPage } from './pages/SignUpPage';
 import { WorkspacesPage } from './pages/WorkspacesPage';
 import { WorkspaceDetailPage } from './pages/WorkspaceDetailPage';
 import { UsagePage } from './pages/UsagePage';
+import { SkillIntelligencePage } from './pages/SkillIntelligencePage';
 import { LegalPage } from './pages/LegalPage';
 import { UsageProvider } from './components/usage/UsageProvider';
 
@@ -67,6 +68,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <UsagePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/skills"
+              element={
+                <ProtectedRoute>
+                  <SkillIntelligencePage />
                 </ProtectedRoute>
               }
             />

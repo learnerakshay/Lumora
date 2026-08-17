@@ -48,11 +48,12 @@ test('header displays one real quota instead of a fabricated combined denominato
       CHAT: { used: 18, limit: 40, remaining: 22, nextAvailableAt: null },
       INGESTION: { used: 10, limit: 15, remaining: 5, nextAvailableAt: null },
       AI_ACTION: { used: 3, limit: 25, remaining: 22, nextAvailableAt: null },
+      SKILL_INTELLIGENCE: { used: 1, limit: 6, remaining: 5, nextAvailableAt: null },
     },
     planLimits: {
-      FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8 },
-      CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25 },
-      MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80 },
+      FREE: { CHAT: 10, INGESTION: 4, AI_ACTION: 8, SKILL_INTELLIGENCE: 2 },
+      CORE: { CHAT: 40, INGESTION: 15, AI_ACTION: 25, SKILL_INTELLIGENCE: 6 },
+      MAX: { CHAT: 150, INGESTION: 50, AI_ACTION: 80, SKILL_INTELLIGENCE: 15 },
     },
   };
   assert.deepEqual(selectHeaderUsage(summary), {

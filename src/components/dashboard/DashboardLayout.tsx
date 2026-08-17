@@ -5,6 +5,7 @@ import { SettingsModal } from './SettingsModal';
 import { UsageIndicator } from '../usage/UsageIndicator';
 import { LumoraBrand } from '../landing/LumoraBrand';
 import {
+  Brain,
   ChevronLeft,
   ChevronRight,
   Gauge,
@@ -122,6 +123,9 @@ export function DashboardLayout({
             {!isCollapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace</p>}
             <Link to="/workspaces" title={isCollapsed ? 'Workspaces' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/workspaces' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300 shadow-[inset_0_0_18px_rgba(34,211,238,0.025)] before:absolute before:left-[-1px] before:h-5 before:w-0.5 before:rounded-full before:bg-cyan-300 before:shadow-[0_0_10px_rgba(103,232,249,0.35)]' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
               <LayoutDashboard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Workspaces</span>
+            </Link>
+            <Link to="/skills" title={isCollapsed ? 'Skill Intelligence' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/skills' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <Brain className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Skill Intelligence</span>
             </Link>
             <Link to="/usage" title={isCollapsed ? 'Usage' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/usage' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
               <Gauge className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Usage</span>

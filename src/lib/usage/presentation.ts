@@ -9,6 +9,7 @@ const HEADER_ACTIONS: ReadonlyArray<{
   { actionType: 'CHAT', label: 'Chat', compactLabel: 'Chat' },
   { actionType: 'INGESTION', label: 'Ingestion', compactLabel: 'Ingest' },
   { actionType: 'AI_ACTION', label: 'AI Actions', compactLabel: 'Action' },
+  { actionType: 'SKILL_INTELLIGENCE', label: 'Skill Intelligence', compactLabel: 'Skills' },
 ];
 
 export function selectHeaderUsage(summary: UsageSummary) {

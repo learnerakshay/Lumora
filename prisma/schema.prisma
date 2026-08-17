@@ -96,12 +96,19 @@ enum UsageEventStatus {
   COMMITTED
 }
 
+enum SkillProfileStatus {
+  EXTRACTING
+  READY
+  FAILED
+}
+
 model User {
-  id          String       @id
-  plan        Plan         @default(FREE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  usageEvents UsageEvent[]
+  id            String         @id
+  plan          Plan           @default(FREE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  usageEvents   UsageEvent[]
+  skillProfiles SkillProfile[]
 }
 
 model UsageEvent {
@@ -122,43 +129,43 @@ model UsageEvent {
 }
 
 model Workspace {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  slug        String    @unique
+  slug        String   @unique
   description String?
-  icon        String?   @default("folder")
+  icon        String?  @default("folder")
   userId      String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  sources   Source[]
-  messages  Message[]
-  chunks    Chunk[]
+  sources  Source[]
+  messages Message[]
+  chunks   Chunk[]
 
   @@index([slug])
   @@index([userId])
 }
 
 model Source {
-  id          String        @id @default(cuid())
-  workspaceId String
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  title       String
-  type        SourceType
-  status      SourceStatus  @default(PENDING)
-  stage       ProcessingStage @default(CREATED)
-  currentVersion Int        @default(1)
-  activeIndexId  String?     @unique
-  activeIndex    SourceIndex? @relation("ActiveSourceIndex", fields: [activeIndexId], references: [id], onDelete: SetNull)
-  metadata    Json?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String          @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title          String
+  type           SourceType
+  status         SourceStatus    @default(PENDING)
+  stage          ProcessingStage @default(CREATED)
+  currentVersion Int             @default(1)
+  activeIndexId  String?         @unique
+  activeIndex    SourceIndex?    @relation("ActiveSourceIndex", fields: [activeIndexId], references: [id], onDelete: SetNull)
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  contents    SourceContent[]
+  contents           SourceContent[]
   processingAttempts SourceProcessingAttempt[]
-  indexes     SourceIndex[] @relation("SourceIndexes")
-  chunks      Chunk[]
-  citations   Citation[]
+  indexes            SourceIndex[]             @relation("SourceIndexes")
+  chunks             Chunk[]
+  citations          Citation[]
 
   @@index([workspaceId])
   @@index([type])
@@ -166,22 +173,22 @@ model Source {
 }
 
 model SourceIndex {
-  id                String            @id @default(cuid())
-  sourceId          String
+  id                 String            @id @default(cuid())
+  sourceId           String
   source             Source            @relation("SourceIndexes", fields: [sourceId], references: [id], onDelete: Cascade)
-  activeForSource   Source?           @relation("ActiveSourceIndex")
-  sourceVersion     Int
-  chunkVersion      String
-  status            SourceIndexStatus @default(BUILDING)
+  activeForSource    Source?           @relation("ActiveSourceIndex")
+  sourceVersion      Int
+  chunkVersion       String
+  status             SourceIndexStatus @default(BUILDING)
   expectedChunkCount Int
-  embeddingProvider String
-  embeddingModel    String
-  embeddingVersion  String
-  vectorDimensions  Int
-  indexedAt         DateTime?
-  createdAt         DateTime          @default(now())
+  embeddingProvider  String
+  embeddingModel     String
+  embeddingVersion   String
+  vectorDimensions   Int
+  indexedAt          DateTime?
+  createdAt          DateTime          @default(now())
 
-  chunks Chunk[]
+  chunks    Chunk[]
   citations Citation[]
 
   @@index([sourceId])
@@ -190,41 +197,41 @@ model SourceIndex {
 }
 
 model SourceContent {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   sourceId            String
-  source              Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  version             Int      @default(1)
-  originalContent     String?  @db.Text
+  source              Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  version             Int       @default(1)
+  originalContent     String?   @db.Text
   artifactData        Bytes?
   artifactFileName    String?
   artifactMimeType    String?
   artifactSize        Int?
   sourceUrl           String?
-  rawContent          String   @db.Text
-  cleanText           String   @db.Text
+  rawContent          String    @db.Text
+  cleanText           String    @db.Text
   parserMetadata      Json?
   parserVersion       String
   checksum            String
   processingStartedAt DateTime?
   processedAt         DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  @@index([sourceId])
   @@unique([sourceId, version])
+  @@index([sourceId])
 }
 
 model SourceProcessingAttempt {
-  id          String          @id @default(cuid())
-  sourceId    String
-  source      Source          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  version     Int
-  stage       ProcessingStage @default(CREATED)
-  errorMessage String?        @db.Text
-  startedAt   DateTime        @default(now())
-  completedAt DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id           String          @id @default(cuid())
+  sourceId     String
+  source       Source          @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  version      Int
+  stage        ProcessingStage @default(CREATED)
+  errorMessage String?         @db.Text
+  startedAt    DateTime        @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   events SourceProcessingEvent[]
 
@@ -246,50 +253,83 @@ model SourceProcessingEvent {
 }
 
 model Chunk {
-  id          String    @id @default(cuid())
-  sourceId    String
-  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  indexId     String?
-  index       SourceIndex? @relation(fields: [indexId], references: [id], onDelete: Cascade)
-  sourceVersion Int      @default(1)
-  content     String    @db.Text
-  tokenCount  Int       @default(0)
-  chunkIndex  Int       @default(0)
-  embedding   Unsupported("vector(1536)")?
-  createdAt   DateTime  @default(now())
+  id            String                       @id @default(cuid())
+  sourceId      String
+  source        Source                       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  workspaceId   String
+  workspace     Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  indexId       String?
+  index         SourceIndex?                 @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  sourceVersion Int                          @default(1)
+  content       String                       @db.Text
+  tokenCount    Int                          @default(0)
+  chunkIndex    Int                          @default(0)
+  embedding     Unsupported("vector(1536)")?
+  createdAt     DateTime                     @default(now())
 
-  citations   Citation[]
+  citations Citation[]
 
+  @@unique([indexId, chunkIndex])
   @@index([sourceId])
   @@index([workspaceId])
   @@index([indexId])
-  @@unique([indexId, chunkIndex])
 }
 
 model Message {
-  id              String        @id @default(cuid())
-  workspaceId     String
-  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  parentMessageId String?       @unique
-  parentMessage   Message?      @relation("MessageReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
-  replies         Message[]     @relation("MessageReplies")
-  role            MessageRole
-  content         String        @db.Text
-  mode            AnswerMode    @default(DETAILED)
-  responseMode    ResponseMode?
+  id                      String        @id @default(cuid())
+  workspaceId             String
+  workspace               Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parentMessageId         String?       @unique
+  parentMessage           Message?      @relation("MessageReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  replies                 Message[]     @relation("MessageReplies")
+  role                    MessageRole
+  content                 String        @db.Text
+  mode                    AnswerMode    @default(DETAILED)
+  responseMode            ResponseMode?
   resourceRecommendations Json?
-  status          MessageStatus @default(SUCCESS)
-  action          Json?
-  regenerationStartedAt DateTime?
-  createdAt       DateTime      @default(now())
+  status                  MessageStatus @default(SUCCESS)
+  action                  Json?
+  regenerationStartedAt   DateTime?
+  createdAt               DateTime      @default(now())
 
-  citations   Citation[]
+  citations Citation[]
 
   @@index([workspaceId])
   @@index([parentMessageId])
   @@index([createdAt])
+}
+
+model SkillProfile {
+  id               String             @id @default(cuid())
+  userId           String
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version          Int
+  status           SkillProfileStatus @default(EXTRACTING)
+  sourceKind       String
+  extraction       Json?
+  normalizedSkills Json?
+  extractionModel  String?
+  contractVersion  String
+  errorMessage     String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  analyses RoleAnalysis[]
+
+  @@unique([userId, version])
+  @@index([userId])
+}
+
+model RoleAnalysis {
+  id            String       @id @default(cuid())
+  profileId     String
+  profile       SkillProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  engineVersion String
+  selectedRoles Json
+  gaps          Json
+  createdAt     DateTime     @default(now())
+
+  @@index([profileId])
 }
 
 model Citation {
@@ -301,17 +341,17 @@ model Citation {
   sourceId         String
   source           Source       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   indexId          String
-  index             SourceIndex  @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  index            SourceIndex  @relation(fields: [indexId], references: [id], onDelete: Cascade)
   title            String
-  snippet          String        @db.Text
-  kind             CitationKind  @default(DOCUMENT)
+  snippet          String       @db.Text
+  kind             CitationKind @default(DOCUMENT)
   score            Float?
-  sourceUrl        String?       @db.Text
+  sourceUrl        String?      @db.Text
   pageNumber       Int?
   timestampStartMs Int?
   timestampEndMs   Int?
   textOrigin       String
-  createdAt        DateTime      @default(now())
+  createdAt        DateTime     @default(now())
 
   @@index([messageId])
   @@index([chunkId])

@@ -23,7 +23,7 @@ export function usageLimitFromPayload(payload: unknown): UsageLimitReachedError 
   ) return null;
   const details = candidate.details as UsageLimitDetails;
   if (
-    !['CHAT', 'INGESTION', 'AI_ACTION'].includes(details.actionType) ||
+    !['CHAT', 'INGESTION', 'AI_ACTION', 'SKILL_INTELLIGENCE'].includes(details.actionType) ||
     !['FREE', 'CORE', 'MAX'].includes(details.plan) ||
     typeof details.used !== 'number' ||
     typeof details.limit !== 'number'

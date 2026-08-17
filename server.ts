@@ -8,6 +8,7 @@ import { logger } from './src/lib/logger';
 import { errorResponse, successResponse } from './src/lib/api-response';
 import { workspaceRouter } from './src/routes/workspaces';
 import { usageRouter } from './src/routes/usage';
+import { skillsRouter } from './src/routes/skills';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
@@ -31,6 +32,7 @@ async function startServer() {
   // Workspace API routes
   app.use(API_PATHS.workspaces, workspaceRouter);
   app.use(API_PATHS.usage, usageRouter);
+  app.use(API_PATHS.skills, skillsRouter);
 
   // Health check API
   app.get('/api/health', async (_req, res) => {
