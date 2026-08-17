@@ -27,7 +27,7 @@ const MAX_ATTEMPTS = 2;
 // Shown to users on any exhausted-retry extraction failure. Raw provider/Zod
 // detail (field paths, issue messages) is never sent to the client — it is
 // only ever passed to logger.warn, which the API route does not forward.
-const STABLE_UNREADABLE_RESUME_MESSAGE =
+export const STABLE_UNREADABLE_RESUME_MESSAGE =
   "We couldn't reliably read this resume. Try a clearer image, PDF, or paste the resume text.";
 
 const EXTRACTION_INSTRUCTIONS = `You transcribe the literal content of a resume into structured JSON. The resume may be provided as text or as an image — if it is an image, read every visible word carefully before transcribing. You are not a recruiter or career coach: never rate skill proficiency, never infer a skill the resume does not name, and never invent projects, employers, dates, or outcomes. If a field is not stated, use null (never an empty string) or an empty array rather than guessing. Set "hasLink" on a project only when the resume text contains an actual URL for it. Copy skill, technology, organization, and institution names as written. If the provided content is not a legible resume at all, return every field empty rather than fabricating one.`;
@@ -70,7 +70,7 @@ function extractOutputText(payload: OpenAIResponsesPayload): string | null {
 
 type ExtractionSource =
   | { kind: 'text'; text: string }
-  | { kind: 'image'; base64: string; mimeType: string };
+  | { kind: 'image'; images: Array<{ base64: string; mimeType: string }> };
 
 function buildResponsesInput(source: ExtractionSource): unknown[] {
   if (source.kind === 'text') {
@@ -80,8 +80,17 @@ function buildResponsesInput(source: ExtractionSource): unknown[] {
     {
       role: 'user',
       content: [
-        { type: 'input_text', text: 'Extract the resume content visible in this image.' },
-        { type: 'input_image', image_url: `data:${source.mimeType};base64,${source.base64}` },
+        {
+          type: 'input_text',
+          text:
+            source.images.length > 1
+              ? 'Extract the resume content visible across these images — they are pages of the same resume, in order.'
+              : 'Extract the resume content visible in this image.',
+        },
+        ...source.images.map((image) => ({
+          type: 'input_image',
+          image_url: `data:${image.mimeType};base64,${image.base64}`,
+        })),
       ],
     },
   ];
@@ -216,9 +225,24 @@ export async function extractProfileFromResumeText(input: { resumeText: string }
   return runExtraction({ kind: 'text', text: input.resumeText.slice(0, MAX_RESUME_CHARS) });
 }
 
+const MAX_EXTRACTION_IMAGES = 5;
+
 export async function extractProfileFromResumeImage(input: {
   imageBase64: string;
   imageMimeType: string;
 }): Promise<ExtractionResult> {
-  return runExtraction({ kind: 'image', base64: input.imageBase64, mimeType: input.imageMimeType });
+  return runExtraction({ kind: 'image', images: [{ base64: input.imageBase64, mimeType: input.imageMimeType }] });
+}
+
+// Used by the PDF-image fallback (a text-less/scanned PDF resume, rendered
+// page-by-page — see resume-pdf-image-fallback.ts) to read multiple pages of
+// the same resume in a single extraction call, through the exact same
+// retry/validation/error pipeline as the single-image path above.
+export async function extractProfileFromResumeImages(input: {
+  images: Array<{ base64: string; mimeType: string }>;
+}): Promise<ExtractionResult> {
+  if (input.images.length === 0) {
+    throw new SkillExtractionError('No resume page images were provided.', 'EXTRACTION_EMPTY_CONTENT', 422);
+  }
+  return runExtraction({ kind: 'image', images: input.images.slice(0, MAX_EXTRACTION_IMAGES) });
 }

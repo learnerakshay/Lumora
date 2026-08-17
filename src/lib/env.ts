@@ -6,6 +6,15 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+// z.coerce.boolean() treats any non-empty string (including the literal
+// string "false") as true, which makes it unsafe for env vars. This
+// preprocess reads the literal "true"/"false" text instead.
+const booleanFlag = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (typeof value !== 'string' || value.trim().length === 0) return defaultValue;
+    return value.trim().toLowerCase() === 'true';
+  }, z.boolean());
+
 const serverEnvSchema = z
   .object({
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -57,8 +66,52 @@ const serverEnvSchema = z
     CHAT_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(300_000).default(60_000),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
+
+    // Payments (Razorpay Orders, one-time purchases only — no Subscriptions/Autopay).
+    RAZORPAY_KEY_ID: optionalSecret,
+    RAZORPAY_KEY_SECRET: optionalSecret,
+    RAZORPAY_WEBHOOK_SECRET: optionalSecret,
+    PAYMENTS_ENABLED: booleanFlag(false),
+    PAYMENTS_CURRENCY: z.string().trim().min(1).default('INR'),
+    PLAN_ACCESS_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   })
   .superRefine((env, context) => {
+    if (env.PAYMENTS_ENABLED) {
+      if (!env.RAZORPAY_KEY_ID) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RAZORPAY_KEY_ID'],
+          message: 'RAZORPAY_KEY_ID is required when PAYMENTS_ENABLED is true',
+        });
+      } else if (!/^rzp_(test|live)_/.test(env.RAZORPAY_KEY_ID)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RAZORPAY_KEY_ID'],
+          message: 'RAZORPAY_KEY_ID must start with rzp_test_ or rzp_live_',
+        });
+      } else if (env.NODE_ENV === 'production' && env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RAZORPAY_KEY_ID'],
+          message: 'Production must not use a Razorpay test-mode key',
+        });
+      }
+      if (!env.RAZORPAY_KEY_SECRET) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RAZORPAY_KEY_SECRET'],
+          message: 'RAZORPAY_KEY_SECRET is required when PAYMENTS_ENABLED is true',
+        });
+      }
+      if (!env.RAZORPAY_WEBHOOK_SECRET) {
+        context.addIssue({
+          code: 'custom',
+          path: ['RAZORPAY_WEBHOOK_SECRET'],
+          message: 'RAZORPAY_WEBHOOK_SECRET is required when PAYMENTS_ENABLED is true',
+        });
+      }
+    }
+
     if (env.YOUTUBE_TRANSCRIPT_PROVIDER === 'proxy') {
       if (!env.YOUTUBE_TRANSCRIPT_PROXY_URL) {
         context.addIssue({

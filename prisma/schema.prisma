@@ -108,14 +108,29 @@ enum LearningPlanStatus {
   FAILED
 }
 
+enum PaymentStatus {
+  CREATED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum CouponKind {
+  PERCENT
+  FIXED
+}
+
 model User {
   id            String         @id
   plan          Plan           @default(FREE)
+  planExpiresAt DateTime?
+  planUpdatedAt DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   usageEvents   UsageEvent[]
   skillProfiles SkillProfile[]
   learningPlans LearningPlan[]
+  payments      Payment[]
 }
 
 model UsageEvent {
@@ -406,4 +421,68 @@ model Citation {
   @@index([chunkId])
   @@index([sourceId])
   @@index([indexId])
+}
+
+// One row per purchase attempt (Razorpay Order). A CAPTURED row is both a
+// payment-history record and the entitlement grant for [accessFrom, accessUntil) —
+// there is no separate subscription/entitlement table. Renewals create a new
+// row rather than mutating an existing one.
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              Plan
+  providerOrderId   String        @unique
+  providerPaymentId String?       @unique
+  amount            Int
+  discountAmount    Int           @default(0)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(CREATED)
+  method            String?
+  failureCode       String?
+  failureReason     String?       @db.Text
+  accessFrom        DateTime?
+  accessUntil       DateTime?
+  couponId          String?
+  coupon            Coupon?       @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  signatureVerified Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([userId, status, accessUntil])
+}
+
+// Idempotency ledger for Razorpay webhooks. The unique eventId is what makes
+// webhook delivery (which Razorpay retries for up to 24h) safe to process
+// more than once.
+model WebhookEvent {
+  id                String    @id @default(cuid())
+  eventId           String    @unique
+  eventType         String
+  providerCreatedAt DateTime?
+  payload           Json
+  processed         Boolean   @default(false)
+  errorMessage      String?   @db.Text
+  receivedAt        DateTime  @default(now())
+  processedAt       DateTime?
+
+  @@index([processed, receivedAt])
+}
+
+model Coupon {
+  id              String     @id @default(cuid())
+  code            String     @unique
+  kind            CouponKind
+  value           Int
+  appliesToPlans  Json
+  maxRedemptions  Int?
+  redemptionCount Int        @default(0)
+  perUserLimit    Int        @default(1)
+  validUntil      DateTime?
+  active          Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  payments Payment[]
 }

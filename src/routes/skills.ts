@@ -9,10 +9,16 @@ import { usageLimitError } from '../lib/usage/errors';
 import { parseSourceContent } from '../lib/ingestion/parsers';
 import {
   extractProfileFromResumeImage,
+  extractProfileFromResumeImages,
   extractProfileFromResumeText,
   SkillExtractionError,
+  STABLE_UNREADABLE_RESUME_MESSAGE,
 } from '../lib/skills/extraction-provider';
 import { detectResumeFileKind, resumeImageMimeType } from '../lib/skills/resume-file-detection';
+import {
+  isEmptyExtractableTextFailure,
+  renderResumePdfPagesToImages,
+} from '../lib/skills/resume-pdf-image-fallback';
 import { normalizeExtractedProfile } from '../lib/skills/normalize';
 import { selectTargetRoles } from '../lib/skills/role-matching';
 import { analyzeSkillGaps } from '../lib/skills/gap-analysis';
@@ -93,6 +99,7 @@ skillsRouter.post('/profile', resumeUploadMiddleware, async (req: Request, res: 
 
     let resumeText: string | null = null;
     let imageInput: { base64: string; mimeType: string } | null = null;
+    let pdfFallbackImages: Array<{ base64: string; mimeType: string }> | null = null;
     let sourceKind: SkillProfileSourceKind;
 
     if (file) {
@@ -118,13 +125,32 @@ skillsRouter.post('/profile', resumeUploadMiddleware, async (req: Request, res: 
           });
           resumeText = parsed.cleanText;
         } catch (error: any) {
-          const response = errorResponse(
-            AppError.badRequest(
-              error?.message || 'The uploaded PDF could not be read.',
-              'RESUME_PDF_PARSE_FAILED',
-            ),
-          );
-          return res.status(response.statusCode).json(response.payload);
+          // A PDF with no text layer at all (a phone "scan to PDF" of a
+          // printed resume) is not a parse failure — fall back to rendering
+          // its pages and reusing the existing image/vision extraction
+          // pipeline. Every other PDF failure (corrupted, encrypted,
+          // oversized, wrong MIME) still fails immediately, unchanged.
+          if (isEmptyExtractableTextFailure(error)) {
+            try {
+              pdfFallbackImages = await renderResumePdfPagesToImages(file.buffer);
+            } catch (renderError) {
+              logger.warn('PDF image fallback rendering failed', {
+                userId,
+                reason: renderError instanceof Error ? renderError.name : 'unknown',
+              });
+            }
+          }
+          if (resumeText === null && (!pdfFallbackImages || pdfFallbackImages.length === 0)) {
+            const response = errorResponse(
+              AppError.badRequest(
+                isEmptyExtractableTextFailure(error)
+                  ? STABLE_UNREADABLE_RESUME_MESSAGE
+                  : error?.message || 'The uploaded PDF could not be read.',
+                'RESUME_PDF_PARSE_FAILED',
+              ),
+            );
+            return res.status(response.statusCode).json(response.payload);
+          }
         }
       } else {
         sourceKind = 'IMAGE';
@@ -171,9 +197,11 @@ skillsRouter.post('/profile', resumeUploadMiddleware, async (req: Request, res: 
 
     let extraction;
     try {
-      extraction = imageInput
-        ? await extractProfileFromResumeImage({ imageBase64: imageInput.base64, imageMimeType: imageInput.mimeType })
-        : await extractProfileFromResumeText({ resumeText: resumeText! });
+      extraction = pdfFallbackImages
+        ? await extractProfileFromResumeImages({ images: pdfFallbackImages })
+        : imageInput
+          ? await extractProfileFromResumeImage({ imageBase64: imageInput.base64, imageMimeType: imageInput.mimeType })
+          : await extractProfileFromResumeText({ resumeText: resumeText! });
     } catch (error) {
       const message =
         error instanceof SkillExtractionError ? error.message : 'Resume extraction failed.';

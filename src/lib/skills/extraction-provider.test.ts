@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   SkillExtractionError,
   extractProfileFromResumeImage,
+  extractProfileFromResumeImages,
   extractProfileFromResumeText,
 } from './extraction-provider';
 
@@ -375,6 +376,93 @@ test('a provider rejection surfaces a safe message without retrying', async () =
       },
     );
     assert.equal(callCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// Regression coverage for the PDF-image fallback (a scanned/text-less PDF
+// resume rendered to page images — see resume-pdf-image-fallback.ts): it
+// must go through this exact same pipeline, not a separate one.
+test('multiple resume page images are sent as multiple input_image blocks in a single call', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+  let callCount = 0;
+  globalThis.fetch = (async (_url: unknown, init: any) => {
+    callCount += 1;
+    capturedBody = JSON.parse(init.body);
+    return jsonResponse(responsesPayload(JSON.stringify(validExtraction)));
+  }) as typeof fetch;
+  try {
+    const result = await extractProfileFromResumeImages({
+      images: [
+        { base64: 'cGFnZS0x', mimeType: 'image/png' },
+        { base64: 'cGFnZS0y', mimeType: 'image/png' },
+      ],
+    });
+    assert.equal(callCount, 1);
+    assert.equal(result.profile.skills[0]?.label, 'React');
+    const content = capturedBody.input[0].content;
+    assert.equal(content.length, 3);
+    assert.equal(content[0].type, 'input_text');
+    assert.match(content[0].text, /pages of the same resume/i);
+    assert.equal(content[1].type, 'input_image');
+    assert.equal(content[1].image_url, 'data:image/png;base64,cGFnZS0x');
+    assert.equal(content[2].type, 'input_image');
+    assert.equal(content[2].image_url, 'data:image/png;base64,cGFnZS0y');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('a single-page image array uses the same wording as the direct single-image path', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+  globalThis.fetch = (async (_url: unknown, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return jsonResponse(responsesPayload(JSON.stringify(validExtraction)));
+  }) as typeof fetch;
+  try {
+    await extractProfileFromResumeImages({ images: [{ base64: 'cGFnZS0x', mimeType: 'image/png' }] });
+    assert.equal(capturedBody.input[0].content[0].text, 'Extract the resume content visible in this image.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('an excessive number of page images is capped rather than sent unbounded to the provider', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+  globalThis.fetch = (async (_url: unknown, init: any) => {
+    capturedBody = JSON.parse(init.body);
+    return jsonResponse(responsesPayload(JSON.stringify(validExtraction)));
+  }) as typeof fetch;
+  try {
+    const manyImages = Array.from({ length: 12 }, (_, index) => ({
+      base64: `cGFnZS0${index}`,
+      mimeType: 'image/png',
+    }));
+    await extractProfileFromResumeImages({ images: manyImages });
+    const imageBlocks = capturedBody.input[0].content.filter((block: any) => block.type === 'input_image');
+    assert.ok(imageBlocks.length < 12, 'expected the image count to be bounded, not passed through unbounded');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('an empty image array is rejected before ever calling the provider', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return jsonResponse(responsesPayload(JSON.stringify(validExtraction)));
+  }) as typeof fetch;
+  try {
+    await assert.rejects(
+      () => extractProfileFromResumeImages({ images: [] }),
+      (error: unknown) => error instanceof SkillExtractionError && error.code === 'EXTRACTION_EMPTY_CONTENT',
+    );
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

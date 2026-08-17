@@ -128,10 +128,11 @@ Stages are persisted (`SourceProcessingAttempt` / `SourceProcessingEvent`) with 
 ## Remaining phases
 
 1. **Skill Intelligence / Role Gap Analysis** — **Complete and frozen.** Resume/profile extraction (`lib/skills/extraction-*`), skill + evidence extraction, ~4–5 target roles (`lib/skills/role-matching.ts`), deterministic explainable gap analysis (`lib/skills/gap-analysis.ts`). API: `routes/skills.ts`. UI: `SkillIntelligencePage.tsx` / `SkillGapReport.tsx`. Change only for a blocking integration bug.
-2. **Gap-to-Learning / Learning Path — Complete.** Turns a selected subset of Phase 1 gaps into a structured, staged learning plan (why it matters → priority → required competency → closure steps → evidence task → resources) plus a Career Readiness / Action Report, reusing Resource Intelligence unchanged. See "Gap-to-Learning / Learning Path (Phase 2)" below for the full architecture.
-3. **Payments** — next major phase. FREE/CORE/MAX, server-side verification, entitlement sync, upgrade/downgrade/cancel, failed-payment and webhook reliability, preserving the existing Usage architecture. Not started.
-4. **YouTube pipeline / grounded citation repair** — the timestamp-derivation defects and the GENERAL-fallback misrouting are both fixed locally (see above); production log confirmation is still outstanding.
-5. **Real-user UX, bugs, polish** — empty/loading/error states, source states, recovery, mobile, accessibility.
+2. **Gap-to-Learning / Learning Path** — **Complete and frozen.** Turns a selected subset of Phase 1 gaps into a structured, staged learning plan (why it matters → priority → required competency → closure steps → evidence task → resources) plus a Career Readiness / Action Report, reusing Resource Intelligence unchanged. See "Gap-to-Learning / Learning Path (Phase 2)" below for the full architecture. Change only for a blocking integration bug.
+3. **Payments** — next major phase, not started. FREE/CORE/MAX, server-side verification, entitlement sync, upgrade/downgrade/cancel, failed-payment and webhook reliability, preserving the existing Usage architecture (`Plan` enum, `PLAN_LIMITS`, reserve → commit/discard already in place as the foundation to build on).
+4. **Final Product Polish** — the phase after Payments: real-user UX and bug fixing, empty/loading/error states, source states, recovery, mobile, accessibility, and general UI/UX refinement.
+
+YouTube ingestion is considered stable enough to build on: the timestamp-derivation defects and the GENERAL-fallback misrouting (see "Known issues" above) are both fixed locally with regression coverage. Production log confirmation of those fixes is still outstanding but is not a blocker for Payments or Polish.
 
 ## Gap-to-Learning / Learning Path (Phase 2)
 
