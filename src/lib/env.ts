@@ -74,6 +74,12 @@ const serverEnvSchema = z
     PAYMENTS_ENABLED: booleanFlag(false),
     PAYMENTS_CURRENCY: z.string().trim().min(1).default('INR'),
     PLAN_ACCESS_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+    // Temporary escape hatch for Phase 2 E2E testing on Render, which runs
+    // with NODE_ENV=production. Must default to false: production rejecting
+    // rzp_test_ keys is the actual safety guarantee, and this flag exists
+    // only to be flipped on deliberately, short-term, then unset again —
+    // never to become the normal way production runs.
+    ALLOW_RAZORPAY_TEST_KEYS: booleanFlag(false),
   })
   .superRefine((env, context) => {
     if (env.PAYMENTS_ENABLED) {
@@ -89,11 +95,16 @@ const serverEnvSchema = z
           path: ['RAZORPAY_KEY_ID'],
           message: 'RAZORPAY_KEY_ID must start with rzp_test_ or rzp_live_',
         });
-      } else if (env.NODE_ENV === 'production' && env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
+      } else if (
+        env.NODE_ENV === 'production' &&
+        env.RAZORPAY_KEY_ID.startsWith('rzp_test_') &&
+        !env.ALLOW_RAZORPAY_TEST_KEYS
+      ) {
         context.addIssue({
           code: 'custom',
           path: ['RAZORPAY_KEY_ID'],
-          message: 'Production must not use a Razorpay test-mode key',
+          message:
+            'Production must not use a Razorpay test-mode key unless ALLOW_RAZORPAY_TEST_KEYS=true is explicitly set',
         });
       }
       if (!env.RAZORPAY_KEY_SECRET) {
