@@ -108,10 +108,11 @@ export function HeroSection() {
           ref={headlineRef}
           className="mx-auto max-w-4xl text-4xl font-bold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl"
         >
-          Turn scattered knowledge into{' '}
           <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-blue-300 bg-clip-text text-transparent">
-            lasting understanding.
+            Evidence for what you know.
           </span>
+          <br />
+          A path for what you don&apos;t.
         </h1>
 
         {/* Supporting Copy */}
@@ -119,7 +120,8 @@ export function HeroSection() {
           ref={sublineRef}
           className="mx-auto max-w-2xl text-sm font-normal leading-relaxed text-slate-300 sm:text-base lg:text-lg"
         >
-          Bring PDFs, web pages, YouTube videos, and notes together, then ask questions and learn from answers grounded in your sources.
+          Bring PDFs, websites, videos, and notes into a Workspace for grounded, cited answers — or bring your resume
+          and let Career Intelligence show you where you stand and what to learn next.
         </p>
 
         {/* Primary CTA & Secondary */}
@@ -152,7 +154,10 @@ export function HeroSection() {
       <div className="relative z-10 mx-auto -mt-2 w-full max-w-6xl sm:mt-0">
         {/* Three.js Lumora Core Canvas */}
         <div ref={coreRef} className="h-[300px] w-full sm:h-[370px] lg:h-[410px]">
-          <HeroCoreCanvas onHoverChange={setCoreHovered} />
+          <HeroCoreCanvas
+            onHoverChange={setCoreHovered}
+            activeSourceColor={activeConnection === null ? null : HERO_SOURCE_COLORS[activeConnection]}
+          />
         </div>
 
         <svg

@@ -45,7 +45,7 @@ export function AuthWelcomeBoard({
 
   return (
     <main className="auth-entry relative isolate flex min-h-[calc(100svh-4.5rem)] items-center justify-center overflow-hidden px-4 py-4 sm:px-6 sm:py-5">
-      <LandingAtmosphere />
+      <LandingAtmosphere particles={false} />
       <AuthStarField />
       <div aria-hidden="true" className="auth-entry-horizon absolute inset-x-0 bottom-0 h-72" />
 

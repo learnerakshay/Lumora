@@ -33,6 +33,29 @@
   animation: landing-aurora-drift 14s ease-in-out infinite alternate;
 }
 
+.landing-data-field {
+  will-change: transform;
+  transition: transform 600ms ease-out;
+}
+
+.landing-data-star {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: #7dd3fc;
+  opacity: var(--star-opacity, 0.3);
+  box-shadow: 0 0 6px rgba(125, 211, 252, 0.55);
+  animation: landing-star-drift var(--star-duration, 12s) var(--star-delay, 0s) ease-in-out infinite;
+}
+
+.landing-data-trace {
+  stroke: rgba(56, 189, 248, 0.5);
+  stroke-width: 0.5;
+  stroke-dasharray: 1 7;
+  vector-effect: non-scaling-stroke;
+  animation: landing-trace-flow 9s var(--trace-delay, 0s) linear infinite;
+}
+
 .landing-stream-bridge::before,
 .landing-stream-bridge::after {
   position: absolute;
@@ -197,6 +220,73 @@
   animation: landing-sheen 1.3s var(--landing-ease) both;
 }
 
+/* Desktop nav links: a light trace under the label on hover/focus rather
+   than turning every item into a glowing pill. Falls back cleanly to the
+   plain Tailwind hover:text-sky-300 on routes that don't load this
+   stylesheet (Navbar renders on every non-dashboard route). */
+.landing-nav-link {
+  position: relative;
+}
+
+.landing-nav-link::after {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.2rem;
+  height: 1px;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.85), transparent);
+  opacity: 0;
+  transform: scaleX(0.5);
+  transform-origin: center;
+  transition: opacity 250ms ease, transform 300ms var(--landing-ease);
+}
+
+.landing-nav-link:hover::after,
+.landing-nav-link:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.landing-nav-cta {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+  transition:
+    transform 350ms var(--landing-ease),
+    border-color 300ms ease,
+    box-shadow 350ms ease;
+}
+
+.landing-nav-cta::before {
+  position: absolute;
+  inset: -60%;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, rgba(125, 211, 252, 0.14), transparent 58%);
+  transform: translateX(-120%);
+  transition: transform 650ms var(--landing-ease);
+}
+
+.landing-nav-cta:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 10px 26px rgba(14, 165, 233, 0.16);
+}
+
+.landing-nav-cta:hover::before {
+  transform: translateX(120%);
+}
+
+.landing-nav-cta svg {
+  transition: transform 300ms var(--landing-ease);
+}
+
+.landing-nav-cta:hover svg {
+  transform: translateX(3px);
+}
+
 .landing-primary-cta {
   position: relative;
   overflow: hidden;
@@ -305,18 +395,114 @@
   animation: landing-signal 3.4s var(--signal-delay, 0s) ease-in-out infinite;
 }
 
-.workflow-runner {
+/* Connector between the three How-Lumora-Works cards: a dotted "highway"
+   track plus several traveling luminous packets, instead of one lone dot —
+   the pipeline should read as continuous data flow, not a single runner. */
+.workflow-highway {
+  overflow: visible;
+}
+
+.workflow-highway-track {
   position: absolute;
-  top: -3px;
+  inset: 0;
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.4) 0 5px,
+    transparent 5px 13px
+  );
+  opacity: 0.55;
+}
+
+.workflow-packet {
+  position: absolute;
+  top: 50%;
   left: 0;
   width: 7px;
   height: 7px;
+  margin-top: -3.5px;
   border-radius: 999px;
   background: #bae6fd;
   box-shadow:
     0 0 10px #38bdf8,
     0 0 22px rgba(14, 165, 233, 0.7);
-  animation: workflow-runner 4.8s ease-in-out infinite;
+  animation: workflow-packet-travel 4.8s linear infinite;
+  animation-delay: var(--packet-delay, 0s);
+}
+
+.workflow-card-soft.landing-card:hover {
+  transform: translateY(-3px);
+}
+
+/* Pricing must stay calm and readable — a gentler lift than the default
+   .landing-card hover used for heavier marketing cards elsewhere. */
+.pricing-card-calm.landing-card:hover {
+  transform: translateY(-2px);
+}
+
+/* STEP 01 — a small particle escapes each source row toward the connector
+   on a loop, standing in for "material entering the pipeline". */
+.workflow-emitter {
+  overflow: visible;
+}
+
+.workflow-emit-particle {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #7dd3fc;
+  opacity: 0;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
+  animation: workflow-emit 3.6s var(--emit-delay, 0s) ease-out infinite;
+}
+
+/* STEP 02 — a small dot orbiting the core icon, reading as indexing
+   activity rather than a static glyph. */
+.workflow-orbit {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  animation: workflow-orbit-spin 5.4s linear infinite;
+}
+
+.workflow-orbit::before {
+  position: absolute;
+  top: -1.5px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  content: '';
+  border-radius: 999px;
+  background: #67e8f9;
+  box-shadow: 0 0 8px rgba(103, 232, 249, 0.9);
+}
+
+/* STEP 03 — the citation row breathes a faint cyan glow to suggest a
+   supporting citation resolving in, without a literal popup. */
+.workflow-citation-glow {
+  animation: workflow-citation-pulse 5s ease-in-out infinite;
+}
+
+.feature-card {
+  background: linear-gradient(180deg, rgba(16, 24, 38, 0.92), rgba(13, 19, 31, 0.9));
+}
+
+.feature-citation-chip {
+  animation: feature-chip-pulse 5s ease-in-out infinite;
+}
+
+.feature-citation-row {
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+  animation: feature-row-glow 7s ease-in-out infinite;
+  animation-delay: var(--row-delay, 0s);
+}
+
+.feature-ingest-token {
+  animation: feature-token-pulse 4.5s ease-in-out infinite;
+  animation-delay: var(--token-delay, 0s);
 }
 
 .landing-feature-hero {
@@ -373,6 +559,10 @@
   background-color: rgba(30, 41, 59, 0.94);
 }
 
+.workflow-card-soft.is-live {
+  animation: workflow-card-activate 900ms var(--landing-ease) both;
+}
+
 .living-input,
 .living-output {
   position: relative;
@@ -418,6 +608,191 @@
     border-color 420ms ease,
     box-shadow 420ms ease,
     background-color 420ms ease;
+}
+
+/* Evidence & Trust: Question -> Claim -> Evidence -> Verdict chain. A
+   one-time GSAP reveal adds .is-cycling, after which everything below is a
+   plain CSS loop — no JS keeps it alive. */
+.evidence-node {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 350ms var(--landing-ease),
+    border-color 300ms ease,
+    box-shadow 350ms ease;
+}
+
+.evidence-node:hover {
+  transform: translateY(-2px);
+  border-color: rgba(45, 212, 191, 0.4);
+}
+
+.evidence-chain.is-cycling .evidence-node {
+  animation: evidence-node-pulse 8s ease-in-out infinite;
+}
+
+.evidence-chain.is-cycling .evidence-node[data-step='0'] { animation-delay: 0s; }
+.evidence-chain.is-cycling .evidence-node[data-step='1'] { animation-delay: 2s; }
+.evidence-chain.is-cycling .evidence-node[data-step='2'] { animation-delay: 4s; }
+.evidence-chain.is-cycling .evidence-node[data-step='3'] { animation-delay: 6s; }
+
+.evidence-highway {
+  overflow: visible;
+}
+
+.evidence-highway-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: repeating-linear-gradient(90deg, rgba(45, 212, 191, 0.38) 0 5px, transparent 5px 13px);
+  opacity: 0.5;
+}
+
+.evidence-flow-dot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 999px;
+  background: #5eead4;
+  box-shadow:
+    0 0 8px #2dd4bf,
+    0 0 18px rgba(20, 184, 166, 0.7);
+  animation: evidence-flow-travel 4.8s linear infinite;
+  animation-delay: var(--flow-delay, 0s);
+}
+
+.evidence-outcome {
+  position: relative;
+  transition: border-color 500ms ease, box-shadow 500ms ease, transform 350ms var(--landing-ease);
+}
+
+.evidence-outcome:hover {
+  transform: translateY(-2px);
+}
+
+.evidence-outcomes.is-cycling .evidence-outcome[data-outcome='grounded'] {
+  animation: evidence-outcome-grounded 10s ease-in-out infinite;
+}
+
+.evidence-outcomes.is-cycling .evidence-outcome[data-outcome='general'] {
+  animation: evidence-outcome-general 10s ease-in-out infinite;
+}
+
+.evidence-citation-row {
+  opacity: 0.4;
+  animation: evidence-citation-reveal 10s ease-in-out infinite;
+  animation-delay: var(--row-delay, 0s);
+}
+
+/* Career Intelligence: a 10-node grid/timeline (never a horizontal-scroll
+   strip) cascading an amber "signal" left-to-right, top-to-bottom once it
+   scrolls into view, then looping ambiently. */
+.career-node {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 350ms var(--landing-ease),
+    border-color 300ms ease,
+    box-shadow 350ms ease,
+    background-color 300ms ease;
+}
+
+.career-node:hover {
+  transform: translateY(-2px);
+  border-color: rgba(251, 191, 36, 0.45);
+  background-color: rgba(24, 18, 9, 0.92);
+}
+
+.career-grid.is-cycling .career-node {
+  animation: career-node-pulse 12s ease-in-out infinite;
+}
+
+.career-grid.is-cycling .career-node[data-step='0'] { animation-delay: 0s; }
+.career-grid.is-cycling .career-node[data-step='1'] { animation-delay: 1.2s; }
+.career-grid.is-cycling .career-node[data-step='2'] { animation-delay: 2.4s; }
+.career-grid.is-cycling .career-node[data-step='3'] { animation-delay: 3.6s; }
+.career-grid.is-cycling .career-node[data-step='4'] { animation-delay: 4.8s; }
+.career-grid.is-cycling .career-node[data-step='5'] { animation-delay: 6s; }
+.career-grid.is-cycling .career-node[data-step='6'] { animation-delay: 7.2s; }
+.career-grid.is-cycling .career-node[data-step='7'] { animation-delay: 8.4s; }
+.career-grid.is-cycling .career-node[data-step='8'] { animation-delay: 9.6s; }
+.career-grid.is-cycling .career-node[data-step='9'] {
+  animation: career-node-pulse-final 12s ease-in-out infinite;
+  animation-delay: 10.8s;
+}
+
+.career-fit-fill {
+  transition: width 1.1s ease;
+}
+
+.career-gap-chip {
+  opacity: 0.35;
+  animation: career-chip-reveal 6s ease-in-out infinite;
+  animation-delay: var(--chip-delay, 0s);
+}
+
+.career-priority-bar {
+  height: var(--bar-height, 12px);
+  transform-origin: bottom center;
+  animation: career-bar-rise 6s ease-in-out infinite;
+  animation-delay: var(--bar-delay, 0s);
+}
+
+.career-path-dot {
+  opacity: 0.3;
+  animation: career-dot-light 4.5s ease-in-out infinite;
+  animation-delay: var(--dot-delay, 0s);
+}
+
+.career-resource-icon {
+  opacity: 0.35;
+  animation: career-resource-fade 5s ease-in-out infinite;
+  animation-delay: var(--icon-delay, 0s);
+}
+
+.career-cta {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+  transition:
+    transform 400ms var(--landing-ease),
+    box-shadow 400ms ease,
+    background-color 250ms ease;
+}
+
+.career-cta::before {
+  position: absolute;
+  inset: -70%;
+  content: '';
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.32), transparent 38%);
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity 400ms ease,
+    transform 650ms var(--landing-ease);
+}
+
+.career-cta:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 18px 50px rgba(217, 119, 6, 0.25),
+    0 0 0 1px rgba(253, 186, 116, 0.3);
+}
+
+.career-cta:hover::before {
+  opacity: 0.75;
+  transform: scale(1);
+}
+
+.career-cta svg {
+  transition: transform 350ms var(--landing-ease);
+}
+
+.career-cta:hover svg {
+  transform: translateX(4px);
 }
 
 .landing-roadmap-card::after {
@@ -622,6 +997,24 @@
   }
 }
 
+@keyframes landing-star-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: calc(var(--star-opacity, 0.3) * 0.55);
+  }
+  50% {
+    transform: translate3d(calc(var(--star-drift, 10px) * 0.4), calc(var(--star-drift, 10px) * -1), 0);
+    opacity: var(--star-opacity, 0.3);
+  }
+}
+
+@keyframes landing-trace-flow {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
 @keyframes landing-aurora-drift {
   from {
     transform: translateX(-52%) translateY(-2%) scale(0.96);
@@ -666,20 +1059,294 @@
   }
 }
 
-@keyframes workflow-runner {
+@keyframes workflow-packet-travel {
   0% {
     left: 0;
     opacity: 0;
   }
-  12% {
+  10% {
     opacity: 1;
   }
-  88% {
+  90% {
     opacity: 1;
   }
   100% {
     left: 100%;
     opacity: 0;
+  }
+}
+
+@keyframes workflow-emit {
+  0%,
+  60% {
+    opacity: 0;
+    transform: translate(0, -50%) scale(0.6);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(22px, -50%) scale(0.4);
+  }
+}
+
+@keyframes workflow-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes workflow-citation-pulse {
+  0%,
+  100% {
+    border-color: rgba(30, 41, 59, 1);
+    box-shadow: 0 0 0 rgba(167, 139, 250, 0);
+  }
+  50% {
+    border-color: rgba(167, 139, 250, 0.4);
+    box-shadow: inset 0 0 16px rgba(167, 139, 250, 0.08);
+  }
+}
+
+@keyframes evidence-node-pulse {
+  0%,
+  22% {
+    border-color: rgba(45, 212, 191, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(45, 212, 191, 0.2),
+      0 0 26px rgba(20, 184, 166, 0.16);
+  }
+  32%,
+  100% {
+    border-color: rgba(51, 65, 85, 0.55);
+    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
+  }
+}
+
+@keyframes evidence-flow-travel {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes evidence-outcome-grounded {
+  0%,
+  40% {
+    border-color: rgba(16, 185, 129, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(16, 185, 129, 0.16),
+      0 20px 46px rgba(5, 150, 105, 0.12);
+  }
+  55%,
+  100% {
+    border-color: rgba(16, 185, 129, 0.22);
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes evidence-outcome-general {
+  0%,
+  40% {
+    border-color: rgba(100, 116, 139, 0.5);
+    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
+  }
+  55%,
+  90% {
+    border-color: rgba(148, 163, 184, 0.4);
+    box-shadow:
+      0 0 0 1px rgba(148, 163, 184, 0.12),
+      0 20px 46px rgba(51, 65, 85, 0.16);
+  }
+  100% {
+    border-color: rgba(100, 116, 139, 0.5);
+    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
+  }
+}
+
+@keyframes evidence-citation-reveal {
+  0%,
+  8% {
+    opacity: 0.3;
+    border-color: rgba(30, 41, 59, 1);
+    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
+  }
+  16%,
+  38% {
+    opacity: 1;
+    border-color: rgba(45, 212, 191, 0.4);
+    box-shadow:
+      0 0 0 1px rgba(45, 212, 191, 0.18),
+      0 0 18px rgba(20, 184, 166, 0.12);
+  }
+  50%,
+  100% {
+    opacity: 0.55;
+    border-color: rgba(30, 41, 59, 1);
+    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
+  }
+}
+
+@keyframes career-node-pulse {
+  0%,
+  16% {
+    border-color: rgba(251, 191, 36, 0.5);
+    box-shadow:
+      0 0 0 1px rgba(251, 191, 36, 0.18),
+      0 0 24px rgba(217, 119, 6, 0.14);
+  }
+  28%,
+  100% {
+    border-color: rgba(120, 53, 15, 0.3);
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+}
+
+@keyframes career-node-pulse-final {
+  0%,
+  20% {
+    border-color: rgba(253, 186, 116, 0.65);
+    box-shadow:
+      0 0 0 1px rgba(253, 186, 116, 0.3),
+      0 0 34px rgba(217, 119, 6, 0.22);
+  }
+  36%,
+  100% {
+    border-color: rgba(120, 53, 15, 0.3);
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+}
+
+@keyframes career-chip-reveal {
+  0%,
+  8% {
+    opacity: 0.3;
+    transform: translateY(2px);
+  }
+  16%,
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  85%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+}
+
+@keyframes career-bar-rise {
+  0%,
+  10% {
+    transform: scaleY(0.35);
+    opacity: 0.5;
+  }
+  30%,
+  75% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  90%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.5;
+  }
+}
+
+@keyframes career-dot-light {
+  0%,
+  10% {
+    opacity: 0.3;
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+  25%,
+  60% {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.8);
+  }
+  80%,
+  100% {
+    opacity: 0.3;
+    box-shadow: 0 0 0 rgba(251, 191, 36, 0);
+  }
+}
+
+@keyframes career-resource-fade {
+  0%,
+  10% {
+    opacity: 0.3;
+    transform: translateY(2px);
+  }
+  25%,
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  85%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+}
+
+@keyframes feature-chip-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(56, 189, 248, 0);
+    border-color: rgba(12, 74, 110, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.28);
+    border-color: rgba(56, 189, 248, 0.55);
+  }
+}
+
+@keyframes feature-row-glow {
+  0%,
+  76%,
+  100% {
+    border-color: rgba(30, 41, 59, 0.7);
+    box-shadow: 0 0 0 rgba(56, 189, 248, 0);
+  }
+  88% {
+    border-color: rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 14px rgba(14, 165, 233, 0.14);
+  }
+}
+
+@keyframes feature-token-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.06);
+    filter: brightness(1.25);
+  }
+}
+
+@keyframes workflow-card-activate {
+  0% {
+    box-shadow: 0 0 0 rgba(56, 189, 248, 0);
+  }
+  40% {
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35), 0 0 32px rgba(14, 165, 233, 0.16);
+  }
+  100% {
+    box-shadow: 0 0 0 rgba(56, 189, 248, 0);
   }
 }
 
@@ -782,15 +1449,33 @@
   }
 }
 
-@keyframes cta-particle {
-  0%,
-  100% {
-    transform: translateY(5px) scale(0.7);
-    opacity: 0.15;
+.cta-particle-field {
+  transition: transform 600ms ease-out;
+}
+
+.cta-converge-particle {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: #7dd3fc;
+  box-shadow: 0 0 7px rgba(125, 211, 252, 0.6);
+  animation: cta-converge var(--converge-duration, 10s) var(--converge-delay, 0s) ease-in infinite;
+}
+
+@keyframes cta-converge {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
   }
-  45% {
-    transform: translateY(-10px) scale(1);
-    opacity: 0.72;
+  18% {
+    opacity: 0.85;
+  }
+  85% {
+    opacity: 0.2;
+  }
+  100% {
+    transform: translate(var(--converge-dx, 0vw), var(--converge-dy, 0vh));
+    opacity: 0;
   }
 }
 

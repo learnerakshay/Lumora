@@ -67,10 +67,10 @@ function PricingCard({
 
       <article
         data-plan={card.plan}
-        className={`landing-card relative flex h-full flex-col rounded-2xl border p-6 ${
+        className={`landing-card pricing-card-calm relative flex h-full flex-col rounded-2xl border p-6 ${
           isPopular
-            ? 'border-cyan-300/50 bg-gradient-to-b from-cyan-400/[0.12] via-[#101826]/95 to-[#0d1420] shadow-[0_0_0_1px_rgba(34,211,238,0.08),0_24px_60px_rgba(8,145,178,0.16)] sm:pt-8'
-            : 'border-slate-800/90 bg-[#101826]/95'
+            ? 'border-cyan-300/45 bg-gradient-to-b from-cyan-400/[0.12] via-[#101826]/95 to-[#0d1420] shadow-[0_0_0_1px_rgba(34,211,238,0.08),0_24px_60px_rgba(8,145,178,0.16)] sm:pt-8'
+            : 'border-slate-800/45 bg-[#101826]/90'
         }`}
       >
         <div className="flex items-baseline justify-between gap-2">

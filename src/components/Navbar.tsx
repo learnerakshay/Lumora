@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { LogOut, User, Github, Twitter, Menu, X as CloseIcon } from 'lucide-react';
+import { LogOut, User, Github, Twitter, Menu, X as CloseIcon, ArrowRight } from 'lucide-react';
 import { LumoraBrand } from './landing/LumoraBrand';
 
 export function Navbar() {
@@ -54,8 +54,8 @@ export function Navbar() {
     <header
       className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-300 ${
         scrolled
-          ? 'bg-[#0b0f17]/85 backdrop-blur-md shadow-[inset_0_-1px_0_rgba(148,163,184,0.09)] py-3'
-          : 'bg-[#0b0f17]/30 backdrop-blur-sm py-4'
+          ? 'bg-[#0b0f17]/85 backdrop-blur-md shadow-[inset_0_-1px_0_rgba(56,189,248,0.16),0_12px_30px_-16px_rgba(2,8,23,0.7)] py-3'
+          : 'bg-[#0b0f17]/20 backdrop-blur-[2px] py-4'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
@@ -68,25 +68,25 @@ export function Navbar() {
         <nav className="hidden lg:flex items-center gap-1">
           <button
             onClick={() => handleNavClick('overview')}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
           >
             Overview
           </button>
           <button
             onClick={() => handleNavClick('features')}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
           >
             Features
           </button>
           <button
             onClick={() => handleNavClick('about')}
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
           >
             About
           </button>
           <Link
             to="/pricing"
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
           >
             Pricing
           </Link>
@@ -119,9 +119,10 @@ export function Navbar() {
             <div className="flex items-center gap-2.5">
               <Link
                 to="/workspaces"
-                className="rounded-lg border border-slate-700/70 bg-[#121824] px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-slate-600 hover:bg-[#182030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="landing-nav-cta inline-flex items-center gap-1.5 rounded-lg border border-slate-700/70 bg-[#121824] px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-slate-600 hover:bg-[#182030] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
-                Workspaces
+                <span>Workspaces</span>
+                <ArrowRight className="h-3 w-3" />
               </Link>
               <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-[#121824] px-3 py-1.5 text-xs text-slate-300">
                 <div className="flex h-5 w-5 items-center justify-center rounded-full border border-sky-800/60 bg-sky-950 text-[10px] font-semibold text-sky-300">

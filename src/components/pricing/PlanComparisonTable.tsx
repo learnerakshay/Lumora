@@ -43,8 +43,8 @@ const HIGHLIGHTED_PLAN = 'CORE';
 export function PlanComparisonTable() {
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-slate-800/90 bg-[#101826]/95">
-        <div className="border-b border-slate-800/80 px-5 py-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-800/45 bg-[#101826]/90">
+        <div className="border-b border-slate-800/40 px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">What changes with your plan</p>
           <p className="mt-0.5 text-[11px] text-slate-500">The five real usage differences, each {USAGE_WINDOW_LABEL}.</p>
         </div>
@@ -52,7 +52,7 @@ export function PlanComparisonTable() {
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
             <caption className="sr-only">Plan comparison across FREE, CORE, and MAX</caption>
             <thead>
-              <tr className="border-b border-slate-800/90">
+              <tr className="border-b border-slate-800/50">
                 <th scope="col" className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Allowance
                 </th>
@@ -80,7 +80,7 @@ export function PlanComparisonTable() {
                 return (
                   <tr
                     key={row.action}
-                    className={`border-b border-slate-800/50 last:border-b-0 ${index % 2 === 1 ? 'bg-slate-900/25' : ''}`}
+                    className={`border-b border-slate-800/25 last:border-b-0 ${index % 2 === 1 ? 'bg-slate-900/20' : ''}`}
                   >
                     <th scope="row" className="px-5 py-3 text-left text-xs font-medium text-slate-300">
                       <span className="flex items-center gap-2">
@@ -108,7 +108,7 @@ export function PlanComparisonTable() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-800/90 bg-[#101826]/95 p-5 sm:p-6">
+      <div className="rounded-2xl border border-slate-800/45 bg-[#101826]/90 p-5 sm:p-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">What every plan includes</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{SHARED_CAPABILITY_HEADER}</p>
         <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,8 +1,9 @@
 import React from 'react';
 import { HeroSection } from '../components/landing/HeroSection';
 import { HowItWorksSection } from '../components/landing/HowItWorksSection';
-import { LivingKnowledgeSection } from '../components/landing/LivingKnowledgeSection';
+import { EvidenceTrustSection } from '../components/landing/EvidenceTrustSection';
 import { FeaturesSection } from '../components/landing/FeaturesSection';
+import { CareerIntelligenceSection } from '../components/landing/CareerIntelligenceSection';
 import { PricingSection } from '../components/pricing/PricingSection';
 import { CtaSection } from '../components/landing/CtaSection';
 import { Footer } from '../components/landing/Footer';
@@ -18,8 +19,9 @@ export function HomePage() {
       <div className="relative z-10">
         <HeroSection />
         <HowItWorksSection />
-        <LivingKnowledgeSection />
+        <EvidenceTrustSection />
         <FeaturesSection />
+        <CareerIntelligenceSection />
         <PricingSection />
         <div className="landing-closing-surface relative overflow-hidden">
           <CtaSection />

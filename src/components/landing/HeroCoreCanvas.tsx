@@ -16,10 +16,24 @@ interface TravellingSignal {
 
 interface HeroCoreCanvasProps {
   onHoverChange?: (hovered: boolean) => void;
+  /** Hex color (e.g. '#22d3ee') of the source card currently hovered outside
+   * the canvas, or null when none is. Drives the "energy entering the core"
+   * reaction — a source card's connection line lighting up should visibly
+   * feed the core, not just animate in isolation. */
+  activeSourceColor?: string | null;
 }
 
-export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
+export function HeroCoreCanvas({ onHoverChange, activeSourceColor }: HeroCoreCanvasProps) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const externalEnergyRef = useRef<{ active: boolean; color: THREE.Color }>({
+    active: false,
+    color: new THREE.Color(0x7dd3fc),
+  });
+
+  useEffect(() => {
+    externalEnergyRef.current.active = Boolean(activeSourceColor);
+    if (activeSourceColor) externalEnergyRef.current.color.set(activeSourceColor);
+  }, [activeSourceColor]);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -37,7 +51,9 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
-    camera.position.z = mobile ? 8.1 : 7.25;
+    // ~25% larger apparent core: pulling the camera in (rather than scaling
+    // geometry) keeps every radius/edge-length constant used below correct.
+    camera.position.z = mobile ? 6.5 : 5.8;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -86,7 +102,7 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     const halo = new THREE.Mesh(haloGeometry, haloMaterial);
     system.add(halo);
 
-    const nodeCount = mobile ? 24 : 42;
+    const nodeCount = mobile ? 34 : 64;
     const nodes: NeuralNode[] = [];
     const nodePositions = new Float32Array(nodeCount * 3);
     const nodeColors = new Float32Array(nodeCount * 3);
@@ -124,6 +140,33 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
     });
     const nodeCloud = new THREE.Points(nodeGeometry, nodeMaterial);
     system.add(nodeCloud);
+
+    // A sparser outer shell of smaller, dimmer "dust" nodes — pure depth
+    // filler with its own slow independent drift, giving the core more
+    // dimensionality without touching the edge/signal graph below.
+    const dustCount = mobile ? 26 : 52;
+    const dustPositions = new Float32Array(dustCount * 3);
+    for (let index = 0; index < dustCount; index += 1) {
+      const y = 1 - (index / Math.max(1, dustCount - 1)) * 2;
+      const radius = Math.sqrt(Math.max(0, 1 - y * y));
+      const angle = goldenAngle * index * 1.31 + 1.4;
+      const shell = 1.7 + (index % 5) * 0.075;
+      dustPositions[index * 3] = Math.cos(angle) * radius * shell;
+      dustPositions[index * 3 + 1] = y * shell;
+      dustPositions[index * 3 + 2] = Math.sin(angle) * radius * shell;
+    }
+    const dustGeometry = new THREE.BufferGeometry();
+    dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    const dustMaterial = new THREE.PointsMaterial({
+      color: 0x67e8f9,
+      size: mobile ? 0.024 : 0.03,
+      transparent: true,
+      opacity: 0.32,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const dustCloud = new THREE.Points(dustGeometry, dustMaterial);
+    system.add(dustCloud);
 
     const edgePairs: Array<[number, number]> = [];
     for (let first = 0; first < nodeCount; first += 1) {
@@ -271,7 +314,15 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
         );
         const influence = pointerActive ? Math.max(0, 1 - distance / 0.42) : 0;
         nodeInfluence[index] = influence;
-        mixedColor.copy(nodeBaseColor).lerp(nodeHighlightColor, influence);
+        // Subtle Z-depth: nodes projected further from the camera read a
+        // touch dimmer, giving the cloud dimensionality instead of a flat
+        // wall of identical points.
+        const depthFactor = THREE.MathUtils.clamp(
+          THREE.MathUtils.mapLinear(projectedNode.z, -0.35, 0.35, 1, 0.55),
+          0.5,
+          1,
+        );
+        mixedColor.copy(nodeBaseColor).lerp(nodeHighlightColor, influence).multiplyScalar(depthFactor);
         mixedColor.toArray(nodeColors, index * 3);
       });
 
@@ -285,6 +336,11 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       (edgeGeometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
     };
 
+    const haloBaseColor = new THREE.Color(0x0ea5e9);
+    const haloWorkingColor = new THREE.Color();
+    let parallaxX = 0;
+    let parallaxZ = 0;
+
     const clock = new THREE.Clock();
     const render = () => {
       if (!inView || !pageVisible) return;
@@ -292,16 +348,36 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       updateGeometry(elapsed);
 
       if (!reducedMotion) {
-        hoverAmount += (hoverTarget - hoverAmount) * 0.055;
-        const activity = 1;
+        const externalEnergy = externalEnergyRef.current;
+        // A source card hovered outside the canvas feeds the core exactly
+        // like hovering the core directly — whichever signal is stronger
+        // wins, so the two never fight each other.
+        const effectiveHoverTarget = Math.max(hoverTarget, externalEnergy.active ? 0.9 : 0);
+        hoverAmount += (effectiveHoverTarget - hoverAmount) * 0.055;
+        const activity = 1 + hoverAmount * 0.85;
         core.rotation.y += 0.00215 * activity;
         core.rotation.z += 0.0009 * activity;
         nodeCloud.rotation.y -= 0.00058 * activity;
+        dustCloud.rotation.y += 0.00032 * activity;
+        dustCloud.rotation.x = Math.sin(elapsed * 0.09) * 0.05;
         edges.rotation.y = nodeCloud.rotation.y;
+
+        // Mild perspective/parallax: the whole system tilts a touch toward
+        // the pointer instead of only the node-color proximity effect.
+        const targetParallaxX = pointerActive ? -pointerNdc.y * 0.05 : 0;
+        const targetParallaxZ = pointerActive ? pointerNdc.x * 0.06 : 0;
+        parallaxX += (targetParallaxX - parallaxX) * 0.04;
+        parallaxZ += (targetParallaxZ - parallaxZ) * 0.04;
+        system.rotation.x = parallaxX;
+        system.rotation.z = parallaxZ;
+
         const breath = 1 + Math.sin(elapsed * 0.72) * 0.045;
         innerCore.scale.setScalar(breath);
         halo.scale.setScalar(1 + Math.sin(elapsed * 0.41 + 1.2) * 0.07);
-        haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012 + hoverAmount * 0.035;
+        haloMaterial.opacity = 0.035 + Math.sin(elapsed * 0.53) * 0.012 + hoverAmount * 0.09;
+        haloWorkingColor.copy(haloBaseColor).lerp(externalEnergy.color, externalEnergy.active ? hoverAmount : 0);
+        haloMaterial.color.copy(haloWorkingColor);
+        dustMaterial.opacity = 0.28 + Math.sin(elapsed * 0.6) * 0.06 + hoverAmount * 0.12;
         nodeMaterial.opacity = 0.9 + hoverAmount * 0.1;
 
         signals.forEach((signal, index) => {
@@ -392,6 +468,8 @@ export function HeroCoreCanvas({ onHoverChange }: HeroCoreCanvasProps) {
       haloMaterial.dispose();
       nodeGeometry.dispose();
       nodeMaterial.dispose();
+      dustGeometry.dispose();
+      dustMaterial.dispose();
       edgeGeometry.dispose();
       edgeMaterial.dispose();
       signalGeometry.dispose();
