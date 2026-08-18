@@ -58,6 +58,48 @@ test('payments.ts never meters usage — payments are not a metered action', () 
   assert.doesNotMatch(paymentsRouteSource, /checkAndReserve|commitUsage|discardUsage/);
 });
 
+// Phase 3A: POST /quote lets the UI preview a coupon's effect without
+// spending a real Razorpay order. It must be strictly read-only: same
+// server-authoritative amount resolution as /order, but no order, no
+// Payment row, and no usage metering.
+function extractQuoteHandler(): string {
+  const start = paymentsRouteSource.indexOf("paymentsRouter.post('/quote',");
+  const end = paymentsRouteSource.indexOf("paymentsRouter.post('/order',");
+  assert.ok(start >= 0 && end > start, 'expected a POST /quote handler defined before POST /order');
+  return paymentsRouteSource.slice(start, end);
+}
+
+test('POST /quote never reads amount, price, or currency off the request body', () => {
+  const handler = extractQuoteHandler();
+  assert.doesNotMatch(handler, /req\.body\??\.\s*amount/);
+  assert.doesNotMatch(handler, /req\.body\??\.\s*price/);
+  assert.doesNotMatch(handler, /req\.body\??\.\s*currency/);
+  assert.match(handler, /launchAmountFor\(plan\)/);
+});
+
+test('POST /quote never creates a Razorpay order, a Payment row, or meters usage', () => {
+  const handler = extractQuoteHandler();
+  assert.doesNotMatch(handler, /new RazorpayClient/);
+  assert.doesNotMatch(handler, /createOrder\(/);
+  assert.doesNotMatch(handler, /createPendingPayment\(/);
+  assert.doesNotMatch(handler, /checkAndReserve|commitUsage|discardUsage/);
+});
+
+test('POST /quote reuses the same coupon validation as POST /order (validateCoupon + findCouponByCode)', () => {
+  const handler = extractQuoteHandler();
+  assert.match(handler, /findCouponByCode\(/);
+  assert.match(handler, /validateCoupon\(/);
+  assert.match(handler, /countUserCapturedCouponRedemptions\(/);
+});
+
+test('POST /quote is mounted under requireApiAuth and respects the payments-enabled kill switch', () => {
+  // requireApiAuth is applied router-wide via paymentsRouter.use(requireApiAuth)
+  // (asserted separately above); here we confirm /quote specifically checks
+  // the enabled flag before doing any work.
+  const handler = extractQuoteHandler();
+  assert.match(handler, /requirePaymentsEnabled\(\)/);
+});
+
 // Server-authoritative amount: the client can only ever choose a plan and an
 // optional coupon code. If any of these leak into req.body reads, a client
 // could name its own price.

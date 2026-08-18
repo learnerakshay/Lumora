@@ -3,6 +3,7 @@ import { HeroSection } from '../components/landing/HeroSection';
 import { HowItWorksSection } from '../components/landing/HowItWorksSection';
 import { LivingKnowledgeSection } from '../components/landing/LivingKnowledgeSection';
 import { FeaturesSection } from '../components/landing/FeaturesSection';
+import { PricingSection } from '../components/pricing/PricingSection';
 import { CtaSection } from '../components/landing/CtaSection';
 import { Footer } from '../components/landing/Footer';
 import { LandingAtmosphere } from '../components/landing/LandingAtmosphere';
@@ -19,6 +20,7 @@ export function HomePage() {
         <HowItWorksSection />
         <LivingKnowledgeSection />
         <FeaturesSection />
+        <PricingSection />
         <div className="landing-closing-surface relative overflow-hidden">
           <CtaSection />
           <Footer />

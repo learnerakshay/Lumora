@@ -22,10 +22,12 @@ interface AuthContextType {
   signInWithProvider: (
     provider: 'google' | 'github' | 'email',
     emailInput?: string,
+    redirectTo?: string,
   ) => Promise<void>;
   signUpWithProvider: (
     provider: 'google' | 'github' | 'email',
     emailInput?: string,
+    redirectTo?: string,
   ) => Promise<void>;
   signOut: () => Promise<void>;
   authError: string | null;
@@ -67,19 +69,27 @@ function ClerkAuthContextProvider({ children }: { children: React.ReactNode }) {
       }
     : null;
 
-  const signInWithProvider = async () => {
+  const signInWithProvider = async (
+    _provider?: 'google' | 'github' | 'email',
+    _emailInput?: string,
+    redirectTo?: string,
+  ) => {
     setAuthError(null);
     try {
-      await clerk.redirectToSignIn({ redirectUrl: '/workspaces' });
+      await clerk.redirectToSignIn({ redirectUrl: redirectTo || '/workspaces' });
     } catch (error: any) {
       setAuthError(error.message || 'Authentication failed. Please try again.');
     }
   };
 
-  const signUpWithProvider = async () => {
+  const signUpWithProvider = async (
+    _provider?: 'google' | 'github' | 'email',
+    _emailInput?: string,
+    redirectTo?: string,
+  ) => {
     setAuthError(null);
     try {
-      await clerk.redirectToSignUp({ redirectUrl: '/workspaces' });
+      await clerk.redirectToSignUp({ redirectUrl: redirectTo || '/workspaces' });
     } catch (error: any) {
       setAuthError(error.message || 'Registration failed. Please try again.');
     }

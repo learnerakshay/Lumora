@@ -39,6 +39,12 @@ export function Footer() {
             <span>X (Twitter)</span>
           </a>
           <Link
+            to="/pricing"
+            className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          >
+            Pricing
+          </Link>
+          <Link
             to="/privacy"
             className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >

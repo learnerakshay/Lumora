@@ -11,7 +11,7 @@ export function Navbar() {
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isPublicPresentation = ['/', '/sign-in', '/sign-up'].includes(location.pathname);
+  const isPublicPresentation = ['/', '/sign-in', '/sign-up', '/pricing'].includes(location.pathname);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -84,6 +84,12 @@ export function Navbar() {
           >
             About
           </button>
+          <Link
+            to="/pricing"
+            className="text-xs font-medium text-slate-300 hover:text-sky-300 transition-colors cursor-pointer"
+          >
+            Pricing
+          </Link>
           <a
             href="https://github.com"
             target="_blank"
@@ -181,6 +187,13 @@ export function Navbar() {
           >
             About
           </button>
+          <Link
+            to="/pricing"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block w-full text-left py-2 text-sm text-slate-300 hover:text-sky-300"
+          >
+            Pricing
+          </Link>
 
           <div className="pt-3 border-t border-slate-800 flex flex-col space-y-2">
             {isSignedIn ? (

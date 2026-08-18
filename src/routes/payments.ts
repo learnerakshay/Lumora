@@ -78,6 +78,75 @@ paymentsRouter.get('/access', async (_req: Request, res: Response) => {
   }
 });
 
+// Body: { plan: 'CORE' | 'MAX', couponCode?: string } ONLY. Returns the
+// server-authoritative amount/discount a checkout would use, WITHOUT
+// creating a Razorpay order, a Payment row, or metering any usage. This
+// exists purely so the Phase 3 UI can show live coupon feedback (Apply/
+// Remove, invalid/expired/etc.) without spawning a real order per keystroke
+// retry. It reuses the exact same coupon validation as POST /order and is
+// intentionally NOT authoritative for the actual charge — POST /order
+// re-validates the coupon independently when the user actually pays.
+paymentsRouter.post('/quote', async (req: Request, res: Response) => {
+  const userId = res.locals.userId;
+  try {
+    requirePaymentsEnabled();
+
+    const requestedPlan = typeof req.body?.plan === 'string' ? req.body.plan.trim().toUpperCase() : '';
+    if (!isPaidPlan(requestedPlan)) {
+      const response = errorResponse(AppError.badRequest('plan must be CORE or MAX.', 'PAYMENT_INVALID_PLAN'));
+      return res.status(response.statusCode).json(response.payload);
+    }
+    const plan = requestedPlan as PaidPlan;
+    const baseAmount = launchAmountFor(plan);
+
+    const rawCouponCode = typeof req.body?.couponCode === 'string' ? req.body.couponCode.trim() : '';
+    if (!rawCouponCode) {
+      return res.status(200).json(
+        successResponse({
+          plan,
+          baseAmount,
+          discountAmount: 0,
+          finalAmount: baseAmount,
+          currency: getServerEnv().PAYMENTS_CURRENCY,
+          couponApplied: false,
+          couponCode: null,
+        }),
+      );
+    }
+
+    const coupon = await findCouponByCode(rawCouponCode);
+    const userRedemptions = coupon ? await countUserCapturedCouponRedemptions(userId, coupon.id) : 0;
+    const validation: CouponValidationResult = validateCoupon({
+      coupon,
+      plan,
+      amount: baseAmount,
+      userCapturedRedemptions: userRedemptions,
+      now: new Date(),
+    });
+
+    if (validation.valid !== true) {
+      const response = errorResponse(new AppError(validation.message, 400, validation.code));
+      return res.status(response.statusCode).json(response.payload);
+    }
+
+    return res.status(200).json(
+      successResponse({
+        plan,
+        baseAmount,
+        discountAmount: validation.discountAmount,
+        finalAmount: validation.finalAmount,
+        currency: getServerEnv().PAYMENTS_CURRENCY,
+        couponApplied: true,
+        couponCode: rawCouponCode,
+      }),
+    );
+  } catch (error) {
+    logger.error('Quote failed', error, { userId });
+    const response = errorResponse(error);
+    return res.status(response.statusCode).json(response.payload);
+  }
+});
+
 // Body: { plan: 'CORE' | 'MAX', couponCode?: string } ONLY. The amount is
 // always resolved server-side from config — this handler must never read
 // amount/price/currency off the request body.
