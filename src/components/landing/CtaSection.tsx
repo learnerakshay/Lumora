@@ -90,6 +90,12 @@ export function CtaSection() {
       ref={ctaRef}
       className="landing-section landing-horizon relative overflow-hidden px-4 pb-20 pt-24 text-center sm:px-6 lg:px-8"
     >
+      {/* Faint separation from Pricing above — a hairline, not a hard rule */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"
+      />
+
       {/* Cinematic closing atmosphere — slow teal aurora + converging data
           particles + a faint cursor parallax. Deliberately no knowledge
           sphere here; that visual stays unique to the hero. */}
@@ -98,7 +104,8 @@ export function CtaSection() {
           className="absolute bottom-0 left-1/2 h-[400px] w-[min(900px,90vw)] -translate-x-1/2 rounded-full bg-gradient-to-t from-sky-500/15 via-blue-500/8 to-transparent blur-[140px]"
           style={{ transform: 'translate(calc(-50% + var(--cta-parallax-x, 0px)), var(--cta-parallax-y, 0px))' }}
         />
-        <div className="landing-aurora absolute left-1/2 top-[8%] h-[380px] w-[min(80vw,820px)] -translate-x-1/2 rounded-full bg-gradient-to-tr from-teal-500/12 via-cyan-400/6 to-emerald-500/8 opacity-60 blur-[130px]" />
+        <div className="cta-aurora cta-aurora-a absolute left-[18%] top-[6%] h-[380px] w-[min(70vw,720px)] rounded-full bg-gradient-to-tr from-cyan-500/12 via-sky-400/6 to-transparent opacity-55 blur-[130px]" />
+        <div className="cta-aurora cta-aurora-b absolute right-[12%] top-[22%] h-[340px] w-[min(60vw,640px)] rounded-full bg-gradient-to-tl from-indigo-500/10 via-blue-500/6 to-transparent opacity-45 blur-[130px]" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-sky-950/20 via-transparent to-transparent pointer-events-none" />
         <div
           className="cta-particle-field absolute inset-0"
@@ -130,19 +137,26 @@ export function CtaSection() {
         </div>
 
         <h2 className="text-4xl sm:text-6xl font-bold tracking-tight text-white leading-tight">
+          Stop trusting answers you can&apos;t{' '}
           <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-blue-300 bg-clip-text text-transparent">
-            Evidence for what you know.
+            check.
           </span>
-          <br />
-          A path for what you don&apos;t.
         </h2>
 
         <p className="text-slate-300 text-base sm:text-lg max-w-xl mx-auto font-normal">
-          Bring your sources into a grounded Workspace, or bring your resume into Career Intelligence — either way,
-          you leave with a clear next step.
+          Bring your sources in. Get answers you can trace back — and a clear path for everything you haven&apos;t
+          learned yet.
         </p>
 
-        <div className="pt-4 flex flex-col items-center space-y-3">
+        <div className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1.5 text-[11px] text-slate-500">
+          <span>4 source types</span>
+          <span aria-hidden="true">·</span>
+          <span>Citation-verified answers</span>
+          <span aria-hidden="true">·</span>
+          <span>Free plan, no card</span>
+        </div>
+
+        <div className="pt-2 flex flex-col items-center space-y-3">
           {isSignedIn ? (
             <Link
               to="/workspaces"

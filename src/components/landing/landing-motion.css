@@ -37,6 +37,18 @@
    Evidence & Trust, Learning Essentials, and Career Intelligence cards.
    Position comes from --mx/--my (set via rAF in spotlight.ts, never React
    state); only opacity transitions, so hover is a single composited layer. */
+.product-shot-frame {
+  transform: rotateX(0deg);
+  transform-style: preserve-3d;
+  border-radius: 12px;
+  box-shadow: 0 40px 120px -20px rgba(56, 189, 248, 0.25);
+  transition: transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.product-shot-frame.is-tilted {
+  transform: rotateX(4deg);
+}
+
 .spotlight-card {
   position: relative;
   isolation: isolate;
@@ -281,6 +293,10 @@
 .landing-nav-link:focus-visible::after {
   opacity: 1;
   transform: scaleX(1);
+}
+
+.nav-active-underline {
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
 }
 
 .landing-nav-cta {
@@ -539,6 +555,56 @@
   animation-delay: var(--token-delay, 0s);
 }
 
+/* A single lock "click" on hover, layered alongside the existing infinite
+   breathing glow (comma-separated animations don't fight — one only ever
+   touches transform, the other only opacity/filter). */
+.spotlight-card:hover .landing-lock {
+  animation: landing-lock-breathe 4s ease-in-out infinite, landing-lock-click 350ms ease-out;
+}
+
+/* Citation rows: a cyan left-border draws downward on hover, staggered —
+   the same "traced back to" grammar used in Evidence & Trust. */
+.feature-citation-row {
+  position: relative;
+  padding-left: 0.7rem;
+}
+
+.feature-citation-row::before {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  content: '';
+  background: #38bdf8;
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 300ms ease;
+}
+
+.spotlight-card:hover .feature-citation-row:nth-child(1)::before {
+  transform: scaleY(1);
+}
+
+.spotlight-card:hover .feature-citation-row:nth-child(2)::before {
+  transform: scaleY(1);
+  transition-delay: 150ms;
+}
+
+.feature-stream-pill {
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-stream-pill::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.14), transparent);
+  transform: translateX(-100%);
+  animation: feature-stream-shimmer 2.6s linear infinite;
+}
+
 .landing-feature-hero {
   background:
     radial-gradient(circle at 12% 0%, rgba(14, 165, 233, 0.085), transparent 44%),
@@ -597,6 +663,24 @@
   animation: workflow-card-activate 900ms var(--landing-ease) both;
 }
 
+/* Understand's progress fill: 0 -> 100% once, the instant its stage
+   activates in the Collect -> Understand -> Transform cascade. */
+.workflow-progress-fill {
+  width: 0%;
+  transition: width 900ms ease;
+}
+
+.workflow-card-soft.is-live .workflow-progress-fill {
+  width: 100%;
+}
+
+/* Hovering any stage nudges the adjacent data-highway packets slightly
+   faster — a small "this is wired together" cue. Progressive enhancement:
+   harmless no-op in browsers without :has() support. */
+.workflow-pipeline:has(.workflow-card-soft:hover) .workflow-packet {
+  animation-duration: 3.4s;
+}
+
 .living-input,
 .living-output {
   position: relative;
@@ -644,31 +728,24 @@
     background-color 420ms ease;
 }
 
-/* Evidence & Trust: Question -> Claim -> Evidence -> Verdict chain. A
-   one-time GSAP reveal adds .is-cycling, after which everything below is a
-   plain CSS loop — no JS keeps it alive. */
+/* Evidence & Trust: self-playing Question -> Claim -> Evidence -> Verdict
+   demo. State (active step, which of the two example paths) is real React
+   state now — these rules just style the resulting classes/attributes,
+   they don't drive an ambient loop of their own. */
 .evidence-node {
   position: relative;
   overflow: hidden;
+  cursor: pointer;
   transition:
-    transform 350ms var(--landing-ease),
+    opacity 350ms ease,
     border-color 300ms ease,
+    background-color 300ms ease,
     box-shadow 350ms ease;
 }
 
-.evidence-node:hover {
-  transform: translateY(-2px);
-  border-color: rgba(45, 212, 191, 0.4);
+.evidence-node.is-active {
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.18), 0 18px 46px rgba(2, 8, 23, 0.3);
 }
-
-.evidence-chain.is-cycling .evidence-node {
-  animation: evidence-node-pulse 8s ease-in-out infinite;
-}
-
-.evidence-chain.is-cycling .evidence-node[data-step='0'] { animation-delay: 0s; }
-.evidence-chain.is-cycling .evidence-node[data-step='1'] { animation-delay: 2s; }
-.evidence-chain.is-cycling .evidence-node[data-step='2'] { animation-delay: 4s; }
-.evidence-chain.is-cycling .evidence-node[data-step='3'] { animation-delay: 6s; }
 
 .evidence-highway {
   overflow: visible;
@@ -678,52 +755,77 @@
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: repeating-linear-gradient(90deg, rgba(45, 212, 191, 0.38) 0 5px, transparent 5px 13px);
+  background: repeating-linear-gradient(90deg, rgba(45, 212, 191, 0.28) 0 5px, transparent 5px 13px);
   opacity: 0.5;
 }
 
-.evidence-flow-dot {
+.evidence-highway-fill {
   position: absolute;
-  top: 50%;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
+  inset: 0;
   border-radius: 999px;
-  background: #5eead4;
-  box-shadow:
-    0 0 8px #2dd4bf,
-    0 0 18px rgba(20, 184, 166, 0.7);
-  animation: evidence-flow-travel 4.8s linear infinite;
-  animation-delay: var(--flow-delay, 0s);
+  background: linear-gradient(90deg, #0d9488, #5eead4);
+  box-shadow: 0 0 10px rgba(45, 212, 191, 0.5);
+  transition: width 400ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .evidence-outcome {
   position: relative;
-  transition: border-color 500ms ease, box-shadow 500ms ease, transform 350ms var(--landing-ease);
 }
 
-.evidence-outcome:hover {
-  transform: translateY(-2px);
-}
-
-.evidence-outcomes.is-cycling .evidence-outcome[data-outcome='grounded'] {
-  animation: evidence-outcome-grounded 10s ease-in-out infinite;
-}
-
-.evidence-outcomes.is-cycling .evidence-outcome[data-outcome='general'] {
-  animation: evidence-outcome-general 10s ease-in-out infinite;
-}
-
+/* The citation left-border "draws" downward (scaleY from the top) only
+   once this outcome is the emphasized one — not an ambient loop. */
 .evidence-citation-row {
-  opacity: 0.4;
-  animation: evidence-citation-reveal 10s ease-in-out infinite;
-  animation-delay: var(--row-delay, 0s);
+  position: relative;
+  padding-left: 0.85rem;
+  opacity: 0.45;
+  transform: translateY(-2px);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.evidence-citation-row::before {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  content: '';
+  background: #2dd4bf;
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 300ms ease;
+}
+
+.evidence-outcome.is-emphasized .evidence-citation-row {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 120ms;
+}
+
+.evidence-outcome.is-emphasized .evidence-citation-row:nth-child(2) {
+  transition-delay: 260ms;
+}
+
+.evidence-outcome.is-emphasized .evidence-citation-row::before {
+  transform: scaleY(1);
+  transition-delay: 180ms;
+}
+
+.evidence-outcome.is-emphasized .evidence-citation-row:nth-child(2)::before {
+  transition-delay: 320ms;
 }
 
 /* Career Intelligence: a 10-node grid/timeline (never a horizontal-scroll
    strip) cascading an amber "signal" left-to-right, top-to-bottom once it
    scrolls into view, then looping ambiently. */
+.career-thread-path {
+  fill: none;
+  stroke: rgba(251, 191, 36, 0.32);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 2px rgba(217, 119, 6, 0.25));
+}
+
 .career-node {
   position: relative;
   overflow: hidden;
@@ -1138,95 +1240,6 @@
   }
 }
 
-@keyframes evidence-node-pulse {
-  0%,
-  22% {
-    border-color: rgba(45, 212, 191, 0.55);
-    box-shadow:
-      0 0 0 1px rgba(45, 212, 191, 0.2),
-      0 0 26px rgba(20, 184, 166, 0.16);
-  }
-  32%,
-  100% {
-    border-color: rgba(51, 65, 85, 0.55);
-    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
-  }
-}
-
-@keyframes evidence-flow-travel {
-  0% {
-    left: 0;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    left: 100%;
-    opacity: 0;
-  }
-}
-
-@keyframes evidence-outcome-grounded {
-  0%,
-  40% {
-    border-color: rgba(16, 185, 129, 0.55);
-    box-shadow:
-      0 0 0 1px rgba(16, 185, 129, 0.16),
-      0 20px 46px rgba(5, 150, 105, 0.12);
-  }
-  55%,
-  100% {
-    border-color: rgba(16, 185, 129, 0.22);
-    box-shadow: 0 0 0 rgba(16, 185, 129, 0);
-  }
-}
-
-@keyframes evidence-outcome-general {
-  0%,
-  40% {
-    border-color: rgba(100, 116, 139, 0.5);
-    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
-  }
-  55%,
-  90% {
-    border-color: rgba(148, 163, 184, 0.4);
-    box-shadow:
-      0 0 0 1px rgba(148, 163, 184, 0.12),
-      0 20px 46px rgba(51, 65, 85, 0.16);
-  }
-  100% {
-    border-color: rgba(100, 116, 139, 0.5);
-    box-shadow: 0 0 0 rgba(148, 163, 184, 0);
-  }
-}
-
-@keyframes evidence-citation-reveal {
-  0%,
-  8% {
-    opacity: 0.3;
-    border-color: rgba(30, 41, 59, 1);
-    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
-  }
-  16%,
-  38% {
-    opacity: 1;
-    border-color: rgba(45, 212, 191, 0.4);
-    box-shadow:
-      0 0 0 1px rgba(45, 212, 191, 0.18),
-      0 0 18px rgba(20, 184, 166, 0.12);
-  }
-  50%,
-  100% {
-    opacity: 0.55;
-    border-color: rgba(30, 41, 59, 1);
-    box-shadow: 0 0 0 rgba(45, 212, 191, 0);
-  }
-}
-
 @keyframes career-node-pulse {
   0%,
   16% {
@@ -1354,6 +1367,21 @@
   }
 }
 
+@keyframes landing-lock-click {
+  0% {
+    transform: rotate(-8deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes feature-stream-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @keyframes feature-token-pulse {
   0%,
   100% {
@@ -1477,6 +1505,16 @@
   }
 }
 
+/* Final CTA aurora — slow enough to be felt, not seen: full loop well
+   past 25s so it never reads as an obvious animation. */
+.cta-aurora-a {
+  animation: cta-aurora-drift-a 27s ease-in-out infinite alternate;
+}
+
+.cta-aurora-b {
+  animation: cta-aurora-drift-b 32s ease-in-out infinite alternate;
+}
+
 .cta-particle-field {
   transition: transform 600ms ease-out;
 }
@@ -1488,6 +1526,24 @@
   background: #7dd3fc;
   box-shadow: 0 0 7px rgba(125, 211, 252, 0.6);
   animation: cta-converge var(--converge-duration, 10s) var(--converge-delay, 0s) ease-in infinite;
+}
+
+@keyframes cta-aurora-drift-a {
+  from {
+    transform: translate3d(0, 0, 0) scale(0.94);
+  }
+  to {
+    transform: translate3d(3%, 4%, 0) scale(1.08);
+  }
+}
+
+@keyframes cta-aurora-drift-b {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(-4%, -3%, 0) scale(0.92);
+  }
 }
 
 @keyframes cta-converge {

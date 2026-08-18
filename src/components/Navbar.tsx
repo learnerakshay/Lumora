@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { LogOut, User, Github, Twitter, Menu, X as CloseIcon, ArrowRight } from 'lucide-react';
 import { LumoraBrand } from './landing/LumoraBrand';
+
+const NAV_SECTION_IDS = ['overview', 'features', 'about'] as const;
+type NavSectionId = (typeof NAV_SECTION_IDS)[number];
 
 export function Navbar() {
   const { isSignedIn, user, signOut } = useAuth();
@@ -11,15 +14,60 @@ export function Navbar() {
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<NavSectionId | null>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const isPublicPresentation = ['/', '/sign-in', '/sign-up', '/pricing'].includes(location.pathname);
+
+  const navListRef = useRef<HTMLElement>(null);
+  const navButtonRefs = useRef<Partial<Record<NavSectionId, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
+      setScrolled(window.scrollY > 40);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Active-section underline: which landing anchor is currently in view.
+  // Only meaningful on "/" — the other public routes don't have these
+  // sections at all.
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      setActiveSection(null);
+      return;
+    }
+    const elements = NAV_SECTION_IDS.map((id) => document.getElementById(id)).filter(
+      (el): el is HTMLElement => el !== null,
+    );
+    if (elements.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // The rootMargin below shrinks the observed viewport to a thin band
+        // near center; sections here are far taller than that band, so
+        // intersectionRatio stays tiny (never crosses a ratio threshold) —
+        // threshold 0 + isIntersecting is the correct boolean signal.
+        const inBand = entries.find((entry) => entry.isIntersecting);
+        if (inBand) setActiveSection(inBand.target.id as NavSectionId);
+      },
+      { rootMargin: '-40% 0px -55% 0px', threshold: 0 },
+    );
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [location.pathname]);
+
+  // Recompute the underline's position (a transform, not a re-layout on
+  // every scroll tick) only when the active section actually changes.
+  useEffect(() => {
+    const button = activeSection ? navButtonRefs.current[activeSection] : null;
+    if (button && navListRef.current) {
+      const navRect = navListRef.current.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      setIndicator({ left: buttonRect.left - navRect.left, width: buttonRect.width });
+    } else {
+      setIndicator(null);
+    }
+  }, [activeSection]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -52,7 +100,7 @@ export function Navbar() {
 
   return (
     <header
-      className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-300 ${
+      className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-[250ms] ${
         scrolled
           ? 'bg-[#0b0f17]/85 backdrop-blur-md shadow-[inset_0_-1px_0_rgba(56,189,248,0.16),0_12px_30px_-16px_rgba(2,8,23,0.7)] py-3'
           : 'bg-[#0b0f17]/20 backdrop-blur-[2px] py-4'
@@ -65,22 +113,25 @@ export function Navbar() {
         </Link>
 
         {/* Desktop Nav Links (Public) */}
-        <nav className="hidden lg:flex items-center gap-1">
+        <nav ref={navListRef} className="relative hidden lg:flex items-center gap-1">
           <button
+            ref={(el) => { navButtonRefs.current.overview = el; }}
             onClick={() => handleNavClick('overview')}
-            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className={`landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer ${activeSection === 'overview' ? 'text-sky-300' : 'text-slate-300 hover:text-sky-300'}`}
           >
             Overview
           </button>
           <button
+            ref={(el) => { navButtonRefs.current.features = el; }}
             onClick={() => handleNavClick('features')}
-            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className={`landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer ${activeSection === 'features' ? 'text-sky-300' : 'text-slate-300 hover:text-sky-300'}`}
           >
             Features
           </button>
           <button
+            ref={(el) => { navButtonRefs.current.about = el; }}
             onClick={() => handleNavClick('about')}
-            className="landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            className={`landing-nav-link rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer ${activeSection === 'about' ? 'text-sky-300' : 'text-slate-300 hover:text-sky-300'}`}
           >
             About
           </button>
@@ -90,6 +141,14 @@ export function Navbar() {
           >
             Pricing
           </Link>
+
+          {indicator && (
+            <span
+              aria-hidden="true"
+              className="nav-active-underline pointer-events-none absolute bottom-0 h-[2px] rounded-full bg-sky-400 transition-all duration-300 ease-out"
+              style={{ transform: `translateX(${indicator.left}px)`, width: `${indicator.width}px` }}
+            />
+          )}
 
           <span aria-hidden="true" className="mx-2 h-4 w-px bg-slate-800" />
 
@@ -171,85 +230,94 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Menu Dropdown */}
+      {/* Mobile full-screen nav overlay — the header (z-50) stays above it,
+          so the hamburger/close toggle remains reachable throughout. */}
       {mobileMenuOpen && (
-        <div className="animate-fade-in lg:hidden space-y-1 bg-[#0d1420]/98 backdrop-blur-md px-4 pt-3 pb-5 shadow-[inset_0_1px_0_rgba(148,163,184,0.08)]">
-          <button
-            onClick={() => handleNavClick('overview')}
-            className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        <div
+          className="mobile-nav-overlay animate-fade-in fixed inset-0 z-40 flex flex-col bg-[#0a0e16]/97 backdrop-blur-md lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="flex flex-1 flex-col justify-center gap-1.5 px-6 pb-16 pt-20"
+            onClick={(event) => event.stopPropagation()}
           >
-            Overview
-          </button>
-          <button
-            onClick={() => handleNavClick('features')}
-            className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Features
-          </button>
-          <button
-            onClick={() => handleNavClick('about')}
-            className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            About
-          </button>
-          <Link
-            to="/pricing"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block w-full rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Pricing
-          </Link>
-
-          <div className="mt-2 flex items-center gap-1 border-t border-slate-800/70 pt-3">
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              title="GitHub Repository"
+            <button
+              onClick={() => handleNavClick('overview')}
+              className="block w-full rounded-lg px-3 py-3 text-left text-lg font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
             >
-              <Github className="w-4 h-4" />
-            </a>
-            <a
-              href="https://x.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              title="X (Twitter)"
+              Overview
+            </button>
+            <button
+              onClick={() => handleNavClick('features')}
+              className="block w-full rounded-lg px-3 py-3 text-left text-lg font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
             >
-              <Twitter className="w-4 h-4" />
-            </a>
-          </div>
+              Features
+            </button>
+            <button
+              onClick={() => handleNavClick('about')}
+              className="block w-full rounded-lg px-3 py-3 text-left text-lg font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            >
+              About
+            </button>
+            <Link
+              to="/pricing"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block w-full rounded-lg px-3 py-3 text-left text-lg font-medium text-slate-200 transition-colors hover:bg-white/5 hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            >
+              Pricing
+            </Link>
 
-          <div className="flex flex-col gap-2 pt-3">
-            {isSignedIn ? (
-              <>
-                <Link
-                  to="/workspaces"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full rounded-lg bg-sky-500 py-2.5 text-center text-xs font-semibold text-slate-950 transition-colors hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                >
-                  Open Lumora
-                </Link>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    handleSignOut();
-                  }}
-                  className="w-full rounded-lg border border-red-900/50 bg-red-950/40 py-2.5 text-center text-xs text-red-300 transition-colors hover:bg-red-950/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-                >
-                  Sign Out
-                </button>
-              </>
-            ) : (
-              <Link
-                to="/sign-in"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full rounded-lg bg-sky-400 py-2.5 text-center text-xs font-semibold text-slate-950 shadow-sm transition-colors hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            <div className="mt-4 flex items-center gap-1 border-t border-slate-800/70 pt-4">
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                title="GitHub Repository"
               >
-                Try Lumora
-              </Link>
-            )}
+                <Github className="w-5 h-5" />
+              </a>
+              <a
+                href="https://x.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                title="X (Twitter)"
+              >
+                <Twitter className="w-5 h-5" />
+              </a>
+            </div>
+
+            <div className="flex flex-col gap-2.5 pt-5">
+              {isSignedIn ? (
+                <>
+                  <Link
+                    to="/workspaces"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full rounded-lg bg-sky-500 py-3 text-center text-sm font-semibold text-slate-950 transition-colors hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                  >
+                    Open Lumora
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleSignOut();
+                    }}
+                    className="w-full rounded-lg border border-red-900/50 bg-red-950/40 py-3 text-center text-sm text-red-300 transition-colors hover:bg-red-950/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  >
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <Link
+                  to="/sign-in"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full rounded-lg bg-sky-400 py-3 text-center text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                >
+                  Try Lumora
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       )}
