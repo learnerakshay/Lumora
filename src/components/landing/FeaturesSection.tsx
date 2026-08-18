@@ -44,7 +44,7 @@ export function FeaturesSection() {
                 accent="cyan"
                 key={feature.id}
                 data-feature={feature.id}
-                className={`landing-card feature-card group flex flex-col rounded-2xl border bg-[#101826]/90 p-6 shadow-lg ${isHero ? 'landing-feature-hero min-h-60 border-sky-900/35 sm:col-span-2 lg:col-span-1' : 'min-h-48 border-slate-800/45'} ${feature.id === 'chat' ? 'lg:col-span-2' : ''}`}
+                className={`landing-card feature-card group flex flex-col rounded-2xl border bg-[#101826]/90 shadow-lg ${isHero ? 'landing-feature-hero min-h-60 border-sky-900/35 p-6 sm:col-span-2 lg:col-span-1' : 'min-h-48 border-slate-800/45 p-5'} ${feature.id === 'chat' ? 'lg:col-span-2' : ''}`}
               >
                 <div className="landing-icon flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-sky-400 group-hover:bg-sky-950/40">
                   <Icon className="h-5 w-5" />
@@ -104,7 +104,7 @@ export function FeaturesSection() {
 
                 {feature.id === 'streaming' && (
                   <div className="relative z-10 mt-auto pt-5" aria-hidden="true">
-                    <div className="flex items-center gap-1.5 rounded-lg border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-[10px] text-slate-400">
+                    <div className="feature-stream-pill flex items-center gap-1.5 rounded-lg border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-[10px] text-slate-400">
                       <span className="flex items-center gap-0.5">
                         <span className="landing-typing-dot h-1 w-1 rounded-full bg-sky-400" style={{ animationDelay: '0ms' }} />
                         <span className="landing-typing-dot h-1 w-1 rounded-full bg-sky-400" style={{ animationDelay: '140ms' }} />

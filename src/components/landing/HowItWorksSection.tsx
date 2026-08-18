@@ -99,7 +99,7 @@ export function HowItWorksSection() {
         </div>
 
         {/* 3-Step Interactive Visual Flow */}
-        <div className="relative">
+        <div className="workflow-pipeline relative">
           <div
             ref={connectorRef}
             aria-hidden="true"
@@ -193,6 +193,9 @@ export function HowItWorksSection() {
                   <p className="text-[10px] text-slate-400">Your sources, prepared for learning</p>
                 </div>
                 <div className="landing-signal w-full" />
+                <div className="workflow-progress-track h-1 w-full overflow-hidden rounded-full bg-slate-800/70" aria-hidden="true">
+                  <div className="workflow-progress-fill h-full rounded-full bg-gradient-to-r from-sky-400 to-teal-300" />
+                </div>
               </div>
             </div>
 

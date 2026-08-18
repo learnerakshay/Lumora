@@ -48,6 +48,7 @@ export function CareerIntelligenceSection() {
   const ctaRef = useRef<HTMLDivElement>(null);
   const fitFillRef = useRef<HTMLDivElement>(null);
   const fitValueRef = useRef<HTMLSpanElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -59,10 +60,16 @@ export function CareerIntelligenceSection() {
       timeline
         .fromTo(headingRef.current, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out' })
         .fromTo(
+          pathRef.current,
+          { strokeDashoffset: 1 },
+          { strokeDashoffset: 0, duration: 1.4, ease: 'power2.inOut' },
+          '-=0.1',
+        )
+        .fromTo(
           gridRef.current ? gridRef.current.children : [],
           { opacity: 0, y: 20 },
           { opacity: 1, y: 0, stagger: 0.05, duration: 0.34, ease: 'power3.out' },
-          '-=0.16',
+          '-=1.3',
         )
         .fromTo(ctaRef.current, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.34, ease: 'power3.out' }, '-=0.1')
         .call(() => gridRef.current?.classList.add('is-cycling'));
@@ -109,7 +116,25 @@ export function CareerIntelligenceSection() {
           </p>
         </div>
 
-        <div ref={gridRef} className="career-grid grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="relative">
+          {/* Threads through all 10 cards in order, drawing itself once on
+              scroll-in. Hidden below lg — at 1/2-column layouts the grid
+              no longer matches this 5x2 geometry, and per spec "hidden is
+              acceptable; broken is not" rather than recomputing it live. */}
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-0 hidden h-full w-full lg:block"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <path
+              ref={pathRef}
+              d="M 10 25 L 30 25 L 50 25 L 70 25 L 90 25 Q 100 42 96 50 Q 50 62 10 75 L 30 75 L 50 75 L 70 75 L 90 75"
+              className="career-thread-path"
+              pathLength="1"
+            />
+          </svg>
+          <div ref={gridRef} className="career-grid relative z-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {CAREER_STEPS.map((step, index) => (
             <SpotlightCard
               key={step.key}
@@ -186,6 +211,7 @@ export function CareerIntelligenceSection() {
               )}
             </SpotlightCard>
           ))}
+          </div>
         </div>
 
         <div ref={ctaRef} className="flex justify-center">

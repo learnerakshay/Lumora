@@ -1,78 +1,95 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, HelpCircle, Search, ShieldCheck, Sparkles, Target } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { SpotlightCard } from './motion/SpotlightCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
-const CHAIN_STEPS = [
-  {
-    key: 'question',
-    label: 'Question',
-    icon: HelpCircle,
-    detail: '"What is the strongest finding across my sources?"',
-  },
-  {
-    key: 'claim',
-    label: 'Claim',
-    icon: Target,
-    detail: 'Lumora identifies what a grounded answer would need to assert.',
-  },
-  {
-    key: 'evidence',
-    label: 'Evidence',
-    icon: Search,
-    detail: 'Retrieval searches your Workspace for passages that could support it.',
-  },
-  {
-    key: 'verdict',
-    label: 'Verdict',
-    icon: ShieldCheck,
-    detail: 'Lumora decides whether the evidence actually covers the claim — not just whether chunks came back.',
-  },
+const AUTOPLAY_INTERVAL_MS = 2600;
+
+type Outcome = 'grounded' | 'general';
+
+const STEP_META = [
+  { key: 'question', label: 'Question', icon: HelpCircle },
+  { key: 'claim', label: 'Claim', icon: Target },
+  { key: 'evidence', label: 'Evidence', icon: Search },
+  { key: 'verdict', label: 'Verdict', icon: ShieldCheck },
 ] as const;
 
+// Two real demonstrations run through the same four steps — this is what
+// actually makes the GROUNDED/GENERAL distinction land as a proof rather
+// than a claim: the visitor picks a question and watches Lumora's own
+// evidence-sufficiency judgment produce a different verdict.
+const PATHS: Record<Outcome, string[]> = {
+  grounded: [
+    '"What is the strongest finding across my sources?"',
+    'Lumora identifies what a grounded answer would need to assert.',
+    'Retrieval finds Research.pdf (Page 3) and docs.ai/specs (Section 2) directly addressing it.',
+    'Evidence covers the claim — Lumora answers from your Workspace, with citations.',
+  ],
+  general: [
+    '"What\'s the capital of France?"',
+    'Lumora identifies what a grounded answer would need to assert.',
+    'Retrieval finds nothing in your Workspace addressing it.',
+    'No Workspace evidence covers the claim — Lumora answers from general knowledge instead.',
+  ],
+};
+
 // Evidence & Trust — Lumora's real differentiator, not a restatement of the
-// hero. The hero shows sources feeding a knowledge core; this section shows
-// the judgment call that happens after retrieval: Question -> Claim ->
-// Evidence -> Verdict, then a GROUNDED vs GENERAL fork so the visitor can
-// see the distinction the product rule ("retrieval finds candidate
-// evidence, Lumora decides whether it's enough") actually makes visible.
+// hero. A self-playing Question -> Claim -> Evidence -> Verdict demo (one
+// of two real example paths, picked via the toggle) proves the product
+// rule ("retrieval finds candidate evidence, Lumora decides whether it's
+// enough") instead of just stating it.
 export function EvidenceTrustSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLDivElement>(null);
-  const chainRef = useRef<HTMLDivElement>(null);
-  const outcomesRef = useRef<HTMLDivElement>(null);
+
+  const [outcome, setOutcome] = useState<Outcome>('grounded');
+  const [activeStep, setActiveStep] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 3 : 0,
+  );
+  const [autoplay, setAutoplay] = useState(true);
+  const [inView, setInView] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     const ctx = gsap.context(() => {
-      const timeline = gsap.timeline({
-        scrollTrigger: { trigger: sectionRef.current, start: 'top 72%', once: true },
-      });
-      timeline
-        .fromTo(headingRef.current, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out' })
-        .fromTo(
-          chainRef.current ? chainRef.current.querySelectorAll('.evidence-node') : [],
-          { opacity: 0, y: 20 },
-          { opacity: 1, y: 0, stagger: 0.12, duration: 0.34, ease: 'power3.out' },
-          '-=0.16',
-        )
-        .fromTo(
-          outcomesRef.current,
-          { opacity: 0, y: 24 },
-          { opacity: 1, y: 0, duration: 0.4, ease: 'power3.out' },
-          '-=0.1',
-        )
-        // Once the reveal finishes, hand off to the always-on ambient
-        // cycle below (pure CSS, no further JS driving it).
-        .call(() => chainRef.current?.classList.add('is-cycling'))
-        .call(() => outcomesRef.current?.classList.add('is-cycling'));
+      gsap.fromTo(
+        headingRef.current,
+        { opacity: 0, y: 24 },
+        { opacity: 1, y: 0, duration: 0.36, ease: 'power3.out', scrollTrigger: { trigger: sectionRef.current, start: 'top 76%' } },
+      );
     }, sectionRef);
-
     return () => ctx.revert();
   }, []);
+
+  // Advance only while the demo is actually visible — never burn frames
+  // animating a section nobody is looking at.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.3 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!autoplay || !inView || hovered) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const interval = window.setInterval(() => {
+      setActiveStep((step) => (step + 1) % STEP_META.length);
+    }, AUTOPLAY_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [autoplay, inView, hovered]);
+
+  const jumpToStep = (index: number) => {
+    setAutoplay(false);
+    setActiveStep(index);
+  };
 
   return (
     <section ref={sectionRef} className="landing-section relative overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
@@ -91,42 +108,77 @@ export function EvidenceTrustSection() {
             Retrieval finds candidate evidence. Lumora decides whether that evidence is actually enough before it
             calls an answer grounded — and says so plainly when it isn&apos;t.
           </p>
+
+          <div className="inline-flex items-center gap-1 rounded-full border border-slate-800 bg-slate-900/70 p-1 text-[11px]" role="group" aria-label="Choose which example to demonstrate">
+            <button
+              type="button"
+              onClick={() => setOutcome('grounded')}
+              aria-pressed={outcome === 'grounded'}
+              className={`rounded-full px-3 py-1.5 font-medium transition-colors ${outcome === 'grounded' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              Evidence covers it
+            </button>
+            <button
+              type="button"
+              onClick={() => setOutcome('general')}
+              aria-pressed={outcome === 'general'}
+              className={`rounded-full px-3 py-1.5 font-medium transition-colors ${outcome === 'general' ? 'bg-slate-700/50 text-slate-200' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              Evidence doesn&apos;t
+            </button>
+          </div>
         </div>
 
-        {/* Question -> Claim -> Evidence -> Verdict */}
-        <div ref={chainRef} className="evidence-chain relative">
-          <div
-            aria-hidden="true"
-            className="evidence-highway absolute left-[6%] right-[6%] top-[38px] hidden h-[2px] lg:block"
-          >
+        {/* Question -> Claim -> Evidence -> Verdict — self-playing, pausable */}
+        <div
+          className="evidence-chain relative"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          <div aria-hidden="true" className="evidence-highway absolute left-[6%] right-[6%] top-[38px] hidden h-[3px] lg:block">
             <span className="evidence-highway-track" />
-            <span className="evidence-flow-dot" style={{ '--flow-delay': '0s' } as React.CSSProperties} />
-            <span className="evidence-flow-dot" style={{ '--flow-delay': '-2.4s' } as React.CSSProperties} />
+            <div
+              className="evidence-highway-fill"
+              style={{ width: `${((activeStep + 1) / STEP_META.length) * 100}%` }}
+            />
           </div>
           <div className="relative grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {CHAIN_STEPS.map((step, index) => (
-              <div
-                key={step.key}
-                data-step={index}
-                className="evidence-node relative rounded-2xl border border-slate-800/55 bg-[#101826]/90 p-5"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-800/50 bg-teal-950/30 text-teal-300">
-                    <step.icon className="h-4 w-4" />
+            {STEP_META.map((step, index) => {
+              const isActive = index === activeStep;
+              return (
+                <SpotlightCard
+                  key={step.key}
+                  as="article"
+                  accent="cyan"
+                  data-step={index}
+                  className={`evidence-node relative rounded-2xl border p-5 text-left transition-colors ${isActive ? 'is-active border-teal-500/55 bg-[#101826]' : 'border-slate-800/55 bg-[#101826]/70 opacity-55'}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => jumpToStep(index)}
+                    className="absolute inset-0 z-10 w-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+                    aria-label={`Jump to ${step.label}`}
+                  />
+                  <div className="relative z-0 flex items-center gap-2.5">
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-lg border text-teal-300 transition-shadow ${isActive ? 'border-teal-500/60 bg-teal-950/50 shadow-[0_0_18px_rgba(45,212,191,0.28)]' : 'border-teal-800/50 bg-teal-950/30'}`}>
+                      <step.icon className="h-4 w-4" />
+                    </div>
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{step.label}</span>
                   </div>
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{step.label}</span>
-                </div>
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">{step.detail}</p>
-              </div>
-            ))}
+                  <p className="relative z-0 mt-3 text-xs leading-relaxed text-slate-300">{PATHS[outcome][index]}</p>
+                </SpotlightCard>
+              );
+            })}
           </div>
         </div>
 
-        {/* GROUNDED vs GENERAL — the fork the verdict actually produces */}
-        <div ref={outcomesRef} className="evidence-outcomes grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <div
+        {/* GROUNDED vs GENERAL — tied to the toggle above and to Verdict */}
+        <div className="evidence-outcomes grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <SpotlightCard
+            as="article"
+            accent="green"
             data-outcome="grounded"
-            className="evidence-outcome rounded-2xl border border-emerald-800/35 bg-[#0d1a16]/80 p-6"
+            className={`evidence-outcome rounded-2xl border p-6 transition-all duration-500 ${outcome === 'grounded' ? 'is-emphasized scale-[1.02] border-emerald-500/55 bg-[#0d1a16]' : 'border-emerald-800/25 bg-[#0d1a16]/60 opacity-50'}`}
           >
             <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-800/50 bg-emerald-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
               <CheckCircle2 className="h-3 w-3" />
@@ -137,26 +189,22 @@ export function EvidenceTrustSection() {
               back to a citation.
             </p>
             <div className="mt-4 space-y-2">
-              <div
-                className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300"
-                style={{ '--row-delay': '0s' } as React.CSSProperties}
-              >
+              <div className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300">
                 <span>Research.pdf</span>
                 <span className="text-emerald-300">Page 3</span>
               </div>
-              <div
-                className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300"
-                style={{ '--row-delay': '0.9s' } as React.CSSProperties}
-              >
+              <div className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300">
                 <span>docs.ai/specs</span>
                 <span className="text-emerald-300">Section 2</span>
               </div>
             </div>
-          </div>
+          </SpotlightCard>
 
-          <div
+          <SpotlightCard
+            as="article"
+            accent="cyan"
             data-outcome="general"
-            className="evidence-outcome rounded-2xl border border-slate-800/55 bg-[#101826]/80 p-6"
+            className={`evidence-outcome rounded-2xl border p-6 transition-all duration-500 ${outcome === 'general' ? 'is-emphasized scale-[1.02] border-slate-500/55 bg-[#101826]' : 'border-slate-800/40 bg-[#101826]/60 opacity-50'}`}
           >
             <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-300">
               <Sparkles className="h-3 w-3" />
@@ -169,7 +217,7 @@ export function EvidenceTrustSection() {
             <div className="mt-4 rounded-lg border border-slate-800/70 bg-slate-900/50 px-3 py-2.5 text-[11px] text-slate-500">
               No matching Workspace evidence — answered from general knowledge.
             </div>
-          </div>
+          </SpotlightCard>
         </div>
       </div>
     </section>
