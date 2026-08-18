@@ -355,8 +355,10 @@ export function HeroCoreCanvas({ onHoverChange, activeSourceColor }: HeroCoreCan
         const effectiveHoverTarget = Math.max(hoverTarget, externalEnergy.active ? 0.9 : 0);
         hoverAmount += (effectiveHoverTarget - hoverAmount) * 0.055;
         const activity = 1 + hoverAmount * 0.85;
-        core.rotation.y += 0.00215 * activity;
-        core.rotation.z += 0.0009 * activity;
+        // ~100s per revolution at rest — almost imperceptible; only the
+        // hover/energy activity multiplier should make it noticeably spin.
+        core.rotation.y += 0.00105 * activity;
+        core.rotation.z += 0.00044 * activity;
         nodeCloud.rotation.y -= 0.00058 * activity;
         dustCloud.rotation.y += 0.00032 * activity;
         dustCloud.rotation.x = Math.sin(elapsed * 0.09) * 0.05;

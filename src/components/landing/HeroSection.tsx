@@ -23,15 +23,65 @@ export function HeroSection() {
   const ctaRef = useRef<HTMLDivElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
   const coreRef = useRef<HTMLDivElement>(null);
+  const coreBounceRef = useRef<HTMLDivElement>(null);
   const [activeConnection, setActiveConnection] = useState<number | null>(null);
   const [coreHovered, setCoreHovered] = useState(false);
+  const pulseTimeoutRef = useRef<number | null>(null);
 
+  // A fast pulse (700ms) travels the connection line on hover/focus; when it
+  // "arrives" the orb bumps once — a discrete cue layered on top of the
+  // continuous energy-boost HeroCoreCanvas already applies while hovered.
+  const triggerCoreArrivalPulse = () => {
+    const el = coreBounceRef.current;
+    if (!el) return;
+    el.classList.remove('hero-core-arrival');
+    void el.offsetWidth;
+    el.classList.add('hero-core-arrival');
+  };
+
+  const activateConnection = (connectionIndex: number) => {
+    setActiveConnection(connectionIndex);
+    if (pulseTimeoutRef.current) window.clearTimeout(pulseTimeoutRef.current);
+    pulseTimeoutRef.current = window.setTimeout(triggerCoreArrivalPulse, 700);
+  };
+
+  const deactivateConnection = () => {
+    setActiveConnection(null);
+    if (pulseTimeoutRef.current) {
+      window.clearTimeout(pulseTimeoutRef.current);
+      pulseTimeoutRef.current = null;
+    }
+  };
+
+  // Focusable + operable by keyboard, mirroring the pointer behavior exactly
+  // (:focus-visible gets the identical state via shared CSS below).
   const cardInteractionProps = (connectionIndex: number) => ({
-    onPointerEnter: () => setActiveConnection(connectionIndex),
-    onPointerLeave: () => {
-      setActiveConnection(null);
-    },
+    onPointerEnter: () => activateConnection(connectionIndex),
+    onPointerLeave: deactivateConnection,
+    onFocus: () => activateConnection(connectionIndex),
+    onBlur: deactivateConnection,
+    tabIndex: 0,
   });
+
+  // Touch devices have no hover: auto-cycle the highlight through the four
+  // chips instead, so the constellation still demonstrates itself.
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isTouch = window.matchMedia('(hover: none)').matches;
+    if (!isTouch || prefersReducedMotion) return;
+    let index = 0;
+    const interval = window.setInterval(() => {
+      index = (index + 1) % HERO_CONNECTIONS.length;
+      setActiveConnection(index);
+    }, 2500);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pulseTimeoutRef.current) window.clearTimeout(pulseTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -154,15 +204,17 @@ export function HeroSection() {
       <div className="relative z-10 mx-auto -mt-2 w-full max-w-6xl sm:mt-0">
         {/* Three.js Lumora Core Canvas */}
         <div ref={coreRef} className="h-[300px] w-full sm:h-[370px] lg:h-[410px]">
-          <HeroCoreCanvas
-            onHoverChange={setCoreHovered}
-            activeSourceColor={activeConnection === null ? null : HERO_SOURCE_COLORS[activeConnection]}
-          />
+          <div ref={coreBounceRef} className="h-full w-full">
+            <HeroCoreCanvas
+              onHoverChange={setCoreHovered}
+              activeSourceColor={activeConnection === null ? null : HERO_SOURCE_COLORS[activeConnection]}
+            />
+          </div>
         </div>
 
         <svg
           aria-hidden="true"
-          className="hero-connections pointer-events-none absolute inset-0 z-[1] hidden h-full w-full sm:block"
+          className={`hero-connections pointer-events-none absolute inset-0 z-[1] hidden h-full w-full sm:block ${activeConnection !== null ? 'has-active' : ''}`}
           viewBox="0 0 1000 470"
           preserveAspectRatio="none"
         >
@@ -190,6 +242,7 @@ export function HeroSection() {
                   pathLength="1"
                   style={{ '--connection-delay': `${index * -0.9}s` } as React.CSSProperties}
                 />
+                {isActive && <path key={`fast-${index}`} className="hero-connection-fast-pulse" d={path} pathLength="1" />}
               </g>
             );
           })}

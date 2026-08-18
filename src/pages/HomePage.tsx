@@ -2,6 +2,7 @@ import React from 'react';
 import { HeroSection } from '../components/landing/HeroSection';
 import { HowItWorksSection } from '../components/landing/HowItWorksSection';
 import { EvidenceTrustSection } from '../components/landing/EvidenceTrustSection';
+import { ProductShowcaseSection } from '../components/landing/ProductShowcaseSection';
 import { FeaturesSection } from '../components/landing/FeaturesSection';
 import { CareerIntelligenceSection } from '../components/landing/CareerIntelligenceSection';
 import { PricingSection } from '../components/pricing/PricingSection';
@@ -20,6 +21,7 @@ export function HomePage() {
         <HeroSection />
         <HowItWorksSection />
         <EvidenceTrustSection />
+        <ProductShowcaseSection />
         <FeaturesSection />
         <CareerIntelligenceSection />
         <PricingSection />
