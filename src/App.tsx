@@ -8,6 +8,7 @@ import { AppShellLoader } from './components/AppShellLoader';
 import { UsageProvider } from './components/usage/UsageProvider';
 import { AccessProvider } from './components/payments/AccessProvider';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { ScrollToTop } from './components/shared/ScrollToTop';
 
 // Route-level code splitting: each page (including the Three.js/GSAP/Lenis-
 // heavy landing page) ships as its own chunk instead of one shared bundle.
@@ -37,6 +38,7 @@ const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage').then((m) 
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <ErrorBoundary>
       <AuthProvider>
         <AccessProvider>

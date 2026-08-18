@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
+  BookOpen,
   Brain,
   FileSearch,
   FolderPlus,
   GraduationCap,
   ListChecks,
+  ListOrdered,
   MessageCircle,
   Quote,
   Target,
@@ -41,11 +43,12 @@ const WORKSPACE_STEPS = [
 
 const CAREER_STEPS = [
   { icon: FileSearch, label: 'Resume / CV', body: 'Upload a resume or paste its text.' },
-  { icon: Brain, label: 'Skill understanding', body: 'Lumora extracts your skills and the evidence behind each one.' },
-  { icon: Target, label: 'Role-fit analysis', body: 'Your profile is matched against target roles with an explainable fit score.' },
-  { icon: ListChecks, label: 'Gap detection', body: 'Missing or weak skills surface as specific, evidence-based gaps — not guesses.' },
-  { icon: ListChecks, label: 'Gap prioritization', body: 'Select the gaps that matter most; Lumora ranks them by severity and impact.' },
-  { icon: GraduationCap, label: 'Learning path', body: 'A staged plan — why it matters, what to learn, and how to prove it — is built from your selection.' },
+  { icon: Brain, label: 'Skill Understanding', body: 'Lumora extracts your skills and the evidence behind each one.' },
+  { icon: Target, label: 'Role-Fit Analysis', body: 'Your profile is matched against target roles with an explainable fit score.' },
+  { icon: ListChecks, label: 'Gap Detection', body: 'Missing or weak skills surface as specific, evidence-based gaps — not guesses.' },
+  { icon: ListOrdered, label: 'Gap Prioritization', body: 'Select the gaps that matter most; Lumora ranks them by severity and impact.' },
+  { icon: GraduationCap, label: 'Gap Filling / Learning Path', body: 'A staged plan — why it matters, what to learn, and how to prove it — is built from your selection.' },
+  { icon: BookOpen, label: 'Recommended Resources', body: 'Courses, cohorts, and projects matched to each step, from the same Resource Intelligence used across Lumora.' },
   { icon: FolderPlus, label: 'Learning Workspace', body: 'Turn the plan into a dedicated Workspace and keep building evidence as you close each gap.' },
 ];
 
@@ -139,36 +142,35 @@ export function AboutPage() {
             </p>
           </motion.div>
 
-          {/* Pipeline */}
-          <div className="mt-10 overflow-x-auto">
-            <div className="mx-auto flex min-w-[760px] max-w-5xl items-stretch gap-3 lg:min-w-0">
+          {/* Pipeline — responsive grid/timeline, never a horizontally scrolling strip */}
+          <div className="relative mt-10">
+            {/* Vertical connector for the single-column mobile timeline */}
+            <div
+              aria-hidden="true"
+              className="absolute bottom-6 left-[22px] top-6 w-px bg-gradient-to-b from-violet-800/50 via-slate-800 to-transparent sm:hidden"
+            />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {CAREER_STEPS.map((step, index) => (
-                <React.Fragment key={step.label}>
-                  <motion.div
-                    initial="hidden"
-                    whileInView="show"
-                    viewport={{ once: true, margin: '-60px' }}
-                    variants={fadeUp}
-                    transition={{ delay: index * 0.05 }}
-                    className="flex w-40 shrink-0 flex-col gap-3 rounded-2xl border border-slate-800/70 bg-[#101826]/80 p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-800/50 bg-violet-950/40 text-violet-300">
-                        <step.icon className="h-4 w-4" />
-                      </div>
+                <motion.div
+                  key={step.label}
+                  initial="hidden"
+                  whileInView="show"
+                  viewport={{ once: true, margin: '-60px' }}
+                  variants={fadeUp}
+                  transition={{ delay: index * 0.04 }}
+                  className="relative flex gap-4 rounded-2xl border border-slate-800/70 bg-[#101826]/80 p-4 sm:flex-col sm:gap-3 sm:p-5"
+                >
+                  <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-violet-800/50 bg-violet-950/40 text-violet-300 sm:h-10 sm:w-10">
+                    <step.icon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px] text-slate-600">{String(index + 1).padStart(2, '0')}</span>
-                    </div>
-                    <div>
                       <h3 className="text-xs font-semibold text-white">{step.label}</h3>
-                      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{step.body}</p>
                     </div>
-                  </motion.div>
-                  {index < CAREER_STEPS.length - 1 && (
-                    <div className="flex shrink-0 items-center text-slate-700" aria-hidden="true">
-                      <ArrowRight className="h-4 w-4" />
-                    </div>
-                  )}
-                </React.Fragment>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{step.body}</p>
+                  </div>
+                </motion.div>
               ))}
             </div>
           </div>

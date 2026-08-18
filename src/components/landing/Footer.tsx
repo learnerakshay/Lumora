@@ -1,14 +1,12 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Github, Twitter, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import { LumoraBrand } from './LumoraBrand';
 
 interface FooterLink {
   label: string;
   to?: string;
   anchor?: string;
-  href?: string;
-  icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }
 
 const PRODUCT_LINKS: FooterLink[] = [
@@ -27,11 +25,7 @@ const COMPANY_LINKS: FooterLink[] = [
 const LEGAL_LINKS: FooterLink[] = [
   { label: 'Privacy', to: '/privacy' },
   { label: 'Terms', to: '/terms' },
-];
-
-const EXTERNAL_LINKS: FooterLink[] = [
-  { label: 'GitHub', href: 'https://github.com', icon: Github },
-  { label: 'X (Twitter)', href: 'https://x.com', icon: Twitter },
+  { label: 'Refunds', to: '/terms#refunds' },
 ];
 
 const linkClasses =
@@ -65,15 +59,6 @@ export function Footer() {
         <button key={link.label} onClick={() => handleAnchorClick(link.anchor!)} className={`${linkClasses} cursor-pointer text-left`}>
           {link.label}
         </button>
-      );
-    }
-    if (link.href) {
-      const Icon = link.icon;
-      return (
-        <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className={`${linkClasses} flex items-center gap-1.5`}>
-          {Icon && <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />}
-          <span>{link.label}</span>
-        </a>
       );
     }
     return (
@@ -131,7 +116,6 @@ export function Footer() {
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-slate-800/40 pt-6 sm:flex-row">
           <span className="text-slate-500">© 2026 Lumora. AI Knowledge Workspace.</span>
           <div className="flex items-center gap-5">
-            {EXTERNAL_LINKS.map(renderLink)}
             <Link to="/contact" className={`${linkClasses} flex items-center gap-1.5`}>
               <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
               <span>Contact</span>
