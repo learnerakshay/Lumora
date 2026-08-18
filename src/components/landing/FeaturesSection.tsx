@@ -3,6 +3,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { LANDING_FEATURES } from './landing-content';
 import { FileCode, FileText, Globe, Video } from 'lucide-react';
+import { SpotlightCard } from './motion/SpotlightCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -38,7 +39,9 @@ export function FeaturesSection() {
             const Icon = feature.icon;
             const isHero = feature.variant === 'hero';
             return (
-              <article
+              <SpotlightCard
+                as="article"
+                accent="cyan"
                 key={feature.id}
                 data-feature={feature.id}
                 className={`landing-card feature-card group flex flex-col rounded-2xl border bg-[#101826]/90 p-6 shadow-lg ${isHero ? 'landing-feature-hero min-h-60 border-sky-900/35 sm:col-span-2 lg:col-span-1' : 'min-h-48 border-slate-800/45'} ${feature.id === 'chat' ? 'lg:col-span-2' : ''}`}
@@ -111,7 +114,7 @@ export function FeaturesSection() {
                     </div>
                   </div>
                 )}
-              </article>
+              </SpotlightCard>
             );
           })}
         </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { FileText, Globe, Video, FileCode, Cpu, Sparkles, MessageCircle, Lightbulb, Bookmark, Layers3, ArrowRight } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { attachSpotlight } from './motion/spotlight';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -13,6 +14,13 @@ export function HowItWorksSection() {
   const collectRef = useRef<HTMLDivElement>(null);
   const understandRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const cleanups = [collectRef, understandRef, transformRef].map((ref) =>
+      ref.current ? attachSpotlight(ref.current, 'cyan') : () => {},
+    );
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, []);
 
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

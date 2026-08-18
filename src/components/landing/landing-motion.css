@@ -33,27 +33,29 @@
   animation: landing-aurora-drift 14s ease-in-out infinite alternate;
 }
 
-.landing-data-field {
-  will-change: transform;
-  transition: transform 600ms ease-out;
+/* Cursor-following spotlight glow, shared across How-Lumora-Works,
+   Evidence & Trust, Learning Essentials, and Career Intelligence cards.
+   Position comes from --mx/--my (set via rAF in spotlight.ts, never React
+   state); only opacity transitions, so hover is a single composited layer. */
+.spotlight-card {
+  position: relative;
+  isolation: isolate;
 }
 
-.landing-data-star {
+.spotlight-card-glow {
   position: absolute;
-  display: block;
-  border-radius: 50%;
-  background: #7dd3fc;
-  opacity: var(--star-opacity, 0.3);
-  box-shadow: 0 0 6px rgba(125, 211, 252, 0.55);
-  animation: landing-star-drift var(--star-duration, 12s) var(--star-delay, 0s) ease-in-out infinite;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: inherit;
+  background: radial-gradient(400px circle at var(--mx, 50%) var(--my, 50%), rgba(var(--spotlight-rgb, 56, 189, 248), 0.1), transparent 60%);
+  transition: opacity 300ms ease;
 }
 
-.landing-data-trace {
-  stroke: rgba(56, 189, 248, 0.5);
-  stroke-width: 0.5;
-  stroke-dasharray: 1 7;
-  vector-effect: non-scaling-stroke;
-  animation: landing-trace-flow 9s var(--trace-delay, 0s) linear infinite;
+.spotlight-card:hover .spotlight-card-glow,
+.spotlight-card:focus-within .spotlight-card-glow {
+  opacity: 1;
 }
 
 .landing-stream-bridge::before,
@@ -187,6 +189,33 @@
   animation-duration: 2.7s;
 }
 
+/* Focus by contrast, not just by brightening: while one connection is
+   active, the other three fade well back instead of staying at their
+   resting opacity. */
+.hero-connections.has-active .hero-connection:not(.is-active) .hero-connection-line,
+.hero-connections.has-active .hero-connection:not(.is-active) .hero-connection-pulse {
+  opacity: 0.08;
+  transition: opacity 300ms ease;
+}
+
+/* A brighter, larger one-shot dot fired on hover/focus-start — keyed by
+   React so it remounts (and restarts) every time a chip activates. */
+.hero-connection-fast-pulse {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke: var(--source-energy, #7dd3fc);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 0.05 0.95;
+  stroke-dashoffset: 1;
+  filter: drop-shadow(0 0 5px var(--source-energy, #38bdf8));
+  animation: hero-connection-pulse 0.7s ease-out 1;
+}
+
+.hero-core-arrival {
+  animation: hero-core-bounce 400ms ease-out;
+}
+
 .landing-source-card:hover,
 .landing-source-card:focus-within {
   transform: translateY(-2px);
@@ -218,6 +247,11 @@
 .landing-source-card:hover::after {
   opacity: 1;
   animation: landing-sheen 1.3s var(--landing-ease) both;
+}
+
+.landing-source-card:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 3px;
 }
 
 /* Desktop nav links: a light trace under the label on hover/focus rather
@@ -985,6 +1019,18 @@
   }
 }
 
+@keyframes hero-core-bounce {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 @keyframes landing-river-breathe {
   0%,
   100% {
@@ -994,24 +1040,6 @@
   50% {
     opacity: 0.82;
     transform: scaleX(1.03);
-  }
-}
-
-@keyframes landing-star-drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-    opacity: calc(var(--star-opacity, 0.3) * 0.55);
-  }
-  50% {
-    transform: translate3d(calc(var(--star-drift, 10px) * 0.4), calc(var(--star-drift, 10px) * -1), 0);
-    opacity: var(--star-opacity, 0.3);
-  }
-}
-
-@keyframes landing-trace-flow {
-  to {
-    stroke-dashoffset: -160;
   }
 }
 

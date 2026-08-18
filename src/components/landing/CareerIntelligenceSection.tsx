@@ -17,6 +17,7 @@ import {
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useAuth } from '../AuthProvider';
+import { SpotlightCard } from './motion/SpotlightCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -110,8 +111,9 @@ export function CareerIntelligenceSection() {
 
         <div ref={gridRef} className="career-grid grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {CAREER_STEPS.map((step, index) => (
-            <div
+            <SpotlightCard
               key={step.key}
+              accent="amber"
               data-step={index}
               className="career-node relative flex flex-col gap-3 rounded-2xl border border-amber-900/25 bg-[#181209]/70 p-4"
             >
@@ -182,7 +184,7 @@ export function CareerIntelligenceSection() {
                   </span>
                 </div>
               )}
-            </div>
+            </SpotlightCard>
           ))}
         </div>
 
