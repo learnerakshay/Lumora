@@ -4,10 +4,12 @@ import { useAuth } from '../AuthProvider';
 import { SettingsModal } from './SettingsModal';
 import { UsageIndicator } from '../usage/UsageIndicator';
 import { LumoraBrand } from '../landing/LumoraBrand';
+import { ExpiryBanner } from '../payments/ExpiryBanner';
 import {
   Brain,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Gauge,
   LayoutDashboard,
   LogOut,
@@ -130,6 +132,9 @@ export function DashboardLayout({
             <Link to="/usage" title={isCollapsed ? 'Usage' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/usage' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
               <Gauge className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Usage</span>
             </Link>
+            <Link to="/billing" title={isCollapsed ? 'Billing' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/billing' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <CreditCard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Billing</span>
+            </Link>
             <button type="button" title={isCollapsed ? 'Settings' : undefined} onClick={() => { setIsSettingsOpen(true); setIsMobileSidebarOpen(false); }} className={`flex h-10 w-full items-center rounded-xl border border-transparent text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-white ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}>
               <Settings className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Settings</span>
             </button>
@@ -152,6 +157,7 @@ export function DashboardLayout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <ExpiryBanner />
         {(onSearchChange || onCreateWorkspaceClick) && (
           <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between border-b border-slate-800/70 bg-[#0d131d]/90 px-6 backdrop-blur md:flex lg:px-8">
             {onSearchChange && (

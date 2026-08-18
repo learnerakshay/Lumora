@@ -34,9 +34,9 @@ export function PricingSection() {
   }, []);
 
   return (
-    <section id="pricing" ref={sectionRef} className="landing-section relative px-4 py-24 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-12">
-        <div ref={headingRef} className="mx-auto max-w-3xl space-y-3 text-center">
+    <section id="pricing" ref={sectionRef} className="landing-section relative px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-10">
+        <div ref={headingRef} className="mx-auto max-w-3xl space-y-2.5 text-center">
           <div className="inline-flex items-center space-x-2 rounded-full border border-slate-800 bg-slate-900 px-3 py-1 font-mono text-xs uppercase tracking-wider text-sky-400">
             <span>Pricing</span>
           </div>
@@ -46,7 +46,7 @@ export function PricingSection() {
           </p>
         </div>
 
-        <div ref={contentRef} className="space-y-8">
+        <div ref={contentRef} className="space-y-7">
           <PricingCards currentPlan={isSignedIn ? access.plan : null} onSelectPaid={setCheckoutPlan} />
           <PlanComparisonTable />
           <p className="text-center text-xs text-slate-500">
@@ -60,7 +60,12 @@ export function PricingSection() {
       </div>
 
       {checkoutPlan && (
-        <CheckoutDialog isOpen={Boolean(checkoutPlan)} plan={checkoutPlan} onClose={() => setCheckoutPlan(null)} />
+        <CheckoutDialog
+          isOpen={Boolean(checkoutPlan)}
+          plan={checkoutPlan}
+          currentPlan={isSignedIn ? access.plan : null}
+          onClose={() => setCheckoutPlan(null)}
+        />
       )}
     </section>
   );

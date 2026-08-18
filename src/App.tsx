@@ -21,6 +21,7 @@ const SignUpPage = lazy(() => import('./pages/SignUpPage').then((m) => ({ defaul
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage').then((m) => ({ default: m.WorkspacesPage })));
 const WorkspaceDetailPage = lazy(() => import('./pages/WorkspaceDetailPage').then((m) => ({ default: m.WorkspaceDetailPage })));
 const UsagePage = lazy(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
+const BillingPage = lazy(() => import('./pages/BillingPage').then((m) => ({ default: m.BillingPage })));
 const SkillIntelligencePage = lazy(() => import('./pages/SkillIntelligencePage').then((m) => ({ default: m.SkillIntelligencePage })));
 const LearningPathPage = lazy(() => import('./pages/LearningPathPage').then((m) => ({ default: m.LearningPathPage })));
 const LegalPage = lazy(() => import('./pages/LegalPage').then((m) => ({ default: m.LegalPage })));
@@ -82,6 +83,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <UsagePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedRoute>
+                  <BillingPage />
                 </ProtectedRoute>
               }
             />

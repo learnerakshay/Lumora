@@ -82,6 +82,20 @@ export function latestCapturedAccess(
   return { plan: latest.plan, accessUntil: latest.accessUntil };
 }
 
+// Which /billing view to render. Both FREE variants resolve from the same
+// `plan === 'FREE'` entitlement state, but need different copy: a user who
+// never paid gets a pricing nudge, a user whose access lapsed gets an
+// explicit "your access ended" state.
+export type BillingStatus = 'free_no_history' | 'free_expired' | 'active';
+
+export function billingStatus(
+  plan: PlanName | null,
+  history: readonly PaymentHistoryRecord[],
+): BillingStatus {
+  if (plan && plan !== 'FREE') return 'active';
+  return hadPaidAccess(history) ? 'free_expired' : 'free_no_history';
+}
+
 export type StackingKind = 'renewal' | 'upgrade';
 
 export interface StackingCopy {

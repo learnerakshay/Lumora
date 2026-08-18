@@ -1,9 +1,10 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Brain, Check, Gauge, GraduationCap, Loader2, MessageSquare, Sparkles, Upload } from 'lucide-react';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
 import { formatRecoveryLabel } from '../components/usage/UsageLimitNotice';
 import { useUsage } from '../components/usage/UsageProvider';
-import type { MeteredUsageAction, PlanName } from '../lib/usage/config';
+import { PLAN_NAMES, type MeteredUsageAction, type PlanName } from '../lib/usage/config';
 
 const ACTIONS: Array<{
   type: MeteredUsageAction;
@@ -18,7 +19,7 @@ const ACTIONS: Array<{
   { type: 'LEARNING_PATH', label: 'Learning Path', description: 'Learning plans built', icon: GraduationCap },
 ];
 
-const PLANS: PlanName[] = ['FREE', 'CORE', 'MAX'];
+const PLANS = PLAN_NAMES;
 
 function titleCasePlan(plan: PlanName): string {
   return `${plan.slice(0, 1)}${plan.slice(1).toLowerCase()}`;
@@ -101,7 +102,11 @@ export function UsagePage() {
               <div className="grid gap-3 p-4 md:grid-cols-3">
                 {PLANS.map((plan) => {
                   const current = summary.plan === plan;
-                  return <article key={plan} className={`rounded-xl border p-4 ${current ? 'border-cyan-400/40 bg-cyan-400/[0.07] shadow-[0_0_20px_rgba(34,211,238,0.06)]' : 'border-slate-800 bg-slate-900/45'}`}>
+                  // Only a strictly higher tier than the caller's own plan
+                  // gets an upgrade CTA — never a same-or-lower card, and
+                  // never more than one CTA per card.
+                  const isUpgrade = !current && PLAN_NAMES.indexOf(plan) > PLAN_NAMES.indexOf(summary.plan);
+                  return <article key={plan} className={`flex flex-col rounded-xl border p-4 ${current ? 'border-cyan-400/40 bg-cyan-400/[0.07] shadow-[0_0_20px_rgba(34,211,238,0.06)]' : 'border-slate-800 bg-slate-900/45'}`}>
                     <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-white">{titleCasePlan(plan)}</h3>{current && <span className="rounded-full border border-cyan-400/25 bg-cyan-400/[0.09] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-200">Current</span>}</div>
                     <ul className="mt-4 space-y-2.5 text-xs text-slate-300">
                       <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><MessageSquare className="h-3 w-3" />Chat</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].CHAT}</strong></li>
@@ -111,6 +116,11 @@ export function UsagePage() {
                       <li className="flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-slate-500"><GraduationCap className="h-3 w-3" />Learning Path</span><strong className="font-mono text-slate-100">{summary.planLimits[plan].LEARNING_PATH}</strong></li>
                     </ul>
                     {current && <p className="mt-4 flex items-center gap-1.5 text-[10px] font-medium text-cyan-200"><Check className="h-3 w-3" /> Your current access</p>}
+                    {isUpgrade && (
+                      <Link to="/pricing" className="mt-4 flex items-center justify-center rounded-lg bg-cyan-300 px-3 py-2 text-[11px] font-semibold text-slate-950 transition hover:bg-cyan-200">
+                        Get {titleCasePlan(plan)}
+                      </Link>
+                    )}
                   </article>;
                 })}
               </div>

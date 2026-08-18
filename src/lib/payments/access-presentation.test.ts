@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PaymentHistoryRecord } from '../../components/payments/usePaymentHistory';
 import {
+  billingStatus,
   daysRemaining,
   expiryBand,
   hadPaidAccess,
@@ -172,4 +173,31 @@ test('no stacking copy anywhere mentions proration, subscriptions, or auto-renew
   for (const copy of allCopy) {
     assert.doesNotMatch(copy.headline + ' ' + copy.detail, /prorat|subscription|auto-renew|cancel anytime/i);
   }
+});
+
+// --- billingStatus: drives which /billing view renders -------------------
+
+test('billingStatus is "active" for any non-FREE plan, regardless of history', () => {
+  assert.equal(billingStatus('CORE', []), 'active');
+  assert.equal(billingStatus('MAX', []), 'active');
+  assert.equal(billingStatus('CORE', [record({ status: 'CAPTURED' })]), 'active');
+});
+
+test('billingStatus is "free_no_history" for FREE with no captured payment ever', () => {
+  assert.equal(billingStatus('FREE', []), 'free_no_history');
+  assert.equal(billingStatus('FREE', [record({ status: 'CREATED' }), record({ status: 'FAILED' })]), 'free_no_history');
+  assert.equal(billingStatus(null, []), 'free_no_history');
+});
+
+test('billingStatus is "free_expired" for FREE with at least one past CAPTURED payment', () => {
+  assert.equal(billingStatus('FREE', [record({ status: 'CAPTURED' })]), 'free_expired');
+  assert.equal(billingStatus(null, [record({ status: 'CAPTURED' })]), 'free_expired');
+});
+
+test('billingStatus never confuses a currently-active paid plan with a lapsed one', () => {
+  // Regression: a user actively on CORE must never see the "your access
+  // ended" copy, even though they also have CAPTURED history (which is
+  // exactly what got them onto CORE in the first place).
+  const activeUserHistory = [record({ status: 'CAPTURED', plan: 'CORE' })];
+  assert.equal(billingStatus('CORE', activeUserHistory), 'active');
 });

@@ -48,7 +48,7 @@ export function Navbar() {
 
   // The Workspace dashboard provides its own authenticated app navigation.
   // Keep the existing header on the learning Workspace route unchanged.
-  if (location.pathname.startsWith('/workspaces') || location.pathname === '/usage' || location.pathname === '/skills') return null;
+  if (location.pathname.startsWith('/workspaces') || location.pathname === '/usage' || location.pathname === '/skills' || location.pathname === '/billing') return null;
 
   return (
     <header

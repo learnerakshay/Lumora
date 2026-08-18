@@ -53,7 +53,7 @@ export function CouponField({ plan, disabled, onApplied, onRemoved }: CouponFiel
 
   if (status === 'applied' && applied) {
     return (
-      <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/25 p-3.5">
+      <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/25 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.08)]">
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
             <Tag className="h-3.5 w-3.5" />

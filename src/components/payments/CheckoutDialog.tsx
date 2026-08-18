@@ -1,5 +1,5 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { ShieldCheck, Sparkles, X } from 'lucide-react';
 import {
   INITIAL_CHECKOUT_MACHINE_STATE,
   checkoutReducer,
@@ -7,6 +7,7 @@ import {
 } from '../../lib/payments/checkout-machine';
 import { formatInr, getPlanCard } from '../../lib/payments/pricing-presentation';
 import { launchAmountFor, type PaidPlan } from '../../lib/payments/config';
+import { stackingCopyFor } from '../../lib/payments/access-presentation';
 import { useAuth } from '../AuthProvider';
 import { useAccess } from './AccessProvider';
 import { notifyUsageChanged } from '../usage/UsageProvider';
@@ -29,6 +30,12 @@ interface CheckoutDialogProps {
   plan: PaidPlan;
   onClose: () => void;
   onSuccess?: () => void;
+  // The user's plan BEFORE this purchase, when known (e.g. opened from
+  // /billing's Renew/Upgrade buttons, or from a pricing card while
+  // already signed in). Purely presentational — only used to pick which
+  // honest stacking sentence to show (renewal vs upgrade vs fresh
+  // purchase). Never sent to the server; POST /order doesn't take it.
+  currentPlan?: PlanName | null;
 }
 
 // Real Razorpay Standard Checkout, wired end to end onto the Phase 3A
@@ -37,7 +44,7 @@ interface CheckoutDialogProps {
 // POST /order/verify are the sole source of the charged amount, and
 // success calls notifyUsageChanged() + AccessProvider.refresh() so the
 // rest of the app reflects the new plan without a manual reload.
-export function CheckoutDialog({ isOpen, plan, onClose, onSuccess }: CheckoutDialogProps) {
+export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan = null }: CheckoutDialogProps) {
   const { user } = useAuth();
   const access = useAccess();
   const razorpay = useRazorpayCheckout();
@@ -52,6 +59,11 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess }: CheckoutDia
   const planCard = getPlanCard(plan);
   const baseAmount = launchAmountFor(plan);
   const displayedAmount = appliedQuote?.finalAmount ?? baseAmount;
+  // Purely presentational: which honest sentence to show above the Pay
+  // button (renewal / upgrade / fresh purchase). currentPlan defaults to
+  // null when the caller doesn't know it (e.g. a signed-out visitor who
+  // just signed in), in which case this reads as a fresh purchase.
+  const stackingCopy = currentPlan ? stackingCopyFor(currentPlan, plan) : null;
 
   // Reset to a clean slate every time the dialog is (re)opened for a plan,
   // so a previous attempt's order/coupon/error never leaks into a new one.
@@ -230,44 +242,59 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess }: CheckoutDia
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onMouseDown={handleBackdropClick}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="checkout-dialog-title"
-        className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_28px_80px_rgba(0,0,0,0.55)] sm:rounded-3xl"
+        className="relative flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_32px_90px_rgba(0,0,0,0.6)] sm:rounded-3xl"
       >
-        <header className="flex items-center justify-between border-b border-slate-800/80 bg-slate-900/50 p-5">
-          <div>
-            <h2 id="checkout-dialog-title" className="text-base font-semibold text-white">
-              {isFormView ? `Get ${plan}` : plan}
-            </h2>
-            <p className="text-xs text-slate-400">One-time payment · 30 days access · No auto-renewal</p>
+        <div className="pointer-events-none absolute -top-24 right-0 h-56 w-56 rounded-full bg-cyan-400/[0.08] blur-3xl" aria-hidden="true" />
+
+        <header className="relative flex items-center justify-between gap-3 border-b border-slate-800/80 bg-gradient-to-br from-slate-900/70 to-transparent p-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/[0.09] text-cyan-300">
+              {plan === 'MAX' ? <Sparkles className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+            </span>
+            <div>
+              <h2 id="checkout-dialog-title" className="text-base font-semibold text-white">
+                {isFormView ? `Get ${plan}` : `${plan} checkout`}
+              </h2>
+              <p className="text-[11px] text-slate-400">One-time payment · 30 days access · No auto-renewal</p>
+            </div>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="Close checkout"
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
           >
             <X className="h-4 w-4" />
           </button>
         </header>
 
-        <div className="overflow-y-auto p-5">
+        <div className="relative overflow-y-auto p-5">
           {isFormView ? (
             <div className="space-y-5">
-              <div className="flex items-baseline justify-between rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3.5">
-                <span className="text-sm text-slate-300">{plan} plan</span>
-                <span className="flex items-baseline gap-2">
-                  {planCard.listPriceLabel && (
-                    <span className="text-xs text-slate-500 line-through">{planCard.listPriceLabel}</span>
-                  )}
-                  <span className="font-mono text-lg font-semibold text-white">{formatInr(displayedAmount)}</span>
-                </span>
+              <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/[0.07] to-slate-900/40 p-4">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium text-slate-200">{plan} plan</span>
+                  <span className="flex items-baseline gap-2">
+                    {planCard.listPriceLabel && (
+                      <span className="text-xs text-slate-500 line-through">{planCard.listPriceLabel}</span>
+                    )}
+                    <span className="font-mono text-2xl font-bold tracking-tight text-white">{formatInr(displayedAmount)}</span>
+                  </span>
+                </div>
+                {stackingCopy && (
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-cyan-200/80">
+                    <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" />
+                    {stackingCopy.detail}
+                  </p>
+                )}
               </div>
 
               <CouponField
@@ -279,11 +306,12 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess }: CheckoutDia
               <button
                 type="button"
                 onClick={() => void runCheckout()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-cyan-500/30 active:translate-y-0"
               >
                 Pay {formatInr(displayedAmount)}
               </button>
-              <p className="text-center text-[11px] text-slate-500">
+              <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
+                <ShieldCheck className="h-3 w-3" />
                 Secured by Razorpay · Cards, UPI, Netbanking &amp; Wallets supported
               </p>
             </div>

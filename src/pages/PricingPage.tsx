@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { useAccess } from '../components/payments/AccessProvider';
 import { CheckoutDialog } from '../components/payments/CheckoutDialog';
@@ -56,9 +57,9 @@ export function PricingPage() {
 
   return (
     <main className="landing-experience relative min-h-screen overflow-x-hidden bg-[#0b0f17] text-[#f0f4f8]">
-      <div className="relative z-10 px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl space-y-16">
-          <div className="mx-auto max-w-3xl space-y-4 text-center">
+      <div className="relative z-10 px-4 pb-16 pt-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl space-y-11">
+          <div className="mx-auto max-w-3xl space-y-3.5 text-center">
             <div className="inline-flex items-center space-x-2 rounded-full border border-slate-800 bg-slate-900 px-3 py-1 font-mono text-xs uppercase tracking-wider text-sky-400">
               <span>Pricing</span>
             </div>
@@ -75,14 +76,20 @@ export function PricingPage() {
             <h2 id="pricing-faq-title" className="text-center text-2xl font-bold tracking-tight text-white">
               Frequently asked questions
             </h2>
-            <dl className="mt-8 space-y-5">
+            <div className="mt-6 space-y-2.5">
               {FAQ_ITEMS.map((item) => (
-                <div key={item.question} className="landing-card rounded-2xl border border-slate-800/90 bg-[#101826]/95 p-5">
-                  <dt className="text-sm font-semibold text-white">{item.question}</dt>
-                  <dd className="mt-1.5 text-xs leading-relaxed text-slate-400">{item.answer}</dd>
-                </div>
+                <details
+                  key={item.question}
+                  className="group rounded-2xl border border-slate-800/90 bg-[#101826]/95 transition-colors open:border-cyan-400/25 open:bg-cyan-400/[0.03]"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden">
+                    {item.question}
+                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 group-open:rotate-180 group-open:text-cyan-300" />
+                  </summary>
+                  <div className="px-5 pb-5 text-xs leading-relaxed text-slate-400">{item.answer}</div>
+                </details>
               ))}
-            </dl>
+            </div>
           </section>
         </div>
       </div>
@@ -92,7 +99,12 @@ export function PricingPage() {
       </div>
 
       {checkoutPlan && (
-        <CheckoutDialog isOpen={Boolean(checkoutPlan)} plan={checkoutPlan} onClose={() => setCheckoutPlan(null)} />
+        <CheckoutDialog
+          isOpen={Boolean(checkoutPlan)}
+          plan={checkoutPlan}
+          currentPlan={isSignedIn ? access.plan : null}
+          onClose={() => setCheckoutPlan(null)}
+        />
       )}
     </main>
   );

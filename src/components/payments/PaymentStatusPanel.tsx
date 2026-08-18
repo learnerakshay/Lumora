@@ -67,8 +67,8 @@ export function PaymentStatusPanel({
   if (state === 'success') {
     return (
       <div className="flex flex-col items-center gap-3 py-6 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-700/60 bg-emerald-950/50 text-emerald-400">
-          <CheckCircle2 className="h-6 w-6" />
+        <span className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-700/60 bg-emerald-950/50 text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.18)]">
+          <CheckCircle2 className="h-7 w-7" />
         </span>
         <div>
           <p className="text-base font-semibold text-white">Payment successful</p>

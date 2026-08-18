@@ -41,11 +41,21 @@ test('PlanComparisonTable states the rolling 12-hour window and the shared-capab
   assert.match(html, /Every Lumora capability is available on every plan/);
 });
 
-test('PlanComparisonTable renders one checkmark per capability row per plan (no plan is silently excluded)', () => {
+test('PlanComparisonTable renders every shared-capability label exactly once, each explicitly marked as included on all three plans', () => {
+  // Redesigned as a compact chip list rather than a 3-column checkmark
+  // table: repeating an identical "yes" three times per row carried zero
+  // comparison information (every capability really is on every plan) and
+  // read as filler. The chip list preserves every fact — each item still
+  // carries an explicit (screen-reader-visible) "included on FREE, CORE,
+  // and MAX" statement — without the redundant repetition.
   const html = renderToStaticMarkup(<PlanComparisonTable />);
-  const checkCount = (html.match(/Included on (Free|Core|Max)/g) || []).length;
-  // 15 shared-capability rows (see SHARED_CAPABILITY_ROWS) x 3 plans.
-  assert.equal(checkCount, 15 * 3);
+  const includedCount = (html.match(/included on FREE, CORE, and MAX/g) || []).length;
+  assert.equal(includedCount, 15); // one per SHARED_CAPABILITY_ROWS entry
+});
+
+test('PlanComparisonTable highlights the CORE column in the limits table, consistent with the "recommended" framing elsewhere', () => {
+  const html = renderToStaticMarkup(<PlanComparisonTable />);
+  assert.match(html, /Recommended/);
 });
 
 test('PlanComparisonTable contains no forbidden subscription/auto-renewal wording', () => {
@@ -56,6 +66,20 @@ test('PlanComparisonTable contains no forbidden subscription/auto-renewal wordin
 test('PricingCards badges only CORE as Most popular, and derives it from card.badge rather than a hardcoded plan check', () => {
   assert.match(pricingCardsSource, /card\.badge === 'Most popular'/);
   assert.doesNotMatch(pricingCardsSource, /plan === 'CORE'/);
+});
+
+test('the Most Popular badge is structurally OUTSIDE the overflow-hidden .landing-card element, so it can never be clipped', () => {
+  // Regression: landing-motion.css sets `.landing-card { overflow: hidden }`
+  // for its hover-glow effect. The badge previously lived as an
+  // absolutely-positioned CHILD of that element and got its top edge
+  // clipped. It must now be a sibling of the card, inside a shared
+  // position:relative wrapper that itself has no overflow clipping.
+  const wrapperStart = pricingCardsSource.indexOf("<div className={`relative ${isPopular");
+  const badgeStart = pricingCardsSource.indexOf('isPopular && (');
+  const articleStart = pricingCardsSource.indexOf('<article');
+  assert.ok(wrapperStart >= 0 && badgeStart >= 0 && articleStart >= 0);
+  assert.ok(wrapperStart < badgeStart, 'badge must be inside the outer wrapper');
+  assert.ok(badgeStart < articleStart, 'badge must render BEFORE (i.e. outside/above) the landing-card article');
 });
 
 test('PricingCards paid CTA routes signed-out users to sign-in with a return-to-pricing redirect', () => {
@@ -132,4 +156,14 @@ test('CheckoutDialog never restricts Razorpay payment methods — no `method:` o
   assert.ok(optionsStart >= 0 && optionsEnd > optionsStart);
   const optionsBlock = checkoutDialogSource.slice(optionsStart, optionsEnd);
   assert.doesNotMatch(optionsBlock, /\bmethod\s*:/);
+});
+
+test('CheckoutDialog computes its stacking-copy explanation via stackingCopyFor, never invented text, and only when currentPlan is known', () => {
+  assert.match(checkoutDialogSource, /currentPlan \? stackingCopyFor\(currentPlan, plan\) : null/);
+});
+
+test('PricingSection and PricingPage both pass their known currentPlan into CheckoutDialog, so Renew/Upgrade context is never lost', () => {
+  for (const source of [pricingSectionSource, pricingPageSource]) {
+    assert.match(source, /<CheckoutDialog[\s\S]{0,200}currentPlan=/);
+  }
 });

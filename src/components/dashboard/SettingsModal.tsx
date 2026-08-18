@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Check, LogOut, Settings, Shield, Sparkles, UserRound, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Check, CreditCard, LogOut, Settings, Shield, Sparkles, TriangleAlert, UserRound, X } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
+import { useAccess } from '../payments/AccessProvider';
+import { daysRemaining, expiryBand } from '../../lib/payments/access-presentation';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,8 +20,13 @@ const sections = [
   { id: 'privacy' as const, label: 'Data & privacy', icon: Shield },
 ];
 
+function titleCasePlan(plan: string): string {
+  return `${plan.slice(0, 1)}${plan.slice(1).toLowerCase()}`;
+}
+
 export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps) {
   const { user, signOut } = useAuth();
+  const access = useAccess();
   const [section, setSection] = useState<Section>('account');
   useEffect(() => {
     if (!isOpen) return;
@@ -48,7 +56,45 @@ export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps
 
             {section === 'learning' && <section aria-labelledby="learning-heading" className="space-y-5"><div><h3 id="learning-heading" className="text-lg font-semibold text-white">Learning preferences</h3><p className="mt-1 text-sm text-slate-400">Personal learning controls will appear here as Lumora supports them.</p></div><div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-6 text-center"><Sparkles className="mx-auto h-5 w-5 text-sky-400" /><p className="mt-3 text-sm font-medium text-slate-200">No preferences to configure yet</p><p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-slate-500">Your current learning experience works without additional setup.</p></div></section>}
 
-            {section === 'plan' && <section aria-labelledby="plan-heading" className="space-y-5"><div><h3 id="plan-heading" className="text-lg font-semibold text-white">Plan & usage</h3><p className="mt-1 text-sm text-slate-400">A clear view of your current Lumora access.</p></div><div className="rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 to-cyan-500/5 p-5"><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold text-white">Current access</p><p className="mt-1 text-xs text-slate-400">Lumora account</p></div><span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300">Active</span></div></div><p className="text-xs leading-5 text-slate-500">Usage limits and billing controls will be shown here when plan management is available.</p></section>}
+            {section === 'plan' && (() => {
+              const plan = access.plan;
+              const isPaid = plan === 'CORE' || plan === 'MAX';
+              const band = expiryBand(plan ?? null, access.planExpiresAt);
+              const remaining = daysRemaining(access.planExpiresAt);
+              return (
+                <section aria-labelledby="plan-heading" className="space-y-5">
+                  <div><h3 id="plan-heading" className="text-lg font-semibold text-white">Plan & usage</h3><p className="mt-1 text-sm text-slate-400">A clear view of your current Lumora access.</p></div>
+                  <div className="rounded-2xl border border-sky-500/20 bg-gradient-to-br from-sky-500/10 to-cyan-500/5 p-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{plan ? titleCasePlan(plan) : 'Loading…'}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {isPaid && access.planExpiresAt
+                            ? `Access until ${new Date(access.planExpiresAt).toLocaleDateString()} · ${remaining} day${remaining === 1 ? '' : 's'} left`
+                            : 'Free plan, no purchase on record'}
+                        </p>
+                      </div>
+                      {isPaid ? (
+                        <span className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${band === 'urgent' ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-sky-500/30 bg-sky-500/10 text-sky-300'}`}>
+                          {band === 'urgent' ? <TriangleAlert className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+                          {band === 'urgent' ? 'Ending soon' : 'Active'}
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1 text-xs font-medium text-slate-400">Free</span>
+                      )}
+                    </div>
+                  </div>
+                  <Link
+                    to="/billing"
+                    onClick={onClose}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-sky-700/60 hover:bg-sky-950/20 hover:text-sky-200"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Manage billing
+                  </Link>
+                </section>
+              );
+            })()}
 
             {section === 'privacy' && <section aria-labelledby="privacy-heading" className="space-y-5"><div><h3 id="privacy-heading" className="text-lg font-semibold text-white">Data & privacy</h3><p className="mt-1 text-sm text-slate-400">Understand how account controls are handled.</p></div><div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4"><div className="flex gap-3"><Shield className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" /><div><p className="text-sm font-medium text-white">Your account data</p><p className="mt-1 text-xs leading-5 text-slate-400">Account deletion and data export are not currently available inside Lumora. Contact the application owner for account data requests.</p></div></div></div></section>}
           </div>
