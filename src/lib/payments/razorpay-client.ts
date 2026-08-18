@@ -136,4 +136,12 @@ export class RazorpayClient {
   async fetchPayment(paymentId: string): Promise<RazorpayPayment> {
     return this.request<RazorpayPayment>('GET', `/payments/${paymentId}`);
   }
+
+  // Diagnostics only — nothing in the payment flow itself needs to list
+  // orders; this exists to inspect recent test-mode activity (e.g. via
+  // scripts) when auditing a real failure.
+  async listOrders(input: { count?: number } = {}): Promise<{ items: RazorpayOrder[] }> {
+    const count = Math.min(Math.max(input.count ?? 10, 1), 100);
+    return this.request<{ items: RazorpayOrder[] }>('GET', `/orders?count=${count}`);
+  }
 }

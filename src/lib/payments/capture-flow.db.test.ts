@@ -209,6 +209,62 @@ test('capturePayment increments the coupon redemption counter exactly once on ca
   }
 });
 
+// This composition (MAX expires while an unexpired CORE payment exists ->
+// fall back to CORE, not FREE) was previously only proven at the pure
+// resolveEntitledPlan level (access.test.ts). This proves the same
+// invariant through the real capturePayment -> syncUserEntitlement -> DB
+// path, with two genuinely captured payments on two different plans.
+test('when a MAX payment expires while an unexpired CORE payment still exists, entitlement falls back to CORE, not FREE', { skip: !runDatabaseTests }, async () => {
+  const userId = `capture-max-fallback-${randomUUID()}`;
+  try {
+    await prisma.user.create({ data: { id: userId, plan: 'FREE' } });
+
+    const coreOrderId = `order_${randomUUID()}`;
+    await createPendingPayment({ userId, plan: 'CORE', providerOrderId: coreOrderId, amount: 49_900, currency: 'INR' });
+    await capturePayment({
+      providerOrderId: coreOrderId,
+      providerPaymentId: `pay_${randomUUID()}`,
+      method: 'upi',
+      signatureVerified: true,
+      reason: 'PAYMENT_VERIFIED',
+    });
+
+    const maxOrderId = `order_${randomUUID()}`;
+    await createPendingPayment({ userId, plan: 'MAX', providerOrderId: maxOrderId, amount: 149_900, currency: 'INR' });
+    const maxResult = await capturePayment({
+      providerOrderId: maxOrderId,
+      providerPaymentId: `pay_${randomUUID()}`,
+      method: 'card',
+      signatureVerified: true,
+      reason: 'PAYMENT_VERIFIED',
+    });
+
+    // MAX outranks CORE while both are unexpired.
+    assert.equal(maxResult.entitlement?.plan, 'MAX');
+    const userAfterMax = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    assert.equal(userAfterMax.plan, 'MAX');
+
+    // Force only the MAX payment's access into the past; the CORE payment's
+    // own ~30-day window (from its own capture moment) is untouched and
+    // still unexpired.
+    await prisma.payment.update({
+      where: { providerOrderId: maxOrderId },
+      data: { accessUntil: new Date(Date.now() - 1000) },
+    });
+
+    const afterMaxExpiry = await syncUserEntitlement(userId, 'ACCESS_EXPIRED');
+    assert.equal(afterMaxExpiry.plan, 'CORE');
+    assert.equal(afterMaxExpiry.changed, true);
+
+    const userAfterFallback = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    assert.equal(userAfterFallback.plan, 'CORE');
+    assert.ok(userAfterFallback.planExpiresAt);
+  } finally {
+    await prisma.payment.deleteMany({ where: { userId } });
+    await prisma.user.deleteMany({ where: { id: userId } });
+  }
+});
+
 test('capturePayment on an unknown order returns ORDER_NOT_FOUND without throwing', { skip: !runDatabaseTests }, async () => {
   const result = await capturePayment({
     providerOrderId: `order_nonexistent_${randomUUID()}`,

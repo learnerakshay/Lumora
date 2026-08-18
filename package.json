@@ -27,7 +27,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "demo:set-plan": "tsx scripts/set-demo-plan.ts",
-    "payments:smoke-order": "tsx scripts/smoke-razorpay-order.ts"
+    "payments:smoke-order": "tsx scripts/smoke-razorpay-order.ts",
+    "payments:test-order": "tsx scripts/razorpay-test-order.ts",
+    "payments:inspect-order": "tsx scripts/razorpay-inspect-order.ts",
+    "payments:verify-order": "tsx scripts/razorpay-verify-order.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",

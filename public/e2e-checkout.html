@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Phase 2 E2E checkout harness</title></head>
+<body>
+<div id="status">loading…</div>
+<div id="parsed" style="font-family: monospace; white-space: pre; margin: 8px 0;"></div>
+<div id="result"></div>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  // Guard against a bfcache-restored page (e.g. the browser's Back/Forward
+  // button) re-running with STALE closures over an old order_id/amount from
+  // a previous page load instead of the current URL's query params — this
+  // produces exactly "Checkout opens, Payment Failed, zero attempts on the
+  // (actually fresh) order" because the modal is really still targeting the
+  // OLD order underneath. Force a real reload if that happens.
+  window.addEventListener('pageshow', function (event) {
+    if (event.persisted) window.location.reload();
+  });
+
+  const params = new URLSearchParams(window.location.search);
+  const orderId = (params.get('order_id') || '').trim();
+  const keyId = (params.get('key_id') || '').trim();
+  const rawAmount = (params.get('amount') || '').trim();
+  const vpa = params.get('vpa'); // e.g. success@razorpay or failure@razorpay
+
+  // amount MUST be a whole number of paise and must match the order's real
+  // amount, or Razorpay Checkout.js rejects the payment during its own
+  // pre-flight validation — before any method is even selected, which is
+  // why a bad amount here shows "Payment Failed" with zero attempts
+  // recorded server-side: Razorpay's initiation endpoint is never reached.
+  const amount = Number(rawAmount);
+
+  function report(obj) {
+    document.getElementById('result').textContent = JSON.stringify(obj);
+    document.title = 'DONE:' + JSON.stringify(obj);
+  }
+
+  function fail(message) {
+    document.getElementById('status').innerHTML = '<b style="color:#dc2626">CONFIG ERROR: ' + message + '</b>';
+    const btn = document.getElementById('pay-btn');
+    if (btn) { btn.disabled = true; btn.title = message; }
+  }
+
+  // Show exactly what was parsed from the URL BEFORE any checkout attempt,
+  // so a bad value is visible immediately instead of surfacing only as a
+  // generic "Payment Failed" popup with no diagnostic trail.
+  document.getElementById('parsed').textContent =
+    'origin:   ' + window.location.protocol + '//' + (window.location.host || '(none)') + '\n' +
+    'order_id: ' + JSON.stringify(orderId) + '\n' +
+    'key_id:   ' + JSON.stringify(keyId) + '\n' +
+    'amount:   ' + JSON.stringify(rawAmount) + '  (parsed as number: ' + amount +
+      (Number.isInteger(amount) && amount > 0 ? '  =  Rs ' + (amount / 100).toFixed(2) : '') + ')\n' +
+    'vpa:      ' + JSON.stringify(vpa);
+
+  let configError = null;
+  // A data:/file: copy of this page carries NO query string, so order_id,
+  // key_id and amount all parse as null. The old harness passed those nulls
+  // straight to Checkout.js, which rejected them during its own pre-flight
+  // — surfacing as a generic "Payment Failed" while the real order was
+  // never contacted at all (status stays `created`, attempts 0). Fail loudly
+  // and early instead.
+  if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') {
+    configError =
+      'This page is loaded over "' + window.location.protocol + '" with no query string, so order_id/key_id/amount are all null. ' +
+      'Open the http://localhost:3000/e2e-checkout.html?... URL instead — do not open a data:/file: copy.';
+  }
+  else if (!orderId.startsWith('order_')) configError = 'order_id is missing or malformed: ' + JSON.stringify(orderId);
+  else if (!/^rzp_(test|live)_/.test(keyId)) configError = 'key_id is missing or malformed: ' + JSON.stringify(keyId);
+  else if (!Number.isInteger(amount) || amount <= 0) configError = 'amount is missing or not a valid integer: ' + JSON.stringify(rawAmount);
+  else if (typeof Razorpay === 'undefined') configError = 'checkout.js did not load (window.Razorpay is undefined) — check network/ad-blocker';
+
+  if (configError) {
+    fail(configError);
+  } else {
+    document.getElementById('status').textContent = 'ready: ' + orderId;
+
+    try {
+      const options = {
+        key: keyId,
+        amount: amount,
+        currency: 'INR',
+        name: 'Lumora E2E Test',
+        description: 'Phase 2 E2E harness',
+        order_id: orderId,
+        prefill: vpa ? { method: 'upi', vpa: vpa, contact: '9999999999', email: 'test@example.com' } : {},
+        handler: function (response) {
+          report({ status: 'success', ...response });
+        },
+        modal: {
+          ondismiss: function () {
+            report({ status: 'dismissed' });
+          },
+        },
+        theme: { color: '#0ea5e9' },
+      };
+      const rzp = new Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        report({ status: 'failed', error: response.error });
+      });
+      window.__openCheckout = function () { rzp.open(); };
+    } catch (error) {
+      fail('new Razorpay(options) threw: ' + (error && error.message ? error.message : String(error)));
+    }
+  }
+</script>
+<button id="pay-btn" onclick="window.__openCheckout && window.__openCheckout()">Open Checkout</button>
+</body>
+</html>

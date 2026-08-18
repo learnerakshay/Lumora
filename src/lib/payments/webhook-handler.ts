@@ -119,11 +119,21 @@ export async function processWebhookEvent(
       if (!entity?.order_id) {
         throw new Error('Webhook payment.failed payload missing payment entity order_id');
       }
-      await deps.markPaymentFailed(entity.order_id, {
+      const updated = await deps.markPaymentFailed(entity.order_id, {
         providerPaymentId: entity.id ?? null,
         failureCode: entity.error_code ?? null,
         failureReason: entity.error_description ?? null,
       });
+      if (!updated) {
+        // Not an error (the webhook is still signature-verified and real) —
+        // just an order with no matching local Payment row, e.g. a stale
+        // test order. Nothing to update; log it so it's visible rather than
+        // silently vanishing, matching capturePayment's handling of the
+        // same "unknown order" case.
+        logger.warn('payment.failed webhook for an order with no local Payment row', {
+          providerOrderId: entity.order_id,
+        });
+      }
     }
 
     await deps.markWebhookEventProcessed(eventRecordId, null);
