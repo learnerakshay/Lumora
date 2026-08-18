@@ -122,6 +122,13 @@ export class RazorpayClient {
     });
   }
 
+  // Fetches the order itself (id, amount, currency, status) — distinct from
+  // fetchOrderPayments, which lists payments made against the order and is
+  // empty until a checkout actually completes.
+  async fetchOrder(orderId: string): Promise<RazorpayOrder> {
+    return this.request<RazorpayOrder>('GET', `/orders/${orderId}`);
+  }
+
   async fetchOrderPayments(orderId: string): Promise<{ items: RazorpayPayment[] }> {
     return this.request<{ items: RazorpayPayment[] }>('GET', `/orders/${orderId}/payments`);
   }

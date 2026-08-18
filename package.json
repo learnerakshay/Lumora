@@ -26,7 +26,8 @@
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "demo:set-plan": "tsx scripts/set-demo-plan.ts"
+    "demo:set-plan": "tsx scripts/set-demo-plan.ts",
+    "payments:smoke-order": "tsx scripts/smoke-razorpay-order.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",

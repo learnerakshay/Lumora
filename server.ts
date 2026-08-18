@@ -10,12 +10,15 @@ import { workspaceRouter } from './src/routes/workspaces';
 import { usageRouter } from './src/routes/usage';
 import { skillsRouter } from './src/routes/skills';
 import { learningRouter } from './src/routes/learning';
+import { paymentsRouter } from './src/routes/payments';
+import { paymentsWebhookRouter } from './src/routes/payments-webhook';
 import { getServerEnv } from './src/lib/env';
 import { AppError } from './src/lib/errors';
 import { assertPgvectorAvailable } from './src/lib/chunk-store';
 import { ingestionCoordinator } from './src/lib/ingestion/coordinator';
 import { API_PATHS } from './src/lib/api-paths';
 import { apiNotFoundHandler } from './src/lib/api-not-found';
+import { expireStalePaidAccess } from './src/lib/payments/expire-stale-access';
 
 async function startServer() {
   const env = getServerEnv();
@@ -28,13 +31,31 @@ async function startServer() {
       secretKey: env.CLERK_SECRET_KEY,
     }),
   );
+
+  // Must be mounted BEFORE express.json(): the webhook signature is an HMAC
+  // over the exact raw request bytes Razorpay sent, and express.json() would
+  // otherwise consume the stream, leaving nothing byte-identical left to
+  // verify against.
+  app.use(
+    `${API_PATHS.payments}/webhook`,
+    express.raw({ type: '*/*', limit: '1mb' }),
+    paymentsWebhookRouter,
+  );
+
   app.use(express.json({ limit: '3mb' }));
+
+  // Re-derives a signed-in user's plan before any handler sees it, so an
+  // expired one-time-purchase access window drops them to FREE (or a lower
+  // still-unexpired plan) on their next request rather than waiting for an
+  // external event that never arrives for a one-time payment.
+  app.use('/api', expireStalePaidAccess);
 
   // Workspace API routes
   app.use(API_PATHS.workspaces, workspaceRouter);
   app.use(API_PATHS.usage, usageRouter);
   app.use(API_PATHS.skills, skillsRouter);
   app.use(API_PATHS.learning, learningRouter);
+  app.use(API_PATHS.payments, paymentsRouter);
 
   // Health check API
   app.get('/api/health', async (_req, res) => {

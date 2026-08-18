@@ -33,6 +33,24 @@ test('createOrder sends Basic auth built from keyId:keySecret and posts amount/c
   assert.equal(body.payment_capture, 1);
 });
 
+test('fetchOrder issues a GET against /orders/:id and returns the order payload', async () => {
+  let capturedUrl = '';
+  let capturedMethod = '';
+  const fetchImpl = async (url: string | URL, init?: RequestInit) => {
+    capturedUrl = String(url);
+    capturedMethod = init?.method || 'GET';
+    return jsonResponse(200, { id: 'order_1', amount: 49_900, currency: 'INR', status: 'created', created_at: 0 });
+  };
+  const client = new RazorpayClient({ keyId: 'k', keySecret: 's', fetchImpl: fetchImpl as typeof fetch });
+  const order = await client.fetchOrder('order_1');
+  assert.equal(capturedUrl, 'https://api.razorpay.com/v1/orders/order_1');
+  assert.equal(capturedMethod, 'GET');
+  assert.equal(order.id, 'order_1');
+  assert.equal(order.amount, 49_900);
+  assert.equal(order.currency, 'INR');
+  assert.equal(order.status, 'created');
+});
+
 test('fetchOrderPayments issues a GET against /orders/:id/payments', async () => {
   let capturedUrl = '';
   let capturedMethod = '';
