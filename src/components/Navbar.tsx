@@ -3,7 +3,6 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { LogOut, User, Github, Twitter, Menu, X as CloseIcon } from 'lucide-react';
 import { LumoraBrand } from './landing/LumoraBrand';
-import { scrollToLandingSection } from './landing/LandingSmoothScroll';
 
 export function Navbar() {
   const { isSignedIn, user, signOut } = useAuth();
@@ -27,17 +26,23 @@ export function Navbar() {
     navigate('/');
   };
 
+  // Lazy-imported so the smooth-scroll module (Lenis + GSAP) is only ever
+  // downloaded when a landing-page nav link is actually clicked, never as
+  // part of the app's initial/authenticated bundle.
   const handleNavClick = (anchorId: string) => {
     setMobileMenuOpen(false);
+    const scrollWhenReady = () => {
+      const el = document.getElementById(anchorId);
+      if (!el) return;
+      void import('./landing/LandingSmoothScroll').then(({ scrollToLandingSection }) =>
+        scrollToLandingSection(el),
+      );
+    };
     if (location.pathname !== '/') {
       navigate(`/#${anchorId}`);
-      setTimeout(() => {
-        const el = document.getElementById(anchorId);
-        if (el) scrollToLandingSection(el);
-      }, 100);
+      setTimeout(scrollWhenReady, 100);
     } else {
-      const el = document.getElementById(anchorId);
-      if (el) scrollToLandingSection(el);
+      scrollWhenReady();
     }
   };
 

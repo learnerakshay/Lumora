@@ -8,6 +8,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Fire-and-forget: start waking a cold Render backend as early as
+      // possible, in parallel with the JS bundle download/parse and Clerk's
+      // own client-side session check below, instead of only starting once
+      // both of those finish. Unauthenticated, no state, nothing depends on
+      // its result — safe to ignore entirely if it fails or is slow.
+      try {
+        fetch('/api/health', { credentials: 'omit' }).catch(function () {});
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
