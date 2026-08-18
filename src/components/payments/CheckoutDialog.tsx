@@ -55,6 +55,15 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
   const [resultExpiresAt, setResultExpiresAt] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ status: 'idle', message: null });
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Tracks the live Razorpay overlay instance (if any is currently open)
+  // so it can be explicitly closed when this dialog closes/unmounts.
+  // Razorpay appends its own container to document.body, entirely outside
+  // React's tree — without this, closing our dialog while Razorpay is open
+  // leaves that overlay behind as a "zombie" that can intercept clicks
+  // meant for whatever renders next (verified: it steals focus and blocks
+  // a freshly-reopened dialog's own controls).
+  const razorpayInstanceRef = useRef<import('./useRazorpayCheckout').RazorpayInstance | null>(null);
 
   const planCard = getPlanCard(plan);
   const baseAmount = launchAmountFor(plan);
@@ -76,10 +85,74 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
     setRecovery({ status: 'idle', message: null });
   }, [isOpen, plan]);
 
+  // Focus management: move focus into the dialog on open (the close
+  // button is always present, so it's a reliable landing spot regardless
+  // of which view is showing), and restore it to whatever triggered the
+  // dialog once it closes — a keyboard/screen-reader user should never
+  // lose their place on the page behind it.
+  useEffect(() => {
+    if (!isOpen) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    // A macrotask (setTimeout), not requestAnimationFrame: RAF is tied to
+    // the browser's paint/compositing cycle and can be indefinitely
+    // deferred or simply never fire in a backgrounded/non-compositing tab
+    // (verified directly in this environment) — focus management must not
+    // depend on the page actually being painted.
+    const timer = setTimeout(() => closeButtonRef.current?.focus(), 0);
+    return () => {
+      clearTimeout(timer);
+      previouslyFocused?.focus?.();
+    };
+  }, [isOpen]);
+
+  // Explicitly close any live Razorpay overlay when this dialog closes or
+  // unmounts — see the razorpayInstanceRef comment above for why this
+  // can't be left to happen implicitly. Callers mount this component only
+  // while isOpen is true and unmount it to close (rather than re-rendering
+  // with isOpen=false), so the cleanup function — which fires on unmount —
+  // is what actually runs this, not the effect body.
+  //
+  // Calling rzp.close() alone was verified NOT to remove the overlay in
+  // practice (confirmed in a live Test Mode session: the container stayed
+  // in the DOM, fully visible and interactive, well after close() was
+  // called) — so this also removes any `.razorpay-container` node
+  // Checkout.js appended to document.body directly, as a guaranteed
+  // fallback regardless of what close() actually does internally.
+  useEffect(() => {
+    if (!isOpen) return;
+    return () => {
+      razorpayInstanceRef.current?.close();
+      razorpayInstanceRef.current = null;
+      document.querySelectorAll('.razorpay-container').forEach((node) => node.remove());
+    };
+  }, [isOpen]);
+
+  // Escape closes the dialog; Tab is trapped inside it so keyboard focus
+  // can never silently leave to the page underneath while a payment may
+  // be in flight. Recomputed fresh on every Tab press (rather than once
+  // on open) since the focusable set changes as the form view swaps for
+  // the status panel.
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -146,6 +219,7 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
     };
 
     const rzp = new window.Razorpay(options);
+    razorpayInstanceRef.current = rzp;
     rzp.on('payment.failed', (response) => {
       dispatch({
         type: 'RAZORPAY_FAILED',
@@ -246,10 +320,11 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
       onMouseDown={handleBackdropClick}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="checkout-dialog-title"
-        className="relative flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_32px_90px_rgba(0,0,0,0.6)] sm:rounded-3xl"
+        className="animate-fade-in relative flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-700/70 bg-[#111925] shadow-[0_32px_90px_rgba(0,0,0,0.6)] sm:rounded-3xl"
       >
         <div className="pointer-events-none absolute -top-24 right-0 h-56 w-56 rounded-full bg-cyan-400/[0.08] blur-3xl" aria-hidden="true" />
 
@@ -270,7 +345,7 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
             type="button"
             onClick={onClose}
             aria-label="Close checkout"
-            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
           >
             <X className="h-4 w-4" />
           </button>
@@ -278,7 +353,7 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
 
         <div className="relative overflow-y-auto p-5">
           {isFormView ? (
-            <div className="space-y-5">
+            <div key="form" className="animate-fade-in space-y-5">
               <div className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/[0.07] to-slate-900/40 p-4">
                 <div className="flex items-baseline justify-between">
                   <span className="text-sm font-medium text-slate-200">{plan} plan</span>
@@ -306,7 +381,7 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
               <button
                 type="button"
                 onClick={() => void runCheckout()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-cyan-500/30 active:translate-y-0"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:-translate-y-0.5 hover:bg-cyan-200 hover:shadow-cyan-500/30 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111925]"
               >
                 Pay {formatInr(displayedAmount)}
               </button>
@@ -317,6 +392,7 @@ export function CheckoutDialog({ isOpen, plan, onClose, onSuccess, currentPlan =
             </div>
           ) : (
             <PaymentStatusPanel
+              key={machine.state}
               state={machine.state}
               errorMessage={machine.context.errorMessage}
               errorCode={machine.context.errorCode}

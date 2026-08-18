@@ -16,6 +16,7 @@ export const RAZORPAY_CHECKOUT_SCRIPT_SRC = 'https://checkout.razorpay.com/v1/ch
 // `window`. Only the pieces Lumora actually uses are typed here.
 export interface RazorpayInstance {
   open: () => void;
+  close: () => void;
   on: (event: 'payment.failed', handler: (response: { error: { code?: string; description: string } }) => void) => void;
 }
 

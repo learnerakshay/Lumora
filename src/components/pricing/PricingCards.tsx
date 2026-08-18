@@ -145,7 +145,7 @@ function PlanCta({
 }) {
   const isPopular = card.badge === 'Most popular';
   const baseClass =
-    'flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition';
+    'flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f17]';
   const primaryClass = isPopular
     ? `${baseClass} bg-gradient-to-r from-cyan-300 to-sky-300 text-slate-950 shadow-lg shadow-cyan-500/25 hover:-translate-y-0.5 hover:shadow-cyan-500/35 active:translate-y-0`
     : `${baseClass} bg-cyan-300 text-slate-950 shadow-md shadow-cyan-500/15 hover:bg-cyan-200`;

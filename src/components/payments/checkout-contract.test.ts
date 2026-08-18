@@ -155,3 +155,53 @@ test('payments-api.ts uses a string-literal discriminant ("ok" | "error"), not a
   assert.doesNotMatch(paymentsApiSource, /ok:\s*true;/);
   assert.doesNotMatch(paymentsApiSource, /ok:\s*false;/);
 });
+
+// --- Regression: closing the dialog must not leave a zombie Razorpay
+// overlay behind (verified live in Test Mode: rzp.close() alone did not
+// remove the .razorpay-container node — it stayed fully visible,
+// pointer-events:auto, at the maximum z-index, and stole focus, blocking
+// a freshly-reopened dialog's own controls). --------------------------
+
+test('CheckoutDialog closes the live Razorpay instance AND removes any .razorpay-container node on close/unmount', () => {
+  const cleanupStart = checkoutDialogSource.indexOf('razorpayInstanceRef.current?.close();');
+  assert.ok(cleanupStart >= 0, 'expected the cleanup effect to call razorpayInstanceRef.current?.close()');
+  const cleanupBlock = checkoutDialogSource.slice(cleanupStart, cleanupStart + 200);
+  assert.match(cleanupBlock, /razorpayInstanceRef\.current = null;/);
+  assert.match(cleanupBlock, /document\.querySelectorAll\('\.razorpay-container'\)\.forEach\(\(node\) => node\.remove\(\)\)/);
+});
+
+test('the Razorpay-overlay cleanup runs via a useEffect CLEANUP function (fires on unmount), not a body-conditional that would never execute', () => {
+  const effectStart = checkoutDialogSource.indexOf('useEffect(() => {\n    if (!isOpen) return;\n    return () => {\n      razorpayInstanceRef.current?.close();');
+  assert.ok(effectStart >= 0, 'expected the cleanup to be registered via `return () => { ... }` inside the effect, not run in the effect body');
+});
+
+test('the created Razorpay instance is captured in razorpayInstanceRef immediately after construction', () => {
+  const constructIndex = checkoutDialogSource.indexOf('const rzp = new window.Razorpay(options);');
+  const refAssignIndex = checkoutDialogSource.indexOf('razorpayInstanceRef.current = rzp;');
+  assert.ok(constructIndex >= 0 && refAssignIndex > constructIndex && refAssignIndex < constructIndex + 60);
+});
+
+// --- Focus management must not depend on the page actually compositing --
+
+test('initial focus-on-open uses a macrotask (setTimeout), not requestAnimationFrame, which can be indefinitely deferred in a backgrounded/non-compositing tab', () => {
+  // Strip comments first — the effect's own explanatory comment legitimately
+  // names requestAnimationFrame to explain why it was rejected, which would
+  // otherwise false-positive this check.
+  const codeOnly = checkoutDialogSource
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
+  assert.doesNotMatch(codeOnly, /requestAnimationFrame/);
+  assert.match(codeOnly, /setTimeout\(\(\) => closeButtonRef\.current\?\.focus\(\), 0\)/);
+});
+
+test('focus is restored to whatever triggered the dialog when it closes', () => {
+  assert.match(checkoutDialogSource, /const previouslyFocused = document\.activeElement/);
+  assert.match(checkoutDialogSource, /previouslyFocused\?\.focus\?\.\(\)/);
+});
+
+test('Tab is trapped inside the dialog via a dedicated keydown handler, cycling both forward and backward at the boundaries', () => {
+  assert.match(checkoutDialogSource, /event\.key !== 'Tab' \|\| !dialogRef\.current/);
+  assert.match(checkoutDialogSource, /event\.shiftKey && document\.activeElement === first/);
+  assert.match(checkoutDialogSource, /!event\.shiftKey && document\.activeElement === last/);
+});

@@ -22,7 +22,14 @@ test('every page component is route-level lazy-loaded, not statically imported',
     'BillingPage',
     'SkillIntelligencePage',
     'LearningPathPage',
-    'LegalPage',
+    'AboutPage',
+    'FaqPage',
+    'TermsPage',
+    'PrivacyPage',
+    'ContactPage',
+    'ReportBugPage',
+    'NotFoundPage',
+    'UnauthorizedPage',
   ];
   for (const page of lazyPages) {
     assert.match(
@@ -54,9 +61,13 @@ test('lazy routes are wrapped in a Suspense boundary with a lightweight, branded
 test('every route path and its auth wrapper is unchanged', () => {
   const expectedRoutes: Array<[string, string | null]> = [
     ['/', null],
+    ['/about', null],
+    ['/faq', null],
     ['/privacy', null],
     ['/terms', null],
     ['/contact', null],
+    ['/report-bug', null],
+    ['/unauthorized', null],
     ['/sign-in', 'PublicOnlyRoute'],
     ['/sign-up', 'PublicOnlyRoute'],
     ['/workspaces', 'ProtectedRoute'],
@@ -69,7 +80,9 @@ test('every route path and its auth wrapper is unchanged', () => {
   for (const [path, wrapper] of expectedRoutes) {
     assert.match(appSource, new RegExp(`path="${path.replace(/[/:]/g, '\\$&')}"`), `expected route ${path} to still exist`);
   }
-  assert.match(appSource, /<Route path="\*" element=\{<Navigate to="\/" replace \/>\} \/>/);
+  // The catch-all now renders a real, branded 404 page instead of silently
+  // redirecting home — see src/pages/NotFoundPage.tsx.
+  assert.match(appSource, /<Route path="\*" element=\{<NotFoundPage \/>\} \/>/);
 });
 
 // Regression for bundle weight: Navbar renders on public/landing routes and

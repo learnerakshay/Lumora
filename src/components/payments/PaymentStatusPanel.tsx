@@ -66,7 +66,7 @@ export function PaymentStatusPanel({
 
   if (state === 'success') {
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div role="status" aria-live="polite" className="animate-fade-in flex flex-col items-center gap-3 py-6 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-700/60 bg-emerald-950/50 text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.18)]">
           <CheckCircle2 className="h-7 w-7" />
         </span>
@@ -80,7 +80,7 @@ export function PaymentStatusPanel({
         <button
           type="button"
           onClick={onDone}
-          className="mt-2 rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+          className="mt-2 rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111925]"
         >
           Continue
         </button>
@@ -91,7 +91,7 @@ export function PaymentStatusPanel({
   if (state === 'failed') {
     const isPaymentsDisabled = errorCode === 'PAYMENTS_DISABLED';
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div role="status" aria-live="polite" className="animate-fade-in flex flex-col items-center gap-3 py-6 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full border border-rose-800/60 bg-rose-950/40 text-rose-400">
           <XCircle className="h-6 w-6" />
         </span>
@@ -107,7 +107,7 @@ export function PaymentStatusPanel({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+            className="mt-2 rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111925]"
           >
             Try again
           </button>
@@ -118,7 +118,7 @@ export function PaymentStatusPanel({
 
   if (state === 'dismissed') {
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div role="status" aria-live="polite" className="animate-fade-in flex flex-col items-center gap-3 py-6 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-400">
           <AlertTriangle className="h-6 w-6" />
         </span>
@@ -130,7 +130,7 @@ export function PaymentStatusPanel({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+          className="rounded-xl bg-cyan-300 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111925]"
         >
           Try again
         </button>
@@ -140,7 +140,7 @@ export function PaymentStatusPanel({
 
   if (state === 'awaiting_bank_confirmation') {
     return (
-      <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <div role="status" aria-live="polite" className="animate-fade-in flex flex-col items-center gap-3 py-6 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full border border-amber-800/60 bg-amber-950/40 text-amber-400">
           <Clock className="h-6 w-6" />
         </span>
@@ -154,7 +154,7 @@ export function PaymentStatusPanel({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-xl border border-slate-700 bg-slate-800 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+          className="rounded-xl border border-slate-700 bg-slate-800 px-5 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111925]"
         >
           Start a new payment
         </button>
@@ -167,7 +167,7 @@ export function PaymentStatusPanel({
 
 function Working({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 py-10 text-center">
+    <div role="status" aria-live="polite" className="animate-fade-in flex flex-col items-center gap-3 py-10 text-center">
       {icon}
       <p className="text-sm font-medium text-slate-300">{text}</p>
     </div>
@@ -181,7 +181,7 @@ function RecoveryBlock({ recovery, onCheckStatus }: { recovery: RecoveryState; o
         type="button"
         onClick={onCheckStatus}
         disabled={recovery.status === 'checking'}
-        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
       >
         {recovery.status === 'checking' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
         Already paid? Check status

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './components/AuthProvider';
 import { Navbar } from './components/Navbar';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -7,6 +7,7 @@ import { PublicOnlyRoute } from './components/PublicOnlyRoute';
 import { AppShellLoader } from './components/AppShellLoader';
 import { UsageProvider } from './components/usage/UsageProvider';
 import { AccessProvider } from './components/payments/AccessProvider';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
 // Route-level code splitting: each page (including the Three.js/GSAP/Lenis-
 // heavy landing page) ships as its own chunk instead of one shared bundle.
@@ -24,11 +25,19 @@ const UsagePage = lazy(() => import('./pages/UsagePage').then((m) => ({ default:
 const BillingPage = lazy(() => import('./pages/BillingPage').then((m) => ({ default: m.BillingPage })));
 const SkillIntelligencePage = lazy(() => import('./pages/SkillIntelligencePage').then((m) => ({ default: m.SkillIntelligencePage })));
 const LearningPathPage = lazy(() => import('./pages/LearningPathPage').then((m) => ({ default: m.LearningPathPage })));
-const LegalPage = lazy(() => import('./pages/LegalPage').then((m) => ({ default: m.LegalPage })));
+const AboutPage = lazy(() => import('./pages/AboutPage').then((m) => ({ default: m.AboutPage })));
+const FaqPage = lazy(() => import('./pages/FaqPage').then((m) => ({ default: m.FaqPage })));
+const TermsPage = lazy(() => import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const ContactPage = lazy(() => import('./pages/ContactPage').then((m) => ({ default: m.ContactPage })));
+const ReportBugPage = lazy(() => import('./pages/ReportBugPage').then((m) => ({ default: m.ReportBugPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const UnauthorizedPage = lazy(() => import('./pages/UnauthorizedPage').then((m) => ({ default: m.UnauthorizedPage })));
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ErrorBoundary>
       <AuthProvider>
         <AccessProvider>
         <UsageProvider>
@@ -39,9 +48,13 @@ export default function App() {
             {/* Public Routes */}
             <Route path="/" element={<HomePage />} />
             <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/privacy" element={<LegalPage eyebrow="Lumora policies" title="Privacy"><p>Lumora keeps each Workspace and its source material isolated to the authenticated user. We do not expose private Workspace content through public pages.</p><p>This hackathon preview may use third-party providers to process content only when you explicitly use the corresponding product feature.</p></LegalPage>} />
-            <Route path="/terms" element={<LegalPage eyebrow="Lumora policies" title="Terms"><p>Lumora is provided as a hackathon preview for evaluation and learning. Use the service only with material you are authorized to upload and process.</p><p>Features and availability may change while the product is under active development.</p></LegalPage>} />
-            <Route path="/contact" element={<LegalPage eyebrow="Lumora support" title="Contact"><p>Questions about Lumora can be sent to <a className="text-sky-300 underline decoration-sky-500/40 underline-offset-4 hover:text-sky-200" href="mailto:support@lumora.ai">support@lumora.ai</a>.</p></LegalPage>} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/faq" element={<FaqPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/report-bug" element={<ReportBugPage />} />
+            <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
             {/* Auth Routes (Public Only) */}
             <Route
@@ -112,13 +125,14 @@ export default function App() {
             />
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
           </Suspense>
         </div>
         </UsageProvider>
         </AccessProvider>
       </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

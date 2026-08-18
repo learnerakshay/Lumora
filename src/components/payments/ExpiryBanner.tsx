@@ -50,12 +50,16 @@ export function ExpiryBanner() {
   };
 
   return (
-    <div role="status" className={`flex items-center gap-3 border-b px-4 py-2.5 text-xs sm:px-6 lg:px-8 ${tone}`}>
+    <div
+      role="status"
+      aria-live="polite"
+      className={`animate-fade-in flex items-center gap-3 border-b px-4 py-2.5 text-xs sm:px-6 lg:px-8 ${tone}`}
+    >
       <Clock className="h-3.5 w-3.5 shrink-0" />
       <p className="min-w-0 flex-1 truncate">{message}</p>
       <Link
         to="/billing"
-        className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+        className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
           isUrgent || isExpired
             ? 'bg-white/10 hover:bg-white/15'
             : 'text-cyan-200 underline decoration-cyan-400/40 underline-offset-2 hover:text-cyan-100'
@@ -68,7 +72,7 @@ export function ExpiryBanner() {
           type="button"
           onClick={handleDismiss}
           aria-label="Dismiss expiry notice"
-          className="shrink-0 rounded-lg p-1 opacity-60 transition hover:bg-white/10 hover:opacity-100"
+          className="shrink-0 rounded-lg p-1 opacity-60 transition hover:bg-white/10 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         >
           <X className="h-3.5 w-3.5" />
         </button>

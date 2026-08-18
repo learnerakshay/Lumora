@@ -78,7 +78,7 @@ export function CurrentPlanCard({
           type="button"
           onClick={onRefresh}
           disabled={refreshing}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-60"
+          className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
         >
           {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh payment status
@@ -91,7 +91,7 @@ export function CurrentPlanCard({
           <p className="text-sm text-slate-300">You're on the free plan — no purchase on record yet.</p>
           <Link
             to="/pricing"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#101722]"
           >
             View plans
           </Link>
@@ -108,14 +108,14 @@ export function CurrentPlanCard({
             <button
               type="button"
               onClick={() => onRenew('CORE')}
-              className="rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+              className="rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#101722]"
             >
               Renew CORE
             </button>
             <button
               type="button"
               onClick={() => onRenew('MAX')}
-              className="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
               Get MAX
             </button>
@@ -157,7 +157,7 @@ export function CurrentPlanCard({
             <button
               type="button"
               onClick={() => onRenew(plan as PaidPlan)}
-              className="rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200"
+              className="rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/15 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#101722]"
             >
               Renew Plan
             </button>
@@ -165,7 +165,7 @@ export function CurrentPlanCard({
               <button
                 type="button"
                 onClick={() => onUpgrade('MAX')}
-                className="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+                className="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
               >
                 Upgrade to MAX
               </button>

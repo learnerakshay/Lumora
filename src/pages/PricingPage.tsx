@@ -82,7 +82,7 @@ export function PricingPage() {
                   key={item.question}
                   className="group rounded-2xl border border-slate-800/90 bg-[#101826]/95 transition-colors open:border-cyan-400/25 open:bg-cyan-400/[0.03]"
                 >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl p-5 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
                     {item.question}
                     <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 group-open:rotate-180 group-open:text-cyan-300" />
                   </summary>

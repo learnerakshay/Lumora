@@ -1,69 +1,143 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Github, Twitter, Mail } from 'lucide-react';
 import { LumoraBrand } from './LumoraBrand';
 
+interface FooterLink {
+  label: string;
+  to?: string;
+  anchor?: string;
+  href?: string;
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+}
+
+const PRODUCT_LINKS: FooterLink[] = [
+  { label: 'Overview', anchor: 'overview' },
+  { label: 'Features', anchor: 'features' },
+  { label: 'Pricing', to: '/pricing' },
+  { label: 'FAQ', to: '/faq' },
+];
+
+const COMPANY_LINKS: FooterLink[] = [
+  { label: 'About', to: '/about' },
+  { label: 'Contact', to: '/contact' },
+  { label: 'Report a Bug', to: '/report-bug' },
+];
+
+const LEGAL_LINKS: FooterLink[] = [
+  { label: 'Privacy', to: '/privacy' },
+  { label: 'Terms', to: '/terms' },
+];
+
+const EXTERNAL_LINKS: FooterLink[] = [
+  { label: 'GitHub', href: 'https://github.com', icon: Github },
+  { label: 'X (Twitter)', href: 'https://x.com', icon: Twitter },
+];
+
+const linkClasses =
+  'rounded-md text-slate-400 transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400';
+
 export function Footer() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Overview/Features are landing-page anchor sections, not routes. From any
+  // other page, navigate home first, then scroll once the landing chunk has
+  // mounted — mirrors Navbar's handleNavClick so footer links behave the
+  // same way whether you're already on "/" or somewhere else.
+  const handleAnchorClick = (anchorId: string) => {
+    const scrollWhenReady = () => {
+      const el = document.getElementById(anchorId);
+      if (!el) return;
+      void import('./LandingSmoothScroll').then(({ scrollToLandingSection }) => scrollToLandingSection(el));
+    };
+    if (location.pathname !== '/') {
+      navigate(`/#${anchorId}`);
+      setTimeout(scrollWhenReady, 100);
+    } else {
+      scrollWhenReady();
+    }
+  };
+
+  const renderLink = (link: FooterLink) => {
+    if (link.anchor) {
+      return (
+        <button key={link.label} onClick={() => handleAnchorClick(link.anchor!)} className={`${linkClasses} cursor-pointer text-left`}>
+          {link.label}
+        </button>
+      );
+    }
+    if (link.href) {
+      const Icon = link.icon;
+      return (
+        <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className={`${linkClasses} flex items-center gap-1.5`}>
+          {Icon && <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />}
+          <span>{link.label}</span>
+        </a>
+      );
+    }
+    return (
+      <Link key={link.label} to={link.to!} className={linkClasses}>
+        {link.label}
+      </Link>
+    );
+  };
+
   return (
-    <footer className="landing-footer relative border-t border-slate-800/70 px-4 py-10 text-xs text-slate-400 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
-        {/* Brand Logo & Copyright */}
-        <div className="flex flex-col items-center gap-2 sm:flex-row sm:gap-4">
-          <Link to="/" className="group flex items-center space-x-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
-            <LumoraBrand compact />
-          </Link>
-          <span className="hidden h-4 w-px bg-slate-800 sm:inline" />
-          <span className="text-slate-500">
-            © {new Date().getFullYear()} Lumora. AI Knowledge Workspace.
-          </span>
+    <footer className="landing-footer relative px-4 py-12 text-xs text-slate-400 sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-700/50 to-transparent" />
+
+      <div className="mx-auto max-w-7xl">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
+          {/* Brand + descriptor */}
+          <div className="col-span-2 space-y-3 sm:col-span-4 lg:col-span-1">
+            <Link to="/" className="group inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+              <LumoraBrand compact />
+            </Link>
+            <p className="max-w-xs text-slate-500">
+              An AI knowledge Workspace for grounded, cited answers over your own sources — and a Career Intelligence
+              path from resume to role-ready.
+            </p>
+          </div>
+
+          <nav aria-label="Product">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Product</p>
+            <ul className="space-y-2.5">
+              {PRODUCT_LINKS.map((link) => (
+                <li key={link.label}>{renderLink(link)}</li>
+              ))}
+            </ul>
+          </nav>
+
+          <nav aria-label="Company">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Company</p>
+            <ul className="space-y-2.5">
+              {COMPANY_LINKS.map((link) => (
+                <li key={link.label}>{renderLink(link)}</li>
+              ))}
+            </ul>
+          </nav>
+
+          <nav aria-label="Legal">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Legal</p>
+            <ul className="space-y-2.5">
+              {LEGAL_LINKS.map((link) => (
+                <li key={link.label}>{renderLink(link)}</li>
+              ))}
+            </ul>
+          </nav>
         </div>
 
-        {/* Links */}
-        <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <Github className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>GitHub</span>
-          </a>
-          <a
-            href="https://x.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <Twitter className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>X (Twitter)</span>
-          </a>
-          <Link
-            to="/pricing"
-            className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Pricing
-          </Link>
-          <Link
-            to="/privacy"
-            className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Privacy
-          </Link>
-          <Link
-            to="/terms"
-            className="cursor-pointer rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            Terms
-          </Link>
-          <Link
-            to="/contact"
-            className="flex items-center gap-1.5 rounded-md transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>Contact</span>
-          </Link>
-        </nav>
+        <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-slate-800/40 pt-6 sm:flex-row">
+          <span className="text-slate-500">© 2026 Lumora. AI Knowledge Workspace.</span>
+          <div className="flex items-center gap-5">
+            {EXTERNAL_LINKS.map(renderLink)}
+            <Link to="/contact" className={`${linkClasses} flex items-center gap-1.5`}>
+              <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <span>Contact</span>
+            </Link>
+          </div>
+        </div>
       </div>
     </footer>
   );
