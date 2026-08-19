@@ -140,8 +140,8 @@ textarea {
 }
 
 .workspace-identity-option:hover {
-  border-color: rgb(var(--identity-rgb) / 0.58);
-  background: rgb(var(--identity-rgb) / 0.15);
+  border-color: rgb(100 116 139 / 0.9);
+  background: rgb(var(--identity-rgb) / 0.13);
 }
 
 .workspace-identity-option-selected {
