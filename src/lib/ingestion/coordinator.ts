@@ -33,7 +33,7 @@ export class IngestionCoordinator {
     if (this.active.has(key)) return false;
     this.active.add(key);
 
-    void this.process(options)
+    void this.process({ ...options, dispatchedAt: options.dispatchedAt ?? Date.now() })
       .then(async (result) => {
         if (!options.usageEventId) return;
         if (result.success) {

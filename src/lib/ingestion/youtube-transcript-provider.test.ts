@@ -511,6 +511,126 @@ test('a misconfigured proxy fails fast instead of attempting a doomed Gemini fal
   );
 });
 
+test('the real environment-driven proxy config uses two bounded attempts, not the module default of three', async () => {
+  await withEnv(
+    {
+      YOUTUBE_TRANSCRIPT_PROVIDER: 'proxy',
+      YOUTUBE_TRANSCRIPT_PROXY_URL: 'https://relay.example.com/api/youtube-transcript',
+      YOUTUBE_TRANSCRIPT_PROXY_TOKEN: 'shared-secret',
+    },
+    async () => {
+      let proxyCalls = 0;
+      await assert.rejects(
+        fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+          validateEndpoint: async (value) => new URL(value),
+          fetchImpl: async () => {
+            proxyCalls += 1;
+            return new Response('', { status: 503 });
+          },
+        }),
+      );
+      assert.equal(proxyCalls, 2);
+    },
+  );
+});
+
+test('a transient upstream proxy failure (429/502/503) still falls back to Gemini instead of failing fast', async (context) => {
+  for (const status of [429, 502, 503, 504]) {
+    await context.test(`httpStatus ${status}`, async () => {
+      await withEnv(
+        {
+          YOUTUBE_TRANSCRIPT_PROVIDER: 'proxy',
+          YOUTUBE_TRANSCRIPT_PROXY_URL: 'https://relay.example.com/api/youtube-transcript',
+          YOUTUBE_TRANSCRIPT_PROXY_TOKEN: 'shared-secret',
+          GEMINI_API_KEY: 'gemini-key',
+        },
+        async () => {
+          let geminiCalls = 0;
+          const result = await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+            validateEndpoint: async (value) => new URL(value),
+            fetchImpl: async () => new Response('', { status }),
+            geminiAcquire: async () => {
+              geminiCalls += 1;
+              return {
+                language: 'en',
+                segments: [{ text: 'Gemini fallback', startSeconds: 0, endSeconds: 2 }],
+              };
+            },
+          });
+          assert.equal(result.provider, 'gemini');
+          assert.equal(geminiCalls, 1);
+        },
+      );
+    });
+  }
+});
+
+test('a relay auth/config failure (not a YouTube-side transient status) still fails fast without Gemini', async () => {
+  await withEnv(
+    {
+      YOUTUBE_TRANSCRIPT_PROVIDER: 'proxy',
+      YOUTUBE_TRANSCRIPT_PROXY_URL: 'https://relay.example.com/api/youtube-transcript',
+      YOUTUBE_TRANSCRIPT_PROXY_TOKEN: 'shared-secret',
+    },
+    async () => {
+      let geminiCalls = 0;
+      await assert.rejects(
+        fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+          validateEndpoint: async (value) => new URL(value),
+          fetchImpl: async () => new Response('unauthorized', { status: 401 }),
+          geminiAcquire: async () => {
+            geminiCalls += 1;
+            throw new Error('Gemini should not have been called');
+          },
+        }),
+        (error: unknown) =>
+          error instanceof IngestionFailure && error.errorCode === 'TRANSCRIPT_PROVIDER_ERROR',
+      );
+      assert.equal(geminiCalls, 0);
+    },
+  );
+});
+
+test('a proxy timeout fails fast without retrying (a hang is very likely to hang again)', async () => {
+  // Explicit config (rather than withEnv) bypasses env schema validation
+  // (YOUTUBE_TRANSCRIPT_TIMEOUT_MS has a 5s floor), letting this test use a
+  // short timeout. maxAttempts: 2 here mirrors the real proxy runtime
+  // default set in youtube-transcript-provider.ts.
+  let proxyCalls = 0;
+  await assert.rejects(
+    fetchYouTubeTranscript(
+      'dQw4w9WgXcQ',
+      {
+        provider: 'proxy',
+        timeoutMs: 10,
+        proxyUrl: 'https://relay.example.com/api/youtube-transcript',
+        proxyToken: 'shared-secret',
+        maxAttempts: 2,
+      },
+      {
+        validateEndpoint: async (value) => new URL(value),
+        // fetchProxyTranscript (unlike the direct-path fetcher) has no
+        // internal Promise.race against a timer — it relies on the
+        // underlying fetch rejecting when its AbortSignal fires, exactly
+        // like the real global fetch does. This mock must honor the signal
+        // itself, or the awaited call simply hangs forever instead of
+        // exercising the timeout path.
+        fetchImpl: async (_url, init) => {
+          proxyCalls += 1;
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const error = new Error('The operation was aborted');
+              error.name = 'AbortError';
+              reject(error);
+            });
+          });
+        },
+      },
+    ),
+  );
+  assert.equal(proxyCalls, 1);
+});
+
 test('a proxy-confirmed missing transcript still falls back to Gemini', async () => {
   await withEnv(
     {

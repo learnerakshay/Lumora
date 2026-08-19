@@ -24,6 +24,13 @@ export interface IngestionOptions {
   type: SourceType;
   version?: number;
   usageEventId?: string;
+  // Set by IngestionCoordinator.dispatch() the instant it is invoked (i.e.
+  // right after the HTTP request persists the source row). There is no
+  // separate job queue/worker process in this architecture — dispatch runs
+  // the pipeline in-process — so this measures dispatch-to-claim scheduling
+  // latency (event loop + the claimProcessingAttempt transaction), not queue
+  // wait in a traditional worker-pool sense.
+  dispatchedAt?: number;
 }
 
 function requiresRemoteFetch(
@@ -108,8 +115,12 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   }
 
   const pipelineStartedAt = Date.now();
+  const queueWaitMs = options.dispatchedAt !== undefined
+    ? Math.max(0, pipelineStartedAt - options.dispatchedAt)
+    : null;
   let currentStage: ProcessingStage = 'QUEUED';
   let stageStartedAt = Date.now();
+  const stageDurationsMs: Partial<Record<ProcessingStage, number>> = {};
 
   const enterStage = async (
     nextStage: ProcessingStage,
@@ -117,6 +128,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   ): Promise<void> => {
     const previousStage = currentStage;
     const previousStageDurationMs = Date.now() - stageStartedAt;
+    stageDurationsMs[previousStage] = previousStageDurationMs;
     logger.info('Ingestion stage completed', {
       sourceId: options.sourceId,
       version,
@@ -317,6 +329,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       },
     });
     const indexingDurationMs = Date.now() - stageStartedAt;
+    stageDurationsMs.INDEXING = indexingDurationMs;
     logger.info('Ingestion stage completed', {
       sourceId: options.sourceId,
       version,
@@ -328,6 +341,41 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     });
     currentStage = 'COMPLETED';
     stageStartedAt = Date.now();
+    const totalDurationMs = Date.now() - pipelineStartedAt;
+
+    // One consolidated timing breakdown per completed ingestion, correlated
+    // by sourceId/version/processingAttemptId, so a slow ingestion can be
+    // diagnosed from a single log line instead of reconstructing it from the
+    // per-transition "Ingestion stage completed" lines above. FETCHING is the
+    // transcript/remote-fetch stage (network-bound); CHUNKING/EMBEDDING are
+    // measured around the actual computation, not the DB writes that
+    // surround them (those land in PARSING/READY_FOR_INDEXING respectively).
+    logger.info('Ingestion pipeline timing summary', {
+      sourceId: options.sourceId,
+      version,
+      processingAttemptId,
+      sourceType: options.type,
+      workspaceId: options.workspaceId,
+      queueWaitMs,
+      queuedMs: stageDurationsMs.QUEUED ?? null,
+      processingMs: stageDurationsMs.PROCESSING ?? null,
+      fetchingMs: stageDurationsMs.FETCHING ?? null,
+      parsingMs: stageDurationsMs.PARSING ?? null,
+      chunkingMs: stageDurationsMs.CHUNKING ?? null,
+      readyForIndexingMs: stageDurationsMs.READY_FOR_INDEXING ?? null,
+      embeddingMs: stageDurationsMs.EMBEDDING ?? null,
+      indexingMs: stageDurationsMs.INDEXING ?? null,
+      totalDurationMs,
+      chunkCount: committedIndex.chunkCount,
+      tokenCount,
+      ...(options.type === 'YOUTUBE'
+        ? {
+            transcriptProvider: parsed.metadata.transcriptProvider,
+            transcriptStrategy: parsed.metadata.transcriptStrategy,
+            transcriptAcquisitionMs: parsed.metadata.acquisitionDurationMs,
+          }
+        : {}),
+    });
 
     logger.info('Completed ingestion attempt', {
       sourceId: options.sourceId,
@@ -336,7 +384,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       sourceType: options.type,
       chunkCount: committedIndex.chunkCount,
       tokenCount,
-      durationMs: Date.now() - pipelineStartedAt,
+      durationMs: totalDurationMs,
     });
     return {
       success: true,
@@ -360,6 +408,12 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       stage: currentStage,
       stageDurationMs: failedStageDurationMs,
       totalDurationMs: Date.now() - pipelineStartedAt,
+      queueWaitMs,
+      // Timing for every stage that completed before the failure, so a slow
+      // failure (e.g. a transcript-provider timeout) is diagnosable from
+      // this one line without cross-referencing earlier "stage completed"
+      // log lines. The failing stage itself is `stage`/`stageDurationMs` above.
+      completedStageDurationsMs: stageDurationsMs,
       errorCode: classification.errorCode,
       errorCategory: classification.errorCategory,
       retryable: classification.retryable,

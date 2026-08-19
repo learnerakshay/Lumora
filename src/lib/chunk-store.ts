@@ -174,48 +174,56 @@ export async function saveSourceIndex(
         select: { id: true },
       });
 
+      // A single multi-row INSERT instead of one round trip per chunk. Each
+      // ingestion previously paid N sequential network round trips to Neon
+      // for N chunks; a short (~5 chunk) YouTube transcript still cost tens
+      // of milliseconds here, and longer sources scaled linearly with chunk
+      // count. Row-level correctness is unaffected: this remains inside the
+      // same transaction/lock scope, and the verification query immediately
+      // below already asserts the exact expected row count and embedding
+      // dimensionality for the whole batch, so the per-row `affected !== 1`
+      // check this replaced was redundant with that stronger, existing check.
       const createdAt = new Date();
-      const records: StoredChunkRecord[] = [];
-      for (const chunk of input.chunks) {
-        const id = randomUUID();
-        const affected = await tx.$executeRaw`
-          INSERT INTO "Chunk" (
-            id,
-            "sourceId",
-            "workspaceId",
-            "indexId",
-            "sourceVersion",
-            content,
-            "tokenCount",
-            "chunkIndex",
-            embedding,
-            "createdAt"
-          )
-          VALUES (
-            ${id},
-            ${source.id},
-            ${source.workspaceId},
-            ${createdIndex.id},
-            ${input.sourceVersion},
-            ${chunk.content},
-            ${chunk.tokenEstimate},
-            ${chunk.chunkIndex},
-            ${vectorLiteral(chunk.embedding)}::vector,
-            ${createdAt}
-          )
-        `;
-        if (affected !== 1) {
-          throw new Error(`pgvector insert failed for chunk ${chunk.chunkIndex}`);
-        }
-        records.push({
+      const records: StoredChunkRecord[] = input.chunks.map((chunk) => ({
+        id: randomUUID(),
+        sourceId: source.id,
+        workspaceId: source.workspaceId,
+        content: chunk.content,
+        tokenCount: chunk.tokenEstimate,
+        chunkIndex: chunk.chunkIndex,
+        createdAt: createdAt.toISOString(),
+      }));
+      const valueRows = input.chunks.map((chunk, position) => Prisma.sql`(
+        ${records[position].id},
+        ${source.id},
+        ${source.workspaceId},
+        ${createdIndex.id},
+        ${input.sourceVersion},
+        ${chunk.content},
+        ${chunk.tokenEstimate},
+        ${chunk.chunkIndex},
+        ${vectorLiteral(chunk.embedding)}::vector,
+        ${createdAt}
+      )`);
+      const affected = await tx.$executeRaw`
+        INSERT INTO "Chunk" (
           id,
-          sourceId: source.id,
-          workspaceId: source.workspaceId,
-          content: chunk.content,
-          tokenCount: chunk.tokenEstimate,
-          chunkIndex: chunk.chunkIndex,
-          createdAt: createdAt.toISOString(),
-        });
+          "sourceId",
+          "workspaceId",
+          "indexId",
+          "sourceVersion",
+          content,
+          "tokenCount",
+          "chunkIndex",
+          embedding,
+          "createdAt"
+        )
+        VALUES ${Prisma.join(valueRows)}
+      `;
+      if (affected !== input.chunks.length) {
+        throw new Error(
+          `pgvector bulk insert affected ${affected} rows; expected ${input.chunks.length}`,
+        );
       }
 
       const verification = await tx.$queryRaw<

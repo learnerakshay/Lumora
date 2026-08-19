@@ -404,7 +404,12 @@ async function fetchProxyTranscript(
     } catch (error: any) {
       if (error instanceof IngestionFailure) throw error;
       if (error?.name === 'AbortError' || controller.signal.aborted) {
-        if (attempt < maximumAttempts) continue;
+        // Unlike a retryable HTTP status (which fails fast and cheap), a
+        // per-attempt timeout means the relay itself was unresponsive for
+        // the full budget — retrying is very likely to time out again and
+        // would only add latency before the fallback decision runs, not
+        // improve the odds of success. Fail fast here, the same fail-fast-
+        // on-timeout choice already made for Gemini acquisition.
         logger.error('YouTube transcript proxy request failed', undefined, {
           videoId,
           url: endpoint.toString(),
@@ -478,7 +483,13 @@ export async function fetchYouTubeTranscript(
             timeoutMs: env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
             proxyUrl: env.YOUTUBE_TRANSCRIPT_PROXY_URL,
             proxyToken: env.YOUTUBE_TRANSCRIPT_PROXY_TOKEN,
-            maxAttempts: 1,
+            // One bounded retry for a retryable HTTP status (429/5xx) —
+            // cheap (fast HTTP response + a 250ms backoff, not a second
+            // full timeout wait, since a real timeout fails fast above
+            // instead of retrying) and targeted at exactly the transient
+            // blips this investigation found: a momentary YouTube-side
+            // rate limit or 5xx during caption extraction.
+            maxAttempts: 2,
           }
         : {
             provider: 'direct' as const,
@@ -512,6 +523,7 @@ export async function fetchYouTubeTranscript(
       const classification = error instanceof IngestionFailure
         ? error.errorCode
         : 'UNKNOWN_ERROR';
+      const httpStatus = error instanceof IngestionFailure ? error.httpStatus ?? null : null;
       log.info('YOUTUBE_ACQUISITION_STRATEGY_RESULT', {
         videoId,
         strategy: 'transcript_fast_path',
@@ -520,23 +532,35 @@ export async function fetchYouTubeTranscript(
         segmentCount: 0,
         textLength: 0,
         classification,
+        httpStatus,
       });
 
       // TRANSCRIPT_UNAVAILABLE means the proxy reached YouTube and confirmed
       // this specific video has no captions — Gemini is the correct next
-      // step. Any other classification (bad token, wrong URL, unreachable,
-      // malformed response) means the configured proxy itself is broken,
-      // which is true for every video, not just this one. Falling back to a
-      // 120s Gemini attempt per video while it's down makes ingestion slow
-      // *and* still failing, so fail fast instead — but only when the proxy
-      // was explicitly chosen; 'direct' failures are inherently per-request
-      // (a specific YouTube block/response), so they still fall back below.
-      if (runtime.fastPath.provider === 'proxy' && classification !== 'TRANSCRIPT_UNAVAILABLE') {
+      // step. A 429/502/503/504 httpStatus means the proxy also reached
+      // YouTube, but got a rate-limit, bot-protection block, or transient
+      // server error on this specific request (after its own bounded
+      // client-side retry above already failed to recover) — this is exactly
+      // as per-request as a confirmed "no captions" result, so it deserves
+      // the same Gemini fallback rather than being denied it. Any other
+      // classification (bad token, wrong URL, unreachable, malformed
+      // request/response with no upstream status at all) means the
+      // configured proxy itself is broken, which is true for every video,
+      // not just this one — falling back to a 120s Gemini attempt per video
+      // while it's down makes ingestion slow *and* still failing, so those
+      // fail fast instead. This only applies when the proxy was explicitly
+      // chosen; 'direct' failures are inherently per-request (a specific
+      // YouTube block/response), so they still fall back below regardless.
+      const isPerVideoUpstreamFailure =
+        classification === 'TRANSCRIPT_UNAVAILABLE' ||
+        (httpStatus !== null && [429, 502, 503, 504].includes(httpStatus));
+      if (runtime.fastPath.provider === 'proxy' && !isPerVideoUpstreamFailure) {
         log.info('YOUTUBE_ACQUISITION_FALLBACK', {
           videoId,
           fromStrategy: 'transcript_fast_path',
           toStrategy: 'none',
           reason: classification,
+          httpStatus,
         });
         throw new IngestionFailure({
           message: `YouTube transcript proxy failed [${classification}] while explicitly configured as the required provider`,
@@ -553,6 +577,7 @@ export async function fetchYouTubeTranscript(
         fromStrategy: 'transcript_fast_path',
         toStrategy: 'gemini_native',
         reason: classification,
+        httpStatus,
       });
     }
   }

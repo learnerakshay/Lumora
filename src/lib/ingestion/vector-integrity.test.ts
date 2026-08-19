@@ -140,7 +140,7 @@ interface FakeState {
   chunks: Array<{ indexId: string }>;
 }
 
-function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
+function createFakeVectorDatabase(options: { simulateInsertFailure?: boolean } = {}) {
   const state: FakeState = {
     source: {
       id: 'source-1',
@@ -174,14 +174,31 @@ function createFakeVectorDatabase(options: { failInsertAt?: number } = {}) {
           }
           return [];
         },
+        // saveSourceIndex now issues a single multi-row INSERT (built with
+        // Prisma.sql/Prisma.join) instead of one statement per chunk, so a
+        // real Prisma.Sql fragment shows up here as one value carrying every
+        // row's columns concatenated in `.values` (10 columns per row: id,
+        // sourceId, workspaceId, indexId, sourceVersion, content,
+        // tokenEstimate, chunkIndex, embedding literal, createdAt). This
+        // fake un-batches that back into individual chunk rows so the rest
+        // of the fake (COUNT(*) verification, chunk snapshots) is unchanged.
+        // A bulk INSERT is atomic in real Postgres, so `failInsertAt` now
+        // simulates the whole statement failing rather than one row of many.
         $executeRaw: async (_strings: TemplateStringsArray, ...values: any[]) => {
           insertCount += 1;
-          if (options.failInsertAt === insertCount) {
+          if (options.simulateInsertFailure) {
             throw new Error('simulated pgvector write failure');
           }
-          const indexId = values[3];
-          state.chunks.push({ indexId });
-          return 1;
+          const joined = values[0];
+          const flatValues: any[] = joined?.values ?? values;
+          const columnsPerRow = 10;
+          let affected = 0;
+          for (let offset = 0; offset < flatValues.length; offset += columnsPerRow) {
+            const indexId = flatValues[offset + 3];
+            state.chunks.push({ indexId });
+            affected += 1;
+          }
+          return affected;
         },
         sourceIndex: {
           create: async ({ data }: any) => {
@@ -314,7 +331,7 @@ test('stale or failed attempt cannot promote a partial active index', async () =
 });
 
 test('pgvector failure rolls back the new index and preserves the previous active index', async () => {
-  const { database, state } = createFakeVectorDatabase({ failInsertAt: 2 });
+  const { database, state } = createFakeVectorDatabase({ simulateInsertFailure: true });
   await assert.rejects(
     saveSourceIndex(indexInput(), database as any),
     /simulated pgvector write failure/,

@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
-import type { TranscriptSegment } from 'youtube-transcript-plus';
-import { createVercelYouTubeTranscriptHandler } from '../../../api/youtube-transcript';
+import {
+  YoutubeTranscriptDisabledError,
+  YoutubeTranscriptNotAvailableError,
+  YoutubeTranscriptTooManyRequestError,
+  YoutubeTranscriptVideoUnavailableError,
+  type TranscriptSegment,
+} from 'youtube-transcript-plus';
+import {
+  classifyExtractionError,
+  createVercelYouTubeTranscriptHandler,
+} from '../../../api/youtube-transcript';
 import { fetchYouTubeTranscript } from './youtube-transcript-provider';
 
 const VIDEO_ID = '-moW9jvvMr4';
@@ -213,4 +222,104 @@ test('existing Render proxy provider consumes the native relay response contract
   assert.deepEqual(result.cues, [
     { text: 'Relay contract', offset: 0, duration: 1_500, lang: 'en' },
   ]);
+});
+
+// youtube-transcript-plus throws the same YoutubeTranscriptVideoUnavailableError /
+// YoutubeTranscriptNotAvailableError for a real 404 and for a 429/403/5xx that
+// survived its own internal retry — the classes carry no HTTP status of their
+// own. `upstreamStatus`, captured by this module's own tracking fetch hooks,
+// is what lets the relay recover that distinction instead of reporting every
+// case as "no transcript available".
+test('ambiguous "unavailable" errors are reclassified using the real upstream HTTP status', async (context) => {
+  const ambiguousErrorFactories = [
+    () => new YoutubeTranscriptVideoUnavailableError(VIDEO_ID),
+    () => new YoutubeTranscriptNotAvailableError(VIDEO_ID),
+  ];
+
+  for (const makeError of ambiguousErrorFactories) {
+    await context.test(`${makeError().name} + 429 -> rate limited, not unavailable`, () => {
+      const failure = classifyExtractionError(makeError(), false, 429);
+      assert.equal(failure.status, 429);
+      assert.equal(failure.code, 'UPSTREAM_RATE_LIMITED');
+    });
+
+    await context.test(`${makeError().name} + 403 -> blocked, not unavailable`, () => {
+      const failure = classifyExtractionError(makeError(), false, 403);
+      assert.equal(failure.status, 503);
+      assert.equal(failure.code, 'UPSTREAM_BLOCKED');
+    });
+
+    await context.test(`${makeError().name} + 500 -> transient upstream error, not unavailable`, () => {
+      const failure = classifyExtractionError(makeError(), false, 500);
+      assert.equal(failure.status, 502);
+      assert.equal(failure.code, 'UPSTREAM_TRANSIENT_ERROR');
+    });
+
+    await context.test(`${makeError().name} + 404 -> stays unavailable (a real "not found")`, () => {
+      const failure = classifyExtractionError(makeError(), false, 404);
+      assert.equal(failure.status, 404);
+      assert.equal(failure.code, 'TRANSCRIPT_UNAVAILABLE');
+    });
+
+    await context.test(`${makeError().name} + no observed status -> stays unavailable (unchanged behavior)`, () => {
+      const failure = classifyExtractionError(makeError(), false, undefined);
+      assert.equal(failure.status, 404);
+      assert.equal(failure.code, 'TRANSCRIPT_UNAVAILABLE');
+    });
+  }
+});
+
+test('captions genuinely disabled or an unavailable language are never reclassified by upstream status', () => {
+  // Unlike VideoUnavailableError/NotAvailableError, these are thrown from
+  // successfully-parsed player JSON content (not a raw non-ok HTTP
+  // response), so they are already a genuine content-level fact regardless
+  // of what status the surrounding requests happened to return.
+  const disabled = classifyExtractionError(new YoutubeTranscriptDisabledError(VIDEO_ID), false, 429);
+  assert.equal(disabled.code, 'TRANSCRIPT_UNAVAILABLE');
+
+  const tooManyRequests = classifyExtractionError(new YoutubeTranscriptTooManyRequestError(), false, 200);
+  assert.equal(tooManyRequests.code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(tooManyRequests.status, 429);
+});
+
+test('extraction wires per-request upstream-status tracking hooks into the transcript config', async () => {
+  let capturedConfig: Record<string, unknown> | undefined;
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async (_videoId, config) => {
+      capturedConfig = config as unknown as Record<string, unknown>;
+      return [{ text: 'cue', offset: 0, duration: 1, lang: 'en' }];
+    },
+    logger: { info() {}, error() {} },
+  });
+  const result = nodeResponse();
+
+  await withoutHanging(handler(nodeRequest({ videoId: VIDEO_ID }, TOKEN), result.response));
+
+  assert.equal(typeof capturedConfig?.videoFetch, 'function');
+  assert.equal(typeof capturedConfig?.playerFetch, 'function');
+  assert.equal(typeof capturedConfig?.transcriptFetch, 'function');
+});
+
+test('a failed extraction logs the observed upstream HTTP status for diagnosis', async () => {
+  const errorLogs: Array<Record<string, unknown>> = [];
+  const handler = createVercelYouTubeTranscriptHandler({
+    getSecret: () => TOKEN,
+    transcriptFetch: async () => {
+      throw new YoutubeTranscriptVideoUnavailableError(VIDEO_ID);
+    },
+    logger: {
+      info() {},
+      error(event, metadata) {
+        errorLogs.push({ event, ...(metadata as Record<string, unknown>) });
+      },
+    },
+  });
+  const result = nodeResponse();
+
+  await withoutHanging(handler(nodeRequest({ videoId: VIDEO_ID }, TOKEN), result.response));
+
+  const failureLog = errorLogs.find((entry) => entry.event === 'youtube_transcript_relay_failed');
+  assert.ok(failureLog);
+  assert.equal('upstreamStatus' in failureLog!, true);
 });

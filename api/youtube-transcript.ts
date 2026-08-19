@@ -7,6 +7,7 @@ import {
   YoutubeTranscriptNotAvailableLanguageError,
   YoutubeTranscriptTooManyRequestError,
   YoutubeTranscriptVideoUnavailableError,
+  type FetchParams,
   type TranscriptConfig,
   type TranscriptSegment,
 } from 'youtube-transcript-plus';
@@ -29,10 +30,11 @@ type RelayErrorCode =
   | 'EXTRACTION_TIMEOUT'
   | 'UPSTREAM_RATE_LIMITED'
   | 'UPSTREAM_BLOCKED'
+  | 'UPSTREAM_TRANSIENT_ERROR'
   | 'MALFORMED_TRANSCRIPT_RESPONSE'
   | 'INTERNAL_ERROR';
 
-class RelayFailure extends Error {
+export class RelayFailure extends Error {
   constructor(
     readonly status: number,
     readonly code: RelayErrorCode,
@@ -146,16 +148,102 @@ function validateAndNormalizeTranscript(value: unknown): NormalizedCue[] {
   });
 }
 
-function classifyExtractionError(error: unknown, timedOut: boolean): RelayFailure {
+/**
+ * Wraps the plain fetch youtube-transcript-plus would otherwise do itself
+ * (via its defaultFetch) so we can observe the real HTTP status of each
+ * watch-page/player/transcript-XML request it makes, without changing the
+ * request itself or the library's own internal retry behavior. Passed as
+ * `videoFetch`/`playerFetch`/`transcriptFetch` in the library's config (see
+ * TranscriptConfig) — all three hooks share this implementation since the
+ * request shape (headers built from lang/userAgent/method/body) is identical
+ * for each. `getLastStatus()` reflects the most recent attempt only, which
+ * is what matters: the library's own internal `retries`/`retryDelay` already
+ * retries a 429/5xx, so by the time it gives up and throws, "the last status
+ * we saw" is the one that actually caused the failure.
+ */
+function createUpstreamStatusTracker() {
+  let lastStatus: number | undefined;
+  const hook = async (params: FetchParams): Promise<Response> => {
+    const headers: Record<string, string> = {
+      'User-Agent': params.userAgent || '',
+      ...(params.lang ? { 'Accept-Language': params.lang } : {}),
+      ...(params.headers || {}),
+    };
+    const response = await fetch(params.url, {
+      method: params.method || 'GET',
+      headers,
+      ...(params.body && params.method === 'POST' ? { body: params.body } : {}),
+      signal: params.signal,
+    });
+    lastStatus = response.status;
+    return response;
+  };
+  return { hook, getLastStatus: () => lastStatus };
+}
+
+/**
+ * youtube-transcript-plus's fetchTranscript makes three sequential HTTP
+ * calls (watch page -> Innertube player -> transcript XML) but its
+ * YoutubeTranscriptVideoUnavailableError and YoutubeTranscriptNotAvailableError
+ * classes carry no HTTP status of their own: the library throws
+ * VideoUnavailableError for *any* non-ok response on the first two calls
+ * (a real 404, a 403 bot-protection block, a persistent 429, or a bare 5xx
+ * all collapse into the same error), and throws NotAvailableError for any
+ * non-429 non-ok response on the transcript XML call. Left uncorrected, this
+ * makes the relay report "no transcript available" for videos that likely
+ * do have captions, and it denies the request the retry it needs (see
+ * fetchProxyTranscript in youtube-transcript-provider.ts, which never
+ * retries a TRANSCRIPT_UNAVAILABLE classification). `upstreamStatus` is the
+ * real HTTP status observed by this module's own tracking fetch hooks (see
+ * createUpstreamStatusTracker) on the request's last attempt, recovering the
+ * distinction the library throws away.
+ */
+function reclassifyAmbiguousUnavailable(upstreamStatus: number | undefined): RelayFailure | null {
+  if (upstreamStatus === undefined) return null;
+  if (upstreamStatus === 429) {
+    return new RelayFailure(429, 'UPSTREAM_RATE_LIMITED', 'YouTube rate-limited transcript extraction.');
+  }
+  if (upstreamStatus === 403) {
+    return new RelayFailure(503, 'UPSTREAM_BLOCKED', 'YouTube blocked transcript extraction.');
+  }
+  if (upstreamStatus >= 500) {
+    return new RelayFailure(
+      502,
+      'UPSTREAM_TRANSIENT_ERROR',
+      'YouTube returned a temporary server error during transcript extraction.',
+    );
+  }
+  // A genuine 404 (or any other 4xx that isn't a rate-limit/block signal)
+  // from YouTube itself is a real "not available" outcome — fall through to
+  // the existing classification below.
+  return null;
+}
+
+export function classifyExtractionError(
+  error: unknown,
+  timedOut: boolean,
+  upstreamStatus?: number,
+): RelayFailure {
   if (error instanceof RelayFailure) return error;
   if (timedOut || (error instanceof Error && error.name === 'AbortError')) {
     return new RelayFailure(504, 'EXTRACTION_TIMEOUT', 'Transcript extraction timed out.', error);
   }
   if (
+    error instanceof YoutubeTranscriptVideoUnavailableError ||
+    error instanceof YoutubeTranscriptNotAvailableError
+  ) {
+    const reclassified = reclassifyAmbiguousUnavailable(upstreamStatus);
+    if (reclassified) return reclassified;
+    return new RelayFailure(
+      404,
+      'TRANSCRIPT_UNAVAILABLE',
+      'A transcript is not available for this video.',
+      error,
+    );
+  }
+  if (
     error instanceof YoutubeTranscriptDisabledError ||
-    error instanceof YoutubeTranscriptNotAvailableError ||
-    error instanceof YoutubeTranscriptNotAvailableLanguageError ||
-    error instanceof YoutubeTranscriptVideoUnavailableError
+    error instanceof YoutubeTranscriptNotAvailableLanguageError
   ) {
     return new RelayFailure(
       404,
@@ -227,6 +315,7 @@ export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependen
     const startedAt = Date.now();
     let videoId: string | undefined;
     let failureStage = 'REQUEST';
+    const upstreamStatusTracker = createUpstreamStatusTracker();
 
     try {
       if (request.method !== 'POST') {
@@ -300,11 +389,14 @@ export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependen
             retries: 1,
             retryDelay: 500,
             signal: controller.signal,
+            videoFetch: upstreamStatusTracker.hook,
+            playerFetch: upstreamStatusTracker.hook,
+            transcriptFetch: upstreamStatusTracker.hook,
           }),
           timeoutFailure,
         ]);
       } catch (error) {
-        throw classifyExtractionError(error, timedOut);
+        throw classifyExtractionError(error, timedOut, upstreamStatusTracker.getLastStatus());
       } finally {
         if (timeout) clearTimeout(timeout);
       }
@@ -327,6 +419,11 @@ export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependen
         errorCode: failure.code,
         errorName: failure.cause instanceof Error ? failure.cause.name : failure.name,
         errorMessage: failure.cause instanceof Error ? failure.cause.message : failure.message,
+        // The real HTTP status observed from YouTube on the last attempt, if
+        // any request reached it — lets production logs distinguish a
+        // genuine 404 from a 429/403/5xx that got collapsed into the same
+        // upstream library error (see reclassifyAmbiguousUnavailable above).
+        upstreamStatus: upstreamStatusTracker.getLastStatus() ?? null,
         failureStage,
         durationMs: Date.now() - startedAt,
       });
