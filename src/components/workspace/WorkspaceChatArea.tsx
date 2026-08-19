@@ -29,9 +29,12 @@ import type { SourceRecord } from '../../lib/source-store';
 import type { ChatResponseMode } from '../../types';
 import { SourceTypeIcon } from './SourceTypeIcon';
 import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presentation';
-import { citationsForResponse, formatCitationTimestamp } from './workspace-interactions';
+import { citationEvidenceKey, citationsForResponse, formatCitationTimestamp } from './workspace-interactions';
 import { LearningResourceSection } from './LearningResourceSection';
 import { useLearningPreferences } from '../../context/LearningPreferencesContext';
+
+const ACTIVE_CITATION_CLASSNAME =
+  'ring-2 ring-cyan-400/70 shadow-[0_0_0_1px_rgba(34,211,238,0.16),0_0_18px_rgba(34,211,238,0.35)]';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
@@ -43,6 +46,7 @@ interface WorkspaceChatAreaProps {
   streamingWebSources?: WebSource[];
   generationStatusLabel?: string | null;
   regeneratingMessageId?: string | null;
+  activeCitationId?: string | null;
   error?: string | null;
   loadingHistory: boolean;
   sourceCount: number;
@@ -161,6 +165,7 @@ function renderCitationChildren(
   availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
   showInlineCitations = true,
+  activeCitationId?: string | null,
 ): React.ReactNode {
   return React.Children.map(children, (child) => {
     if (typeof child === 'string') {
@@ -171,15 +176,18 @@ function renderCitationChildren(
         if (part.type === 'text') return part.value;
         const citation = citations[part.citationNumber - 1];
         const isAvailable = Boolean(citation && availableSourceIds.has(citation.sourceId));
+        const evidenceKey = citation ? citationEvidenceKey(citation) : null;
+        const isActive = Boolean(evidenceKey && evidenceKey === activeCitationId);
         return (
           <button
             key={`${part.citationNumber}-${index}`}
             type="button"
+            data-citation-key={evidenceKey ?? undefined}
             disabled={!isAvailable}
             onClick={() => isAvailable && citation && onSelectCitation?.(citation, citations)}
             title={isAvailable ? citation!.title : 'Cited source is no longer available'}
             aria-label={isAvailable ? `Open citation ${part.citationNumber}: ${citation!.title}` : `Citation ${part.citationNumber}: source unavailable`}
-            className="mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-colors duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500"
+            className={`mx-0.5 inline-flex translate-y-[-0.08em] items-center rounded-md border border-cyan-500/30 bg-cyan-400/[0.08] px-1.5 py-0.5 align-baseline text-[0.72em] font-semibold leading-none text-cyan-200 transition-all duration-150 hover:border-cyan-400/55 hover:bg-cyan-400/[0.13] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800/60 disabled:text-slate-500 ${isActive ? ACTIVE_CITATION_CLASSNAME : ''}`}
           >
             {part.citationNumber}
           </button>
@@ -188,7 +196,7 @@ function renderCitationChildren(
     }
     if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props.children) {
       return React.cloneElement(child, {
-        children: renderCitationChildren(child.props.children, citations, availableSourceIds, onSelectCitation, showInlineCitations),
+        children: renderCitationChildren(child.props.children, citations, availableSourceIds, onSelectCitation, showInlineCitations, activeCitationId),
       });
     }
     return child;
@@ -200,8 +208,9 @@ function createMarkdownComponents(
   availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
   showInlineCitations = true,
+  activeCitationId?: string | null,
 ): Components {
-  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, availableSourceIds, onSelectCitation, showInlineCitations);
+  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, availableSourceIds, onSelectCitation, showInlineCitations, activeCitationId);
   return {
   h1: ({ children, ...props }) => <h1 {...props} className="mb-3 mt-6 text-xl font-bold tracking-tight text-white first:mt-0">{children}</h1>,
   h2: ({ children, ...props }) => <h2 {...props} className="mb-2.5 mt-5 text-lg font-bold text-white first:mt-0">{children}</h2>,
@@ -241,7 +250,11 @@ const INDEXED_STARTER_PROMPTS = [
 function formatCitationLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
   if (citation.timestampStartMs != null) {
-    return formatCitationTimestamp(citation.timestampStartMs);
+    const start = formatCitationTimestamp(citation.timestampStartMs);
+    if (citation.timestampEndMs != null && citation.timestampEndMs > citation.timestampStartMs) {
+      return `${start} - ${formatCitationTimestamp(citation.timestampEndMs)}`;
+    }
+    return start;
   }
   return citation.kind === 'WEB' ? 'Web' : 'Source';
 }
@@ -256,6 +269,7 @@ export function WorkspaceChatArea({
   streamingWebSources = [],
   generationStatusLabel,
   regeneratingMessageId,
+  activeCitationId,
   error,
   loadingHistory,
   sourceCount,
@@ -283,9 +297,39 @@ export function WorkspaceChatArea({
     [sources],
   );
   const streamingMarkdownComponents = useMemo(
-    () => createMarkdownComponents(streamingCitations, availableSourceIds, onSelectCitation, inlineCitations),
-    [streamingCitations, availableSourceIds, onSelectCitation, inlineCitations],
+    () => createMarkdownComponents(streamingCitations, availableSourceIds, onSelectCitation, inlineCitations, activeCitationId),
+    [streamingCitations, availableSourceIds, onSelectCitation, inlineCitations, activeCitationId],
   );
+
+  // Real, non-fabricated staged-loading timing: how long we've actually
+  // been waiting for the first chunk, ticked from a real Date.now() delta —
+  // never a guessed/fabricated latency number.
+  const isWaitingForFirstChunk = isGenerating && !streamingText;
+  const [waitElapsedMs, setWaitElapsedMs] = useState(0);
+  const waitStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isWaitingForFirstChunk) {
+      waitStartedAtRef.current = null;
+      setWaitElapsedMs(0);
+      return;
+    }
+    if (waitStartedAtRef.current === null) waitStartedAtRef.current = Date.now();
+    const interval = window.setInterval(() => {
+      setWaitElapsedMs(Date.now() - (waitStartedAtRef.current ?? Date.now()));
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [isWaitingForFirstChunk]);
+
+  // Bi-directional citation highlight: whichever inline marker or footer
+  // chip matches the Context Inspector's active selection scrolls into view
+  // here too, regardless of which side the click originated from.
+  useEffect(() => {
+    if (!activeCitationId) return;
+    const feed = feedRef.current;
+    if (!feed) return;
+    const target = feed.querySelector(`[data-citation-key="${activeCitationId}"]`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [activeCitationId]);
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -467,7 +511,7 @@ export function WorkspaceChatArea({
                 <div
                   className={`min-w-0 max-w-[calc(100%-2.625rem)] rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4 ${
                     isUser
-                      ? 'rounded-tr-md border border-cyan-500/20 bg-[linear-gradient(145deg,rgba(8,145,178,0.2),rgba(15,23,42,0.78))] font-medium text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.15)] sm:max-w-[78%] md:max-w-[72%]'
+                      ? 'rounded-tr-sm border border-slate-700/60 bg-gradient-to-br from-slate-800/95 to-slate-900/90 font-medium text-slate-100 shadow-lg shadow-black/20 sm:max-w-[78%] md:max-w-[72%]'
                       : 'w-full rounded-tl-md border border-transparent bg-transparent pl-1 text-slate-200 sm:max-w-[calc(100%-2.75rem)] sm:pr-1'
                   }`}
                 >
@@ -475,6 +519,11 @@ export function WorkspaceChatArea({
                     <div>
                       <p className="whitespace-pre-wrap break-words leading-6">{message.content}</p>
                       <div className="relative mt-2 flex justify-end gap-1 border-t border-cyan-500/15 pt-2 opacity-70 transition-opacity duration-150 sm:opacity-0 sm:group-hover/message:opacity-100 sm:group-focus-within/message:opacity-100">
+                        {copiedMessageId === message.id && (
+                          <span className="animate-fade-in absolute -top-7 right-0 whitespace-nowrap rounded-md border border-emerald-700/50 bg-emerald-950/95 px-2 py-1 text-[10px] font-medium text-emerald-300 shadow-lg" role="status">
+                            Copied!
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => void handleCopyMessage(message)}
@@ -530,7 +579,7 @@ export function WorkspaceChatArea({
                       </div>
 
                       <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
-                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation, inlineCitations)}>{message.content}</Markdown>
+                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation, inlineCitations, activeCitationId)}>{message.content}</Markdown>
                       </div>
 
                       <LearningResourceSection resources={message.resourceRecommendations || []} />
@@ -544,7 +593,7 @@ export function WorkspaceChatArea({
                               {messageCitations.some(({ sourceId }) => !availableSourceIds.has(sourceId)) ? ' · historical source unavailable' : ''}
                             </span>
                           </div>
-                          <div className="flex max-w-full flex-wrap gap-2">
+                          <div className="no-scrollbar flex max-w-full snap-x gap-2 overflow-x-auto pb-1">
                             {messageCitations.map((citation, citationIndex) => {
                               const source = sources.find((item) => item.id === citation.sourceId);
                               const surface = !source
@@ -556,19 +605,25 @@ export function WorkspaceChatArea({
                                   : source.type === 'TEXT'
                                     ? 'border-violet-900/70 bg-violet-950/25 hover:border-violet-700/70'
                                     : 'border-sky-900/70 bg-sky-950/25 hover:border-sky-700/70';
+                              const evidenceKey = citationEvidenceKey(citation);
+                              const isActive = evidenceKey === activeCitationId;
                               return <button
                                 key={citation.id || citationIndex}
                                 type="button"
+                                data-citation-key={evidenceKey}
                                 onClick={() => source && onSelectCitation?.(citation, messageCitations)}
                                 disabled={!source}
                                 title={source ? citation.snippet : 'This source has been deleted or is unavailable.'}
-                                className={`group flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-colors hover:text-white disabled:cursor-not-allowed disabled:hover:text-slate-500 ${surface}`}
+                                className={`group flex shrink-0 max-w-full snap-start items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[10px] text-slate-300 transition-all hover:text-white disabled:cursor-not-allowed disabled:hover:text-slate-500 ${surface} ${isActive ? ACTIVE_CITATION_CLASSNAME : ''}`}
                               >
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-950/60">
                                   {source ? <SourceTypeIcon type={source.type} className="h-3 w-3" /> : <FileText className="h-3 w-3 text-slate-600" />}
                                 </span>
-                                <span className="max-w-[12rem] truncate font-medium sm:max-w-[16rem]">{citation.title}</span>
-                                <span className="shrink-0 text-[10px] text-slate-500">{source ? formatCitationLocation(citation) : 'Source unavailable'}</span>
+                                <span className="max-w-[10rem] truncate font-medium sm:max-w-[14rem]">{citation.title}</span>
+                                <span className="shrink-0 font-mono text-[10px] text-slate-500">
+                                  {source && citation.timestampStartMs != null && <Clock3 className="mr-0.5 inline h-2.5 w-2.5 -translate-y-px" />}
+                                  {source ? formatCitationLocation(citation) : 'Source unavailable'}
+                                </span>
                                 {source && <ExternalLink className="h-3 w-3 shrink-0 text-slate-500 transition group-hover:text-sky-400" />}
                               </button>;
                             })}
@@ -700,15 +755,26 @@ export function WorkspaceChatArea({
                     <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-sky-400 align-middle" />
                   </div>
                 ) : (
-                  <div className="flex min-h-7 items-center gap-3 text-xs text-sky-300">
-                    <div className="flex items-center gap-1" aria-hidden="true">
-                      {[0, 1, 2].map((dot) => (
-                        <span key={dot} className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" style={{ animationDelay: `${dot * 140}ms` }} />
+                  <div className="space-y-3">
+                    <div className="flex min-h-7 items-center gap-2.5 text-xs text-sky-300">
+                      <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-400" />
+                      </span>
+                      <span>{generationStatusLabel || 'Thinking…'}</span>
+                      <span className="font-mono text-[10px] text-slate-500" title="Real elapsed time since this request started">
+                        {(waitElapsedMs / 1000).toFixed(1)}s
+                      </span>
+                    </div>
+                    <div className="space-y-1.5" aria-hidden="true">
+                      {[70, 85, 55].map((width, index) => (
+                        <div
+                          key={index}
+                          className="h-2.5 animate-pulse rounded-full bg-slate-800/70"
+                          style={{ width: `${width}%`, animationDelay: `${index * 150}ms` }}
+                        />
                       ))}
                     </div>
-                    <span>
-                      {generationStatusLabel || 'Thinking…'}
-                    </span>
                   </div>
                 )}
 

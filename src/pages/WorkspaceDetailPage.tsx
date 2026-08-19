@@ -25,7 +25,7 @@ import { SourceDetailsModal } from '../components/workspace/SourceDetailsModal';
 import { DeleteSourceModal } from '../components/workspace/DeleteSourceModal';
 import { SettingsModal } from '../components/dashboard/SettingsModal';
 import { WorkspaceContextPanel } from '../components/workspace/WorkspaceContextPanel';
-import { AlertCircle, X } from 'lucide-react';
+import { AlertCircle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import {
   availableCitations,
   citationEvidenceKey,
@@ -107,6 +107,8 @@ export function WorkspaceDetailPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isContextOpen, setIsContextOpen] = useState(false);
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = useState(false);
   const [contextCitations, setContextCitations] = useState<StoredCitation[] | null>(null);
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
@@ -898,6 +900,7 @@ export function WorkspaceDetailPage() {
     }
     setActiveCitationId(citationEvidenceKey(citation));
     setIsContextOpen(true);
+    setIsRightPanelCollapsed(false);
     if (
       navigation.kind === 'pdf' ||
       navigation.kind === 'website' ||
@@ -970,20 +973,43 @@ export function WorkspaceDetailPage() {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#090e16] text-slate-100">
-      {/* Left Sidebar â€” Desktop */}
-      <div className="hidden lg:block">
-        <WorkspaceSourcesSidebar
-          workspace={workspace}
-          sources={visibleSources}
-          loading={loadingSources}
-          refreshing={refreshingSources}
-          onSelectSourceDetails={handleOpenSourceDetails}
-          onRequestDeleteSource={setSourcePendingDeletion}
-          onRefreshSources={handleRefreshSources}
-          onOpenAddSource={handleOpenAddSource}
-          onRetrySource={handleRetrySource}
-          retryingSourceId={retryingSourceId}
-        />
+      {/* Left Sidebar â€” Desktop, collapsible to a thin rail */}
+      <div className={`relative hidden shrink-0 lg:block ${isLeftSidebarCollapsed ? 'lg:w-3' : ''}`}>
+        {isLeftSidebarCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setIsLeftSidebarCollapsed(false)}
+            aria-label="Expand sources sidebar"
+            title="Expand sources sidebar"
+            className="flex h-full w-3 flex-col items-center justify-center border-r border-slate-800/80 bg-[#0e141f] text-slate-600 transition hover:bg-[#121a28] hover:text-cyan-300"
+          >
+            <PanelLeftOpen className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <>
+            <WorkspaceSourcesSidebar
+              workspace={workspace}
+              sources={visibleSources}
+              loading={loadingSources}
+              refreshing={refreshingSources}
+              onSelectSourceDetails={handleOpenSourceDetails}
+              onRequestDeleteSource={setSourcePendingDeletion}
+              onRefreshSources={handleRefreshSources}
+              onOpenAddSource={handleOpenAddSource}
+              onRetrySource={handleRetrySource}
+              retryingSourceId={retryingSourceId}
+            />
+            <button
+              type="button"
+              onClick={() => setIsLeftSidebarCollapsed(true)}
+              aria-label="Collapse sources sidebar"
+              title="Collapse sources sidebar"
+              className="absolute -right-3 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-[#161c2b] text-slate-400 shadow-lg transition hover:border-cyan-500/50 hover:text-cyan-300"
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Mobile Sidebar Slide-over Drawer */}
@@ -1069,6 +1095,7 @@ export function WorkspaceDetailPage() {
             streamingWebSources={streamingWebSources}
             generationStatusLabel={generationStatusLabel}
             regeneratingMessageId={regeneratingMessageId}
+            activeCitationId={activeCitationId}
             error={activityError || historyError}
             loadingHistory={loadingHistory}
             sources={visibleSources}
@@ -1105,14 +1132,37 @@ export function WorkspaceDetailPage() {
 
       <WorkspaceUsageDrawer isOpen={isUsageDrawerOpen} onClose={() => setIsUsageDrawerOpen(false)} />
 
-      <div className="hidden h-full shrink-0 xl:block">
-        <WorkspaceContextPanel
-          citations={displayedContextCitations}
-          responseMode={latestResponseMode}
-          sources={visibleSources}
-          onSelectCitation={(citation) => handleSelectCitation(citation, displayedContextCitations)}
-          activeCitationId={activeCitationId}
-        />
+      <div className={`relative hidden h-full shrink-0 xl:block ${isRightPanelCollapsed ? 'xl:w-3' : ''}`}>
+        {isRightPanelCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setIsRightPanelCollapsed(false)}
+            aria-label="Expand response context panel"
+            title="Expand response context panel"
+            className="flex h-full w-3 flex-col items-center justify-center border-l border-slate-800/80 bg-[#0e141f] text-slate-600 transition hover:bg-[#121a28] hover:text-cyan-300"
+          >
+            <PanelRightOpen className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsRightPanelCollapsed(true)}
+              aria-label="Collapse response context panel"
+              title="Collapse response context panel"
+              className="absolute -left-3 top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-[#161c2b] text-slate-400 shadow-lg transition hover:border-cyan-500/50 hover:text-cyan-300"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+            <WorkspaceContextPanel
+              citations={displayedContextCitations}
+              responseMode={latestResponseMode}
+              sources={visibleSources}
+              onSelectCitation={(citation) => handleSelectCitation(citation, displayedContextCitations)}
+              activeCitationId={activeCitationId}
+            />
+          </>
+        )}
       </div>
 
       {isContextOpen && (

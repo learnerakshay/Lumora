@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { BookOpen, ExternalLink, Quote, X } from 'lucide-react';
+import { BookOpen, ExternalLink, PlayCircle, Quote, X } from 'lucide-react';
 import type { StoredCitation } from '../../lib/chat/conversation-store';
 import type { SourceRecord } from '../../lib/source-store';
 import type { ChatResponseMode } from '../../types';
@@ -18,7 +18,11 @@ interface WorkspaceContextPanelProps {
 function formatLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
   if (citation.timestampStartMs != null) {
-    return formatCitationTimestamp(citation.timestampStartMs);
+    const start = formatCitationTimestamp(citation.timestampStartMs);
+    if (citation.timestampEndMs != null && citation.timestampEndMs > citation.timestampStartMs) {
+      return `${start} - ${formatCitationTimestamp(citation.timestampEndMs)}`;
+    }
+    return start;
   }
   return citation.kind === 'WEB' ? 'Webpage' : 'Source passage';
 }
@@ -107,7 +111,10 @@ export function WorkspaceContextPanel({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-semibold leading-5 text-slate-100 group-hover:text-white">{citation.title}</span>
-                      <span className="mt-0.5 inline-flex rounded-md border border-cyan-900/60 bg-cyan-950/25 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">{formatLocation(citation)}</span>
+                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-cyan-900/60 bg-cyan-950/25 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-cyan-300">
+                        {citation.timestampStartMs != null && <PlayCircle className="h-2.5 w-2.5" />}
+                        {formatLocation(citation)}
+                      </span>
                     </span>
                   </div>
                   {citation.snippet && <span className="mt-3 line-clamp-5 block border-l-2 border-cyan-900/50 pl-3 text-[11px] leading-[1.65] text-slate-400">{citation.snippet}</span>}

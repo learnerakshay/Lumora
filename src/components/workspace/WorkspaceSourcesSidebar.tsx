@@ -363,7 +363,14 @@ export function WorkspaceSourcesSidebar({
 
               {/* Status Indicator & Last Updated */}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5 text-[10px]">
-                <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} sourceType={source.type} />
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <SourceStatusBadge status={source.status} stage={source.stage} metadata={source.metadata} sourceType={source.type} />
+                  {source.fileSize && (
+                    <span className="shrink-0 rounded-md border border-slate-800 bg-slate-900/70 px-1.5 py-0.5 font-mono text-[9px] text-slate-500">
+                      {source.fileSize}
+                    </span>
+                  )}
+                </div>
                 <span className="shrink-0 text-slate-500" title={`Uploaded ${new Date(source.createdAt).toLocaleString()}`}>
                   {new Date(source.createdAt).toLocaleDateString(undefined, {
                     month: 'short',
