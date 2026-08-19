@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/screenshots/00-lumora-banner.png" alt="Lumora — AI Knowledge Workspace &amp; Career Intelligence" width="820" />
-
 # Lumora
 
-**An AI Knowledge Workspace that answers only from evidence it can actually cite — and a Career Intelligence engine that turns a résumé into a staged, role-targeted learning plan.**
+### AI Knowledge Workspace & Career Intelligence Platform
 
-Retrieval finds candidate evidence. Lumora decides whether that evidence is *enough* before it calls an answer grounded — and says so plainly when it isn't.
+**Answers are easy. Trust is the product.**
+
+Lumora is a single unified TypeScript application where you add sources — PDFs, websites, plain text, YouTube videos, VTT transcripts — to a **Workspace**, then ask questions against them. Retrieval finds candidate evidence; a deterministic gate then decides whether that evidence is actually *enough* before any answer is allowed to call itself grounded. When it isn't enough, Lumora says so and answers from general knowledge with zero citation markers, instead of dressing up a weak match as a sourced fact.
 
 <br />
 
@@ -19,490 +19,296 @@ Retrieval finds candidate evidence. Lumora decides whether that evidence is *eno
 ![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon_Postgres-pgvector-00E599?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Clerk](https://img.shields.io/badge/Clerk-Auth-6C47FF?style=for-the-badge&logo=clerk&logoColor=white)
-![Razorpay](https://img.shields.io/badge/Razorpay-Live-0C2451?style=for-the-badge&logo=razorpay&logoColor=white)
+![Razorpay](https://img.shields.io/badge/Razorpay-Orders-0C2451?style=for-the-badge&logo=razorpay&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-759_passing_/_776-3FB950?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-759_pass_·_0_fail_·_17_skipped-3FB950?style=for-the-badge&logo=nodedotjs&logoColor=white)
 ![Typecheck](https://img.shields.io/badge/tsc_--noEmit-clean-3FB950?style=for-the-badge&logo=typescript&logoColor=white)
 ![Build](https://img.shields.io/badge/build-passing-3FB950?style=for-the-badge&logo=vite&logoColor=white)
 
 </div>
 
+### Screenshot #01 — Deep Space Hero
+
+![Screenshot #01 — Lumora Deep Space Hero with floating navigation, 3D knowledge sphere and one-click preset queries](docs/screenshots/01-hero-deepspace.png)
+
+The landing experience: a floating island navbar, the Three.js knowledge-core canvas — the only WebGL surface in the product, deliberately confined to the landing page — and one-click preset query chips. Those chips play a clearly-scripted grounded preview: they demonstrate the shape of an answer, they are not live API calls.
+
 ---
 
 ## Table of Contents
 
-- [What Lumora Is](#what-lumora-is)
-- [Key Features & Capabilities](#key-features--capabilities)
-- [Visual Tour & UI Showcase](#visual-tour--ui-showcase)
-- [Architecture & Technical Pipeline](#architecture--technical-pipeline)
-- [Repository Structure](#repository-structure)
-- [Getting Started & Local Setup](#getting-started--local-setup)
-- [Environment Variables](#environment-variables)
-- [Testing & Repository Hygiene](#testing--repository-hygiene)
-- [Plans & Usage Limits](#plans--usage-limits)
-- [Protected Invariants](#protected-invariants)
-- [Credits & License](#credits--license)
+**Product** — [Why Lumora Exists](#why-lumora-exists) · [Product Experience](#product-experience) · [Core Capabilities](#core-capabilities)
+
+**Engineering** — [System Architecture](#system-architecture) · [How Grounded Answers Work](#how-grounded-answers-work) · [Ingestion Pipeline](#ingestion-pipeline) · [Career Intelligence](#career-intelligence) · [Resource Discovery](#resource-discovery) · [Usage, Plans & Payments](#usage-plans--payments) · [Engineering Guarantees](#engineering-guarantees)
+
+**Running it** — [Tech Stack](#tech-stack) · [Local Development](#local-development) · [Testing & Validation](#testing--validation) · [Project Structure](#project-structure) · [Deployment](#deployment) · [Status](#status)
 
 ---
 
-## What Lumora Is
+## Why Lumora Exists
 
-Lumora is a single unified TypeScript application where users add **sources** — PDFs, websites, plain text, YouTube videos, VTT transcripts — to a **Workspace**, then ask questions against them. One chat surface answers in one of two honest modes:
+The interesting failure mode in retrieval-augmented systems is not "the search returned nothing." It is that the search returned *something plausible* and the system treated that as permission to answer with citations.
+
+A similarity match above a threshold proves some text is near the question. It does not prove the retrieved passages cover what the question actually asked. Conflating the two produces the most dangerous possible output: a confident, well-formatted, cited answer whose citations do not support it. Lumora separates them explicitly.
+
+```text
+Question
+   ↓
+Candidate Evidence          (pgvector cosine · topK 5 · threshold 0.15)
+   ↓
+Evidence Sufficiency        (deterministic lexical topic-coverage gate)
+   ├── Insufficient → GENERAL   · plainly labelled · zero citation markers
+   └── Sufficient   → GROUNDED  · validated [Citation #N] markers
+```
 
 | Mode | When it fires | What it emits |
 |---|---|---|
-| **GROUNDED** | Retrieved chunks genuinely cover every requested topic | An answer where every claim carries a `[Citation #N]` marker traceable to a page, timestamp, or passage |
-| **GENERAL** | Workspace evidence does not cover the question | A plainly-labelled general-knowledge answer with **zero** citation markers — never a fabricated source |
+| **GROUNDED** | Retrieved chunks genuinely cover the requested topics | An answer with validated `[Citation #N]` markers tied to Workspace evidence — every marker resolves to a real retrieved chunk with a real page, timestamp, or passage |
+| **GENERAL** | Workspace evidence does not cover the question | A labelled general-knowledge answer with **no** citation markers — never a fabricated source |
 
-> [!NOTE]
-> **The core product rule:** returning chunks is never by itself sufficient to call an answer grounded. A deterministic lexical topic-coverage gate (`assessWorkspaceEvidenceSufficiency`) runs *after* vector retrieval and decides the mode. The grounding gate and the three layers of citation validation are treated as protected invariants — they are never relaxed to make a response succeed.
+The gate is deterministic and lexical, not another model call. It extracts distinctive topic groups from the question, filters out query scaffolding — words like *document*, *source*, *summarize*, *speaker* that describe the question's own grammar rather than its subject — then requires each remaining topic group to actually appear in retrieved source text.
+
+Two stream-level rules back this up: a GENERAL answer is structurally prevented from emitting any citation marker, and a GROUNDED answer must reference at least one retrieved citation, with every marker validated against the retrieved set as it streams. What the system does *not* claim is per-sentence coverage — it guarantees the citations present are real, not that every sentence carries one.
+
+This gate and the layered citation validation behind it are protected invariants here. They are never relaxed to make a response succeed.
 
 ---
 
-## Key Features & Capabilities
+## Product Experience
 
-### 🧠 Grounded AI Workspace
+### Screenshot #02 — Spotlight Launcher
 
-- **Evidence-gated answers.** pgvector cosine retrieval (topK 5, threshold 0.15, shingle dedupe) plus one bounded recovery pass on a normalized topic query, then a deterministic sufficiency gate that picks GROUNDED or GENERAL.
-- **Citation provenance, three times validated.** Trust is enforced at retrieval (`assertCandidateIntegrity`), at construction (`createCitation`), and at persistence (`validateCitationInput` → `CitationTrustError`). A page number or video timestamp is either derived from real chunk metadata or the citation is rejected — never invented.
-- **Bi-directional Context Inspector.** Clicking an inline `[N]` marker scrolls and pulses the matching evidence card in the right pane; clicking a card in the Context pane scrolls and glows the matching marker back in the transcript.
-- **Streaming SSE contract.** `user_persisted → start → chunk* → (web_sources | tool_status)* → done | error`, with a durable-success guarantee: once the assistant message is persisted, a later failure still emits `done` with the persisted message.
-- **Five AI Actions** — Summarize, Explain, Compare, Generate Notes, Key Takeaways — and four answer modes (Concise, Detailed, Critical, Creative).
-- **Workspace isolation by construction.** Nested handlers read `res.locals.workspace.id`, never `req.params.id`; retrieval independently re-verifies ownership and throws on any cross-Workspace row.
+![Screenshot #02 — Lumora Command Palette and Spotlight Launcher](docs/screenshots/02-spotlight-launcher.png)
 
-### 📥 Multi-Modal Ingestion
+A global `⌘K` / `Ctrl+K` command palette with live filtering, reachable anywhere the navbar renders. Four real actions: jump to the grounding demo, the Career Competency Radar, the engineering architecture drawer, or the plan comparison. Every action navigates for real, including cross-route jumps that route first and then scroll to the target.
 
-Ingestion is a persisted, resumable state machine — not a fire-and-forget upload.
+### Screenshot #03 — Grounding Inspector
 
-```
-coordinator.dispatch → processSourcePipeline → parseSourceContent
-   → generateSemanticChunks (1200 chars / 200 overlap)
-   → generateEmbeddingsBatch (OpenAI, 1536-dim)
-   → saveSourceIndex (one Serializable transaction)
-```
+![Screenshot #03 — Lumora Grounding Inspector comparing grounded evidence against unsupported AI output](docs/screenshots/03-grounding-inspector.png)
 
-| Source | Handling |
+The `Question → Claim → Evidence → Verdict` walkthrough, which makes the GROUNDED/GENERAL distinction legible before you sign in. Toggle between a claim the Workspace evidence covers and one it doesn't, and the verdict changes: one side yields a cited Workspace answer, the other an honest, citation-free general answer. This is a self-playing explanatory demo of the real routing rule — not a live hallucination detector, and not a claim to be one.
+
+### Screenshot #04 — Multi-Source Ingestion
+
+![Screenshot #04 — Lumora multimodal source ingestion with YouTube transcript indexing](docs/screenshots/04-multimodal-ingestion.png)
+
+Five source types reach the same pipeline: `PDF`, `WEBSITE`, `YOUTUBE`, `VTT`, `TEXT`. YouTube is the interesting one — transcripts are acquired, timestamped, chunked with their `[HH:MM:SS.mmm]` markers intact, and embedded, so a citation can resolve to a real moment in the video rather than to "somewhere in this transcript." Note that "multi-source" here means multiple *source formats*, all reduced to text before embedding; Lumora does not perform image or audio understanding.
+
+### Screenshot #05 — Three-Pane Research Workspace
+
+![Screenshot #05 — Lumora three-pane research Workspace with Sources, Chat and Context](docs/screenshots/05-workspace-3pane-ide.png)
+
+The canonical product surface, and the reason the mental model is a research IDE rather than a chat window: a Sources sidebar (type, status, version), the chat canvas with streamed Markdown, and the Context inspector holding the evidence behind the current answer. Side panes collapse to thin rails when you want the reasoning canvas at full width.
+
+### Screenshot #06 — Bi-Directional Citations
+
+![Screenshot #06 — Lumora bidirectional citation highlighting between answer and source Context](docs/screenshots/06-bidirectional-citations.png)
+
+Citations are navigable in both directions: selecting an inline `[N]` marker activates the matching evidence card in the Context pane, and selecting a card activates the marker back in the answer. Both sides share one synchronized selection state, so the highlight can never drift out of sync. Where the source supports it, the citation also resolves outward — a PDF citation opens the document at its real page, and a YouTube citation opens the video at its derived timestamp, but only while the citation's source version still matches the source.
+
+### Screenshot #07 — Active Generation Pipeline
+
+![Screenshot #07 — Lumora active RAG pipeline with staged retrieval and generation progress](docs/screenshots/07-active-rag-loading.png)
+
+The live generation state. Notice what is and isn't shown: a status line derived from the actual action and answer mode in flight, a **real** elapsed timer measured from request start, and skeleton placeholders. As the SSE stream reports them, a response-mode disclosure badge appears — *From your Workspace* or *General knowledge* — alongside live tool-status chips and any external web sources consulted. Lumora deliberately does not render a fake multi-stage backend pipeline; it shows only states the stream actually reports.
+
+### Screenshot #08 — Career Competency Radar
+
+![Screenshot #08 — Lumora Career Intelligence competency radar and skill-gap analysis](docs/screenshots/08-career-competency-radar.png)
+
+An interactive six-axis SVG radar (System Design, RAG Pipelines, TypeScript, Vector DBs, Cloud Architecture, API Security) whose benchmark polygon morphs between three target roles against a candidate evidence polygon, with per-axis `strong` / `developing` / `missing` bands and a derived three-stage sprint roadmap. This landing visualization uses fixed, hand-set benchmark values to demonstrate the model — the real, résumé-driven analysis runs in the authenticated Career Intelligence surface, described [below](#career-intelligence).
+
+### Screenshot #09 — Resource Discovery
+
+![Screenshot #09 — Lumora Resource Discovery recommendations across ChaiCode, Udemy and YouTube](docs/screenshots/09-resource-discovery-grid.png)
+
+Recommendations render inline beneath the answer that prompted them, and inside learning-plan steps, from the same component. Each card's platform badge (YouTube / Udemy / Cohort / Website), access type, delivery mode, and language is read from resolved resource data — nothing is hardcoded per card. The curated catalog holds 69 real resources across those four platforms; Tavily discovery, when configured, adds to that pool rather than replacing it.
+
+### Screenshot #10 — Pricing & Engineering Architecture
+
+![Screenshot #10 — Lumora pricing tiers and expandable Engineering Architecture blueprint](docs/screenshots/10-pricing-architecture.png)
+
+FREE / CORE / MAX with CORE marked as the recommended tier, every limit and price derived from the backend's own constants rather than restated in the UI. Below the fold, the footer carries an expandable **View Engineering Architecture** drawer and a live `/api/health` beacon that reports operational / degraded state from a real probe of Postgres and pgvector readiness — not a decorative status dot.
+
+---
+
+## Core Capabilities
+
+| Capability | Engineering implementation |
 |---|---|
-| **PDF** | `pdfjs-dist` parse, per-page text retained so citations resolve to a real page. Stored as `Bytes` in `SourceContent.artifactData`. |
-| **YouTube** | Configured relay fast path tried once, then Gemini-native (`@google/genai`) fallback. Inline `[HH:MM:SS.mmm]` markers survive chunking so timestamp citations are derivable. |
-| **Website** | `cheerio` static extraction with a readable-content guard (JavaScript-only pages are rejected honestly, not half-ingested). |
-| **VTT / Text** | Direct parse with the same timestamp-preserving chunker path as YouTube. |
-
-Every stage is persisted to `SourceProcessingAttempt` / `SourceProcessingEvent` under a heartbeat lease, and `startRecoveryLoop` re-dispatches stale attempts after a crash or cold start.
-
-> [!TIP]
-> **Index promotion is atomic.** `saveSourceIndex` runs one Serializable transaction: create `BUILDING` → insert vectors → verify count and dimensions → supersede the old index → promote to `READY` → set `activeIndexId`. `activeIndexId` is never set before verification, so a half-built index can never serve a query.
-
-### 🎯 Career Intelligence
-
-- **Résumé → skills → evidence.** Structured extraction (`lib/skills/extraction-*`) pulls each skill along with the evidence backing it, using OpenAI strict-mode JSON schema output.
-- **Role matching & explainable gaps.** 4–5 target roles (`lib/skills/role-matching.ts`) and a fully deterministic, rule-keyed gap analysis (`lib/skills/gap-analysis.ts`) — no LLM decides your fit score.
-- **Interactive SVG Competency Radar.** Six dimensions (System Design, RAG Pipelines, TypeScript, Vector DBs, Cloud Architecture, API Security) with a GSAP-tweened benchmark polygon that morphs between target roles against the candidate's evidence polygon.
-- **3-stage sprint roadmap.** Selected gaps become a staged plan — why it matters → priority → required competency → closure steps → evidence task → resources — plus a Career Readiness report. The one AI call in the pipeline emits **prose only**; every number comes from deterministic scoring, and any missing field falls back to deterministic text rather than failing the plan.
-- **Plan → Workspace.** A learning plan can spawn an **empty** linked Workspace (idempotent per plan), contract-tested to import nothing from `lib/ingestion/*` — a recommendation can never silently become Workspace evidence.
-
-### 🔎 Resource Discovery Engine
-
-A curated catalog (`lib/resources/catalog.ts`) of real creators and providers across **YouTube**, **Udemy**, **Cohort**, and **Website** platforms, combined with optional Tavily discovery, canonical-URL deduplication, and intent-aware ranking. Recommendations render inline beneath the assistant answer that prompted them, each carrying a real platform badge, access type, delivery mode, and language — all read from resolved data, never hardcoded per card.
-
-### 💳 Payments & Usage Metering
-
-- **Razorpay Orders only** — one-time purchases granting 30 days of access. No subscriptions, no autopay, no mandates. Renewal **stacks** from the existing expiry rather than discarding remaining days.
-- **Reserve → commit *or* discard.** Every metered action holds an atomic reservation under a `pg_advisory_xact_lock`; every early return, `catch`, and `finally` settles it.
-- **Single writer for entitlement.** `User.plan` has exactly one writer (`syncUserEntitlement`), which re-derives the plan from every `CAPTURED` payment row inside the same advisory lock — idempotent, and impossible to interleave with a usage check.
-- **Webhook integrity.** The webhook route is mounted with `express.raw()` *above* `express.json()` so the HMAC covers the exact bytes Razorpay signed; a unique `eventId` makes processing idempotent under retries and double-delivery.
+| **Evidence-aware answers** | pgvector cosine retrieval (topK 5, threshold 0.15, deduplicated) plus one bounded recovery pass, then a deterministic topic-coverage gate that selects GROUNDED or GENERAL |
+| **Source ingestion** | Five source types through one persisted, resumable pipeline; 1,200-character chunks with 200-character overlap; 1,536-dimensional embeddings; index promotion in a single Serializable transaction |
+| **Citation provenance** | Validated at three independent layers — retrieval, construction, and persistence. Page numbers and timestamps are derived from real chunk metadata or the citation is rejected |
+| **Streaming chat** | SSE contract `user_persisted → start → chunk* → (web_sources \| tool_status)* → done \| error`, with a durable-success rule: a persisted answer is always returned, even if a later step fails |
+| **AI actions & modes** | Five actions (Summarize, Explain, Compare, Generate Notes, Key Takeaways) across four answer modes (`CONCISE`, `DETAILED`, `CRITICAL`, `CREATIVE`) |
+| **Career Intelligence** | Résumé extraction → normalized skills with evidence levels → deterministic role matching over a 12-role catalog → rule-keyed, explainable gap analysis. No model decides a fit score |
+| **Learning Paths** | Selected gaps become a staged `now` / `next` / `later` plan with a readiness report. Scoring and sequencing are deterministic; one constrained AI call supplies prose only, falling back to deterministic text if unusable |
+| **Resource Discovery** | 69-resource curated catalog plus optional Tavily discovery, canonical-URL deduplication, and ranking with provider diversity; fails closed to curated content |
+| **Usage controls** | Five metered actions under a 12-hour rolling window, enforced by an atomic reserve → commit *or* discard lifecycle under a per-user lock |
+| **Payments** | Razorpay **Orders** — one-time purchases granting 30 days of access. Server-authoritative pricing, signature verification, an authoritative provider re-read before any grant, idempotent webhooks |
+| **Responsive & accessible UX** | Route-level code splitting across 18 routes, dialog focus traps with focus restore, `aria-live` status transitions, and a global `prefers-reduced-motion` clamp |
 
 ---
 
-## Visual Tour & UI Showcase
+## System Architecture
 
-> [!NOTE]
-> Screenshots live in [`docs/screenshots/`](docs/screenshots). Capture at **1920×1080** (or 2× retina) in dark mode — Lumora's "Deep Space" theme is the intended presentation. See the capture checklist at the end of this section.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-### 1 · Deep Space Landing
-
-<img src="docs/screenshots/01-hero-deepspace.png" alt="Lumora hero section with floating glass navbar, Three.js knowledge core, and one-click query chips" width="100%" />
-
-Floating pill navbar, the Three.js knowledge-core sphere with animated source connectors, and one-click preset query chips that stream a scripted grounded preview.
-
-</td>
-<td width="50%" valign="top">
-
-### 2 · ⌘K Spotlight Launcher
-
-<img src="docs/screenshots/02-spotlight-command-palette.png" alt="Frosted-glass command palette opened with Cmd+K showing four quick actions" width="100%" />
-
-Global `⌘K` / `Ctrl+K` palette with live filtering — jumps to the grounding demo, the Competency Radar, the architecture drawer, or the pricing page.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### 3 · Grounded vs. General
-
-<img src="docs/screenshots/03-grounded-vs-general-answer.png" alt="Self-playing Question to Claim to Evidence to Verdict demo contrasting a grounded cited answer with an honest general-knowledge fallback" width="100%" />
-
-The self-playing **Question → Claim → Evidence → Verdict** demo, contrasting a cited Workspace answer against an honest, citation-free general-knowledge fallback.
-
-</td>
-<td width="50%" valign="top">
-
-### 4 · Three-Pane Workspace
-
-<img src="docs/screenshots/04-workspace-3pane-ide.png" alt="Full research workspace showing the sources sidebar, chat canvas, and context inspector" width="100%" />
-
-Sources sidebar (status, type, size), the chat canvas with streamed Markdown, and the Context Inspector — each pane collapsible to a thin rail.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### 5 · Bi-Directional Citations
-
-<img src="docs/screenshots/05-bidirectional-citation-flow.png" alt="An active inline citation marker glowing cyan alongside its highlighted evidence card in the Context Inspector" width="100%" />
-
-An active citation glows in both directions at once — inline marker in the transcript and its evidence card in the Context Inspector, linked by a shared evidence key.
-
-</td>
-<td width="50%" valign="top">
-
-### 6 · Multi-Modal Ingestion
-
-<img src="docs/screenshots/06-multimodal-waveform-ingestion.png" alt="YouTube ingestion preview showing an audio waveform and a timestamped transcript with the active line highlighted" width="100%" />
-
-The YouTube ingestion preview: waveform plus a timestamped transcript where the active line highlights as embeddings are generated.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### 7 · Competency Radar
-
-<img src="docs/screenshots/07-career-competency-radar.png" alt="SVG radar chart comparing a candidate evidence polygon against a target role benchmark polygon" width="100%" />
-
-Six-axis SVG radar. Cyan is the candidate's evidence; the dashed violet benchmark morphs as you switch between AI Systems Engineer, Full-Stack Lead, and RAG Specialist.
-
-</td>
-<td width="50%" valign="top">
-
-### 8 · Sprint Roadmap
-
-<img src="docs/screenshots/08-career-sprint-roadmap.png" alt="Three-stage sprint roadmap with Strong, Developing, and Missing gap severity pills" width="100%" />
-
-Gaps ranked by real severity into a three-sprint plan, each carrying a `Strong` / `Developing` / `Missing` band derived from the benchmark delta.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### 9 · Resource Discovery
-
-<img src="docs/screenshots/09-resource-discovery-grid.png" alt="Recommended learning resources grid with YouTube, Udemy, and Cohort platform badges" width="100%" />
-
-Auto-fitting recommendation grid with real platform badges (YouTube / Udemy / Cohort / Website), access type, delivery mode, and language.
-
-</td>
-<td width="50%" valign="top">
-
-### 10 · Pricing & Architecture Dock
-
-<img src="docs/screenshots/10-pricing-architecture-dock.png" alt="FREE, CORE, and MAX pricing cards above the expanded engineering architecture drawer" width="100%" />
-
-FREE / CORE / MAX cards — every limit derived from `PLAN_LIMITS` — above the expanded engineering architecture drawer and the live `/api/health` beacon.
-
-</td>
-</tr>
-</table>
-
-<details>
-<summary><b>📸 Screenshot capture checklist</b></summary>
-
-<br />
-
-| # | Filename | Route / State to capture |
-|---|---|---|
-| 0 | `00-lumora-banner.png` | Optional wide banner or logo lockup (820px+ wide) |
-| 1 | `01-hero-deepspace.png` | `/` — top of page, navbar visible, one query chip expanded |
-| 2 | `02-spotlight-command-palette.png` | `/` — press `⌘K` / `Ctrl+K` |
-| 3 | `03-grounded-vs-general-answer.png` | `/` — scroll to "Answers are easy. Trust is the product." |
-| 4 | `04-workspace-3pane-ide.png` | `/workspaces/:id` — a Workspace with ≥2 ready sources and chat history |
-| 5 | `05-bidirectional-citation-flow.png` | `/workspaces/:id` — click an inline `[1]` marker so both sides glow |
-| 6 | `06-multimodal-waveform-ingestion.png` | `/` — "How Lumora Works", expand the **YouTube Videos → Preview** row |
-| 7 | `07-career-competency-radar.png` | `/` — Career Intelligence section, radar with a role selected |
-| 8 | `08-career-sprint-roadmap.png` | `/` — directly below the radar |
-| 9 | `09-resource-discovery-grid.png` | `/workspaces/:id` — an answer that returned ≥3 recommendations |
-| 10 | `10-pricing-architecture-dock.png` | `/pricing` or `/` pricing section, with the footer architecture drawer open |
-
-</details>
-
----
-
-## Architecture & Technical Pipeline
-
-**Single unified TypeScript app** — not a monorepo, and not split frontend/backend repos. `server.ts` runs Express *and* Vite middleware in one process in development.
+**A single unified TypeScript application** — not a monorepo, and not split frontend/backend repositories. In development, `server.ts` runs Express *and* Vite middleware in one process on one port.
 
 ```mermaid
-flowchart TD
-    A["Client · Vite 6 + React 19 SPA<br/>route-level code splitting"] -->|"POST /api/workspaces/:id/chat/stream"| B["Express 4 · server.ts"]
-    B --> C["Clerk middleware<br/>requireApiAuth + ownership check"]
-    C --> D["Grounding Router<br/>selectInitialChatRoute"]
-    D --> E["Usage · checkAndReserve<br/>pg_advisory_xact_lock"]
-    E --> F["Vector Retrieval<br/>pgvector cosine · topK 5 · 0.15"]
-    F --> G{"assessWorkspaceEvidence<br/>Sufficiency"}
-    G -->|covers topics| H["GROUNDED · buildRAGContext<br/>+ createCitation per chunk"]
-    G -->|does not cover| I["GENERAL · no citation markers"]
-    H --> J["Orchestrator · up to 4 tool rounds<br/>OpenAI /v1/responses + optional Tavily"]
-    I --> J
-    J --> K["Prisma 6 → Neon Postgres<br/>DATABASE_URL (-pooler)"]
-    K --> L["SSE Stream Hydration<br/>start → chunk* → done"]
-    L --> A
-
-    M["Ingestion Coordinator<br/>heartbeat lease + recovery loop"] --> N["parse → chunk → embed"]
-    N --> O["saveSourceIndex<br/>one Serializable transaction"]
-    O --> K
+flowchart TB
+    USER["User"] --> UI["React 19 + Vite 6 SPA"]
+    UI <-->|"session"| CLERK["Clerk"]
+    UI -->|"REST + SSE"| API["Express 4 · server.ts"]
+    API --> AUTH["Authorization + Workspace ownership"]
+    AUTH --> ING["Ingestion coordinator"]
+    AUTH --> RAG["Retrieval + evidence gate"]
+    AUTH --> CAREER["Career Intelligence"]
+    AUTH --> LEARN["Learning Path engine"]
+    AUTH --> USAGE["Usage reservation"]
+    AUTH --> PAY["Payments / entitlements"]
+    RAG --> RES["Resource discovery"]
+    LEARN --> RES
+    ING --> DB[("Neon PostgreSQL + pgvector")]
+    RAG --> DB
+    CAREER --> DB
+    LEARN --> DB
+    USAGE --> DB
+    PAY --> DB
+    ING --> EMB["OpenAI embeddings · 1536d"]
+    ING --> GEM["Gemini · YouTube acquisition fallback"]
+    RAG --> AI["AI orchestration · OpenAI /v1/responses"]
+    CAREER --> AI
+    LEARN --> AI
+    AI --> TAVILY["Tavily · optional web search"]
+    RES --> TAVILY
+    PAY --> RZP["Razorpay"]
+    UI -. "production frontend + transcript relay" .-> VERCEL["Vercel"]
+    API -. "production backend" .-> RENDER["Render"]
 ```
 
-### Request flow that matters most
+**Clerk authenticates; Express authorizes.** Identity comes from Clerk, but every authorization decision is made server-side: a Workspace is resolved and ownership-checked once, before any nested handler runs, and handlers operate only on that verified Workspace. Retrieval re-verifies ownership independently rather than trusting the caller.
 
-`POST /api/workspaces/:id/chat/stream` is the system to understand first:
+**Prisma and Neon hold all state, with pgvector doing retrieval in the same database.** Keeping vectors beside their ownership rows is deliberate — it means a retrieval query cannot reach across Workspace boundaries through a second, separately-authorized system. AI providers sit strictly at the edges: OpenAI for embeddings and generation, Gemini for YouTube transcript acquisition, Tavily optionally for web search.
 
-1. `requireApiAuth` → `workspaceRouter.param('id')` resolves and ownership-checks the Workspace into `res.locals.workspace`.
-2. `selectInitialChatRoute` — no sources + meta question → deterministic reply; no sources otherwise → GENERAL without retrieval; else retrieve.
-3. `checkAndReserve` (usage) → register in `activeChatGenerations` → persist USER message + a `SENDING` assistant placeholder.
-4. `searchWorkspaceChunks` — pgvector cosine, topK 5, threshold 0.15, shingle dedupe, plus one bounded recovery retrieval.
-5. `assessWorkspaceEvidenceSufficiency` → `selectResponseModeAfterRetrieval` picks GROUNDED or GENERAL.
-6. `buildRAGContext` → `createCitation` per chunk (where transcript/page provenance is derived).
-7. `orchestrateGroundedResponse` — up to 4 tool rounds, optional Tavily web search.
-8. `replaceWorkspaceAssistantMessage` persists answer + citations → `commitUsage`.
+**Critical state changes are serialized rather than eventually consistent.** Usage reservations and entitlement synchronization take the same per-user lock, so a quota check can never interleave with a plan change, and index promotion happens inside a single transaction so a half-built index can never serve a query.
 
-### Data model
-
-`Workspace` (owned by `userId`) → `Source` → `SourceContent` (versioned) / `SourceIndex` (versioned) → `Chunk` (`vector(1536)`) ; `Message` → `Citation`. Plus `User`, `UsageEvent`, `SkillProfile`, `RoleAnalysis`, `LearningPlan`, `LearningWorkspaceLink`, `Payment`, `WebhookEvent`, and `Coupon` — **18 models and 16 enums across 14 migrations**.
+**Deployment splits along one line:** Vercel serves the SPA and the transcript relay; Render runs the Express API. API requests are terminated by an explicit not-found handler before the SPA fallback, so a missing route returns structured JSON rather than an HTML page pretending to be a successful response.
 
 ### API surface
 
-| Router | Mount | Responsibility |
-|---|---|---|
-| `workspaces.ts` | `/api/workspaces` | Workspaces, sources, ingestion, and the SSE chat handler |
-| `usage.ts` | `/api/usage` | Rolling-window usage summary |
-| `skills.ts` | `/api/skills` | Résumé extraction, role matching, gap analysis |
-| `learning.ts` | `/api/learning` | Learning-plan build, read, and Workspace linking |
-| `payments.ts` | `/api/payments` | Config, plans, quote, order, verify, access, history |
-| `payments-webhook.ts` | `/api/payments/webhook` | Raw-body Razorpay webhook (mounted above `express.json()`) |
-| — | `/api/health` | Real PostgreSQL + pgvector readiness probe |
-
-> [!IMPORTANT]
-> Requests to `/api/*` must never fall through to the SPA. An `apiNotFoundHandler` sits between the routers and the Vite/static middleware so an unmatched API path returns structured JSON, never HTML. This is contract-tested.
-
-### Deployment topology
-
-Vercel serves the SPA and the protected transcript relay (`api/youtube-transcript.ts` — the one serverless function), and rewrites `/api/:path*` to the Render Express service. Local dev runs both halves in one process, so route-shadowing and rewrite behavior differ between local and production — verify API path changes against the deployed setup.
-
----
-
-## Repository Structure
-
-```
-lumora/
-├── server.ts                     # Express entry — Clerk → routers → health → API 404 → Vite/static
-├── prisma/
-│   ├── schema.prisma             # 18 models, 16 enums, pgvector extension
-│   └── migrations/               # 14 migrations
-├── api/
-│   └── youtube-transcript.ts     # The one Vercel serverless function (protected relay)
-├── src/
-│   ├── App.tsx                   # Router + AuthProvider/AccessProvider/UsageProvider
-│   ├── routes/                   # Express routers (server-side, despite living in src/)
-│   │   ├── workspaces.ts         # ~1600 lines — most of the API, incl. SSE chat
-│   │   ├── usage.ts  skills.ts  learning.ts  payments.ts  payments-webhook.ts
-│   ├── lib/                      # ALL backend logic + shared client helpers
-│   │   ├── ai/                   # Orchestrator, providers, action catalog
-│   │   ├── chat/                 # Grounding router, conversation store/lifecycle
-│   │   ├── retrieval/            # rag-service — pgvector search + citation build
-│   │   ├── ingestion/            # Coordinator, parsers, chunker, embeddings
-│   │   ├── skills/               # Extraction, role matching, gap analysis
-│   │   ├── learning/             # Priority, competency, readiness, path builder
-│   │   ├── resources/            # Curated catalog + discovery resolver
-│   │   ├── payments/             # Razorpay client, signature, access, capture
-│   │   ├── usage/                # Reserve/commit/discard + PLAN_LIMITS
-│   │   └── env.ts                # zod-validated env (typeof window guard)
-│   ├── pages/                    # 19 page components; 18 lazy-loaded routes
-│   └── components/
-│       ├── landing/              # Hero, SpotlightLauncher, CompetencyRadar, CitationTag
-│       ├── workspace/            # ChatArea, SourcesSidebar, ContextPanel, composer
-│       ├── skills/  learning/    # Phase 1 & 2 UI
-│       ├── payments/  pricing/  billing/
-│       └── usage/                # UsageIndicator (quota ring), drawer, limit notice
-├── scripts/                      # Razorpay + coupon admin tooling
-└── docs/                         # ARCHITECTURE.md · PRD.md · VALIDATION.md · PITCH.md
-```
-
-> [!NOTE]
-> `src/lib/` holds **all backend logic** in the same tree the React client imports from. The boundary is convention plus the `typeof window` guard in `src/lib/env.ts` — not the build. **Never import a server module into a component.**
-
----
-
-## Getting Started & Local Setup
-
-### Prerequisites
-
-| Requirement | Notes |
+| Area | Responsibility |
 |---|---|
-| **Node.js 20+** | Required by Vite 6 and Prisma 6 |
-| **Neon Postgres** (or any pgvector-capable Postgres) | The `vector` extension is mandatory |
-| **Clerk** application | Publishable + secret key |
-| **OpenAI** API key | Chat (`/v1/responses`, raw `fetch` — no SDK) and 1536-dim embeddings |
-| **Gemini** API key | YouTube transcript fallback (`@google/genai`) |
-| **Tavily** API key | *Optional* — enables web-search tool rounds |
-| **Razorpay** keys | *Optional* — payments are off unless `PAYMENTS_ENABLED=true` |
+| Workspace API | Workspaces, sources, ingestion, messages, SSE chat |
+| Career API | Résumé profile extraction and role/gap analysis |
+| Learning API | Staged learning paths and linked Workspaces |
+| Usage API | Rolling-window quota visibility |
+| Payments API | Checkout, verification, access, billing history |
+| Webhook | Unauthenticated raw-body Razorpay endpoint |
+| Health | PostgreSQL + pgvector readiness probe |
 
-### 1 · Install
+### Data model
 
-```bash
-git clone <your-fork-url> lumora
-cd lumora
-npm install
-```
-
-### 2 · Configure environment
-
-```bash
-cp .env.example .env
-```
-
-Then fill in the values described in [Environment Variables](#environment-variables) below.
-
-### 3 · Sync the database
-
-```bash
-npx prisma validate
-npx prisma generate
-npx prisma migrate deploy
-```
-
-> [!WARNING]
-> **Do not run `prisma migrate dev` against a live database in this project.** There is a known pgvector extension drift between Neon's installed version and the recorded migration history. `migrate dev` detects the drift and offers `prisma migrate reset` as the fix — **which drops and recreates the entire `public` schema, destroying every row in every table.** Use `migrate deploy` for applying existing migrations. For a *new* additive migration, hand-write the SQL, apply it via a throwaway `prisma.$executeRawUnsafe` script, then record it with `prisma migrate resolve --applied <name>`.
-
-### 4 · Run
-
-```bash
-npm run dev          # tsx server.ts — Express + Vite middleware in ONE process on :3000
-```
-
-Open <http://localhost:3000>.
-
-### Production build
-
-```bash
-npm run build        # prisma generate && vite build && esbuild server.ts → dist/server.cjs
-npm start            # node dist/server.cjs
-```
+Workspaces own Sources, their versioned content and indexes, the resulting `vector(1536)` chunks, and the Messages and Citations produced from them. Separate models persist usage events, Career Intelligence profiles and analyses, Learning Paths, and Razorpay payment state — **18 models and 16 enums across 14 migrations**. PDFs are stored as bytes in the database; there is no external blob store.
 
 ---
 
-## Environment Variables
+## How Grounded Answers Work
 
-Every variable is zod-validated at boot and accessed only through `getServerEnv()`. See [`.env.example`](.env.example) for the fully annotated file.
+`POST /api/workspaces/:id/chat/stream` is the system to understand first.
 
-### Database — the pooling split matters
-
-```ini
-DATABASE_URL="postgresql://user:pass@ep-host-pooler.region.aws.neon.tech/lumora?sslmode=require"
-DIRECT_URL="postgresql://user:pass@ep-host.region.aws.neon.tech/lumora?sslmode=require"
+```mermaid
+flowchart TD
+    A["1 · Authenticate + resolve Workspace ownership"] --> B{"2 · Select initial route"}
+    B --> C["3 · Reserve usage + persist user message"]
+    C -->|"no sources · meta question"| M["Deterministic reply"]
+    C -->|"no sources"| G2["GENERAL · no retrieval"]
+    C -->|"sources present"| D["4 · Retrieve active READY chunks"]
+    D --> E["5 · Validate candidate integrity"]
+    E --> F["6 · Assess topic coverage"]
+    F -->|"insufficient"| G2
+    F -->|"sufficient"| H["7 · GROUNDED"]
+    H --> I["8 · Build citation-safe context"]
+    G2 --> J["9 · Orchestrate + stream (max 4 tool rounds)"]
+    I --> J
+    J --> K["10 · Validate + persist answer and citations"]
+    K --> L["11 · Commit or discard usage"]
 ```
 
-> [!IMPORTANT]
-> `DATABASE_URL` **must** use Neon's pooled endpoint (the `-pooler` hostname). Every request path — auth, chat, ingestion, payments — reuses this pool through the single `PrismaClient` in `src/lib/prisma.ts`. Pointing it at the direct endpoint adds real connection-setup latency to every cold Neon compute resume and risks exhausting Neon's direct connection limit under load. `DIRECT_URL` stays **non-pooled** because Prisma uses it only for migrations, which need a session-level (non-transaction-pooled) connection.
+1. **Authenticate and resolve the Workspace.** Ownership is verified once, up front, before any handler touches Workspace data. A Workspace with no sources short-circuits here — a meta question ("what's in here?") gets a deterministic reply, anything else routes to GENERAL without spending a retrieval.
+2. **Reserve usage and persist recoverable state.** The reservation is atomic; the user message and a pending assistant placeholder are written immediately, so an interrupted stream can be recovered rather than lost.
+3. **Retrieve only trusted evidence.** pgvector cosine similarity over the Workspace's chunks, ranked and deduplicated, plus one bounded recovery pass when the first looks thin. Candidates must sit on the source's *active*, `READY` index with a matching source version and an exact embedding-contract match — anything else throws rather than quietly degrading.
+4. **Assess coverage and choose the mode.** The deterministic lexical gate decides: GROUNDED only if the retrieved text actually covers the requested topics, otherwise GENERAL.
+5. **Build context and stream the answer.** Grounded context derives real page or timestamp provenance per chunk — a citation that cannot derive provenance is rejected, never invented. Generation runs up to four tool rounds, with optional web search surfacing as distinct web citations.
+6. **Validate, persist, and settle.** Citations pass a second independent validation layer before persistence, and the usage reservation is committed on success or discarded on every other exit path.
 
-### Core services
-
-| Variable | Purpose |
-|---|---|
-| `CLERK_SECRET_KEY` / `VITE_CLERK_PUBLISHABLE_KEY` | Server + client auth |
-| `OPENAI_API_KEY` | Chat completions and embeddings |
-| `GEMINI_API_KEY` | YouTube transcript fallback (**server-only**) |
-| `TAVILY_API_KEY` | Optional web-search tool |
-| `CHAT_MODEL`, `CHAT_REASONING_EFFORT`, `CHAT_REQUEST_TIMEOUT_MS` | Provider tuning |
-
-### Embedding contract — treat as migrations
-
-```ini
-EMBEDDING_PROVIDER="openai"
-EMBEDDING_MODEL="text-embedding-3-small"
-EMBEDDING_DIMENSIONS=1536
-EMBEDDING_VERSION="v1"
-```
-
-> [!CAUTION]
-> Changing `EMBEDDING_MODEL`, `EMBEDDING_VERSION`, or `EMBEDDING_DIMENSIONS` **invalidates every existing index**. Retrieval requires an exact embedding-contract match and will throw rather than silently degrade to mismatched vectors. Treat these three as schema migrations, not config.
-
-### Payments (optional)
-
-`PAYMENTS_ENABLED="false"` is a full kill switch — every payment route and the webhook return `503` immediately, no redeploy needed. When `true`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` are required and validated.
-
-> [!NOTE]
-> Booleans go through a `booleanFlag` helper because `z.coerce.boolean()` treats the literal string `"false"` as `true`. Never put a secret in a `VITE_`-prefixed variable — those are bundled into the client.
+**Grounded is a trust decision, not a retrieval result.** Finding chunks is a necessary condition for a grounded answer. Stage 4 is the sufficient one.
 
 ---
 
-## Testing & Repository Hygiene
+## Ingestion Pipeline
 
-Tests use the **Node built-in test runner** via `tsx --test`. There is no Vitest, no Jest, no ESLint, and no Prettier in this repo.
-
-```bash
-npm test             # all 12 suites, chained with && (an early failure SKIPS the rest)
-npm run typecheck    # tsc --noEmit  (npm run lint is an alias for the same command)
-npm run build        # must succeed before any deploy
+```text
+Source (PDF · WEBSITE · YOUTUBE · VTT · TEXT)
+→ Acquire      relay fast path / Gemini fallback / upload / fetch
+→ Validate     type, size, URL safety, readable-content guard
+→ Parse+Clean  page, timestamp, and cue provenance preserved
+→ Chunk        1,200 chars target · 200 char overlap
+→ Embed        OpenAI · 1,536 dimensions · batched
+→ Index        BUILDING → insert vectors → verify count + dims
+→ Promote      supersede old index → READY → set activeIndexId
 ```
 
-### Current state
+Ingestion is a persisted, resumable state machine rather than a fire-and-forget upload. Every stage is written to the database under a heartbeat lease, and a recovery loop re-dispatches attempts that go stale after a crash or a cold start. Parsing preserves provenance throughout — page numbers for PDFs, timestamps for transcripts — because that provenance is what a citation later resolves to.
 
-| Metric | Result |
-|---|---|
-| Total tests | **776** |
-| Passing | **759** |
-| Failing | **0** |
-| Skipped | **17** (DB-gated — require a live `DATABASE_URL` / `RUN_DATABASE_PAYMENTS_TESTS=true`) |
-| `tsc --noEmit` | Clean |
-| `npm run build` | Passing |
+Index promotion is the part worth reading twice: it runs as **one Serializable transaction** that builds the new index, inserts the vectors, verifies both row count and vector dimensions, supersedes the previous index, and only then marks it active. The active pointer is never set before verification, so a half-built index can never serve a query.
 
-### Individual suites
-
-```bash
-npm run test:ingestion     npm run test:retrieval     npm run test:chat
-npm run test:ai            npm run test:usage         npm run test:resources
-npm run test:skills        npm run test:learning      npm run test:payments
-npm run test:payments-ui   npm run test:ui-components npm run test:app-shell
-```
-
-```bash
-npx tsx --test src/lib/retrieval/rag-service.test.ts                    # single file
-npx tsx --test --test-name-pattern="citation" src/lib/**/*.test.ts      # by name
-```
-
-### Conventions worth knowing before contributing
-
-- **No component-testing setup.** There is no React Testing Library and no jsdom. A component's *behavioral* contract — "this handler never touches that state", "this button is wired to the shared submission gate" — is verified by reading the component source as text (`readFileSync`) and asserting with `assert.match` / `assert.doesNotMatch`. See `src/components/workspace/workspace-interactions.test.ts` and `src/routes/payments-route-contract.test.ts` for the pattern. Reach for this before reaching for a new test framework.
-- **`tsconfig.json` does not enable `strict`.** A clean typecheck is a weaker guarantee than it looks. Notably, without `strictNullChecks` TypeScript fails to narrow boolean-literal discriminated unions — which is why `payments-api.ts` uses a string-literal `status: 'ok' | 'error'` discriminant, guarded by a regression test.
-- **Known flake:** `coordinator.test.ts`'s heartbeat-lease test is timing-sensitive and can fail under heavy system load. Re-run before treating it as a real failure, and check which suites actually ran (the `&&` chain stops at the first failure).
-- Errors use `AppError` + `successResponse` / `errorResponse` envelopes with stable `SCREAMING_SNAKE` codes. Logging is `logger.info(message, { context })` — **never** log source content or secrets.
-- Tests are colocated as `*.test.ts` beside the unit they cover.
+**YouTube acquisition** tries the configured authenticated relay fast path once, then falls back to Gemini-native acquisition (`gemini-3.6-flash`) on any unavailable, empty, malformed, or blocked result. That is a fallback with two chances, not a guarantee that every URL is ingestible — a video without usable captions fails honestly. Websites are extracted statically behind a readable-content guard, so a JavaScript-only page is rejected rather than half-ingested.
 
 ---
 
-## Plans & Usage Limits
+## Career Intelligence
 
-Limits are **per user, per action, in a rolling 12-hour window** — not a calendar-day reset. Every value below is read from `PLAN_LIMITS` in `src/lib/usage/config.ts`; the pricing presentation layer is contract-tested to contain no hardcoded limit or price digits, so the UI structurally cannot drift from what the backend enforces.
+Career Intelligence is a deterministic analysis engine with a narrow, well-fenced AI boundary — not a radar chart with an LLM behind it.
 
-| Action | FREE | CORE | MAX |
+**1 · Extraction.** A résumé (PDF or image, with an image fallback path for scanned documents) is parsed into a structured profile using OpenAI strict-mode JSON-schema output. Each extracted skill carries the evidence backing it, classified as `MENTIONED`, `APPLIED`, or `SHIPPED`.
+
+**2 · Normalization.** Skills are normalized against a taxonomy so "React.js", "ReactJS", and "React" collapse into one competency with one evidence level.
+
+**3 · Role matching.** A 12-role catalog is scored deterministically — highest fit first, ties broken by shipped-evidence depth, with a cap on how many roles may come from one family so you don't get five flavours of the same stack. Four to five target roles are returned, each with a fit score and a confidence-floor flag.
+
+**4 · Gap analysis.** Fully deterministic and rule-keyed. Each gap carries a category (`technical-gap`, `project-proof`, `interview-prep`), a severity (`LOW` / `MEDIUM` / `HIGH`) derived from requirement weight against the shortfall between required and observed evidence, and the evidence that produced it. **No model assigns your fit score or your severity.**
+
+**5 · Learning path.** Up to six selected gaps become a staged plan (`now` / `next` / `later`, capped at eight steps): why it matters → priority → required competency → closure steps → an evidence task → resources, plus a readiness report. Priority is a deterministic score of severity rank × requirement weight × evidence shortfall. Exactly **one** AI call participates, and it emits prose only against a strict schema; any missing or mismatched field falls back to deterministic text and the plan still succeeds. The builder accepts only structured gap and role data — never résumé free text — so it structurally cannot re-analyze the résumé.
+
+A plan can spawn an **empty** linked Workspace, contract-tested to import nothing from the ingestion modules: a recommendation can never silently become Workspace evidence.
+
+---
+
+## Resource Discovery
+
+```text
+Intent → curated catalog + optional Tavily discovery → normalization
+       → canonical-URL dedupe → ranking with provider diversity → recommendations
+```
+
+The curated catalog holds 69 real resources across four platforms (`YouTube`, `Udemy`, `Cohort`, `Website`) and seven resource types, attributed to real creators and organizations including ChaiCode. Tavily discovery is optional, cache-bounded, and **fails closed to curated content** when unavailable.
+
+Two honesty rules are enforced in the resolver: URLs are canonicalized before deduplication, so the same course arriving from two paths collapses into one card; and search metadata can never establish a price, so a resource whose access type cannot be determined is labelled `unknown`, never "free".
+
+---
+
+## Usage, Plans & Payments
+
+Two independent concepts, deliberately not conflated:
+
+- **Usage limits** are per user, per action, in a **rolling 12-hour window**. Not a calendar-day reset, and not affected by when you paid.
+- **Paid access** is a **one-time 30-day window**. Not a subscription. Nothing auto-renews and there is nothing to cancel.
+
+### Limits
+
+Every value below is read from `PLAN_LIMITS` in `src/lib/usage/config.ts`. The pricing presentation layer is contract-tested to contain no hardcoded limit or price digits, so the UI structurally cannot drift from what the backend enforces.
+
+| Metered action | FREE | CORE | MAX |
 |---|---:|---:|---:|
 | Chat answers | 10 | 40 | 150 |
 | Sources ingested | 4 | 15 | 50 |
@@ -516,60 +322,247 @@ Limits are **per user, per action, in a rolling 12-hour window** — not a calen
 | **CORE** | ₹999 | **₹499** | 30 days, one-time |
 | **MAX** | ₹2,499 | **₹1,499** | 30 days, one-time |
 
-> [!NOTE]
-> **Every capability is available on every plan.** Paid tiers raise how much you can do per window — they never gate a feature. Payments are one-time with no auto-renewal; renewing early *extends* from your existing expiry rather than discarding remaining days, and buying MAX while CORE is active preserves the higher tier.
+**Every capability is available on every plan.** Paid tiers raise how much you can do per window; they never gate a feature.
+
+### The payment path
+
+Razorpay **Orders** only — no Subscriptions, no UPI Autopay, no mandates, no proration. Amounts are integer paise, INR only.
+
+- **Server-authoritative amounts.** Order creation accepts only a plan and an optional coupon code; the price is resolved server-side, never read from the request body, and a contract test enforces that.
+- **Signature verification is necessary but not sufficient.** After checking the signature, the payment is **re-read authoritatively from Razorpay** before anything is granted. Access is never granted on a signature alone.
+- **Capture and entitlement are idempotent.** Checkout verification and the webhook share one capture routine, so a double grant is impossible whichever wins the race; webhooks are deduplicated by event id, and plan state is re-derived from captured payments rather than applied as a delta, serialized against usage checks.
+- **Access is one-time and stacking.** Renewing early extends from your existing expiry rather than discarding remaining days, and buying MAX while CORE is active preserves the higher tier. Expiry is re-derived on request, since nothing external fires when a one-time window simply ends.
+- **`PAYMENTS_ENABLED=false` is a complete kill switch** — every payment route and the webhook return 503, no redeploy needed.
 
 ---
 
-## Protected Invariants
+## Engineering Guarantees
 
-These are enforced by tests and must not be relaxed to make a feature or a response succeed:
+These are enforced by tests and are not relaxed to make a feature or a response succeed.
 
-1. **Workspace isolation.** Nested handlers use `res.locals.workspace.id`, never `req.params.id`. Retrieval independently re-verifies ownership; `assertCandidateIntegrity` throws on any cross-Workspace row.
-2. **Retrieval reads only trusted vectors.** `chunk.indexId === Source.activeIndexId`, index `status = READY`, matching `sourceVersion`, and an exact embedding-contract match.
-3. **Index promotion is one Serializable transaction.** `activeIndexId` is never set before count and dimension verification.
-4. **Usage is always reserve → commit *or* discard.** Every early return, `catch`, and `finally` settles the reservation.
-5. **Citation validation is defence in depth** at three layers. Fix derivation — never relax a validator, and never fabricate a page or timestamp.
-6. **Durable success wins.** Once the assistant message is persisted, a later failure still emits `done` with the persisted message.
-7. **`Message.parentMessageId` is `@unique`** — exactly one assistant reply per user turn.
-8. **Grounded answers use `[Citation #N]` markers only**; GENERAL answers must never emit them (`GeneralResponseSafeStream` enforces this).
-9. **`User.plan` has exactly one writer** — `syncUserEntitlement`. No route, webhook, or middleware may call `prisma.user.update({ data: { plan } })`.
-10. **The webhook route stays mounted with `express.raw()` above `express.json()`.** Contract-tested.
-11. **Payments are never metered.** No payment route calls `checkAndReserve` / `commitUsage` / `discardUsage`.
-
-Terminology is enforced too: it is always a **Workspace** — never a project, folder, room, or tenant.
+1. **Workspace isolation.** Handlers operate only on a pre-verified Workspace, and retrieval independently re-verifies ownership, throwing on any cross-Workspace row.
+2. **Retrieval reads only trusted vectors** — active index, `READY` status, matching source version, exact embedding-contract match. Changing the embedding model, version, or dimensions invalidates every existing index, and retrieval throws rather than silently mixing incompatible vectors.
+3. **Atomic index promotion.** One Serializable transaction; the active pointer is never set before count and dimension verification.
+4. **Reserve → commit *or* discard.** Every metered path settles its reservation on every exit, including error and cleanup paths. Payment routes are never metered.
+5. **Citation validation is defence in depth** across retrieval, construction, and persistence. Fix derivation; never relax a validator, and never fabricate a page or a timestamp.
+6. **GENERAL answers cannot emit citation markers**, and a grounded answer's markers are validated against the retrieved set as they stream — both enforced at the stream level.
+7. **Durable success wins, and entitlement is single-writer.** Once an assistant message is persisted, a later failure still returns the persisted message rather than an error; on the payments side, plan state has exactly one writer and is idempotent under retries and duplicate webhooks.
 
 ---
 
-## Further Documentation
+## Tech Stack
+
+Versions below are the ranges declared in `package.json`.
+
+| Layer | Technology |
+|---|---|
+| Frontend | React `^19.0.1`, Vite `^6.2.3`, TypeScript `~5.8.2`, React Router `^7.18.1` |
+| Styling & motion | Tailwind CSS `^4.1.14`; Framer Motion `^12`, GSAP `^3.15`, Lenis `^1.3`, Three.js `^0.185` (landing page only) |
+| API | Express `^4.21.2` |
+| Database & ORM | Neon PostgreSQL with pgvector (fixed `vector(1536)`), Prisma `^6.4.0` |
+| Authentication | Clerk — `@clerk/express` `^2.1.46`, `@clerk/clerk-react` `^5.61.3` |
+| AI — chat | OpenAI `/v1/responses` via raw `fetch` (**no SDK**); `CHAT_MODEL` ∈ `gpt-5.6-sol` \| `gpt-5.6-terra` \| `gpt-5.6-luna`, default `gpt-5.6-sol` |
+| AI — embeddings | OpenAI `text-embedding-3-small`, 1,536 dimensions |
+| AI — YouTube | `@google/genai` `^2.16.0`, model `gemini-3.6-flash` |
+| Search | Tavily (optional) |
+| Parsing | `pdfjs-dist` 4.10.38, `cheerio` 1.0.0, `multer` 2.2.0 |
+| Payments | Razorpay Orders via raw `fetch` + Basic auth |
+| Validation | zod `^4.4.3` |
+| Deployment | Vercel (SPA + transcript relay) → Render (Express) |
+| Testing | Node's built-in test runner via `tsx --test` |
+
+There is **no ESLint, Prettier, or Biome** in this repository, and no Vitest or Jest. `npm run lint` is an alias for `tsc --noEmit`.
+
+---
+
+## Local Development
+
+### Prerequisites
+
+`package.json` does not currently declare a minimum Node version. This documentation validation pass was completed successfully on **Node v24.15.0 / npm 11.12.1**.
+
+| Requirement | Notes |
+|---|---|
+| Node.js + npm | Both `bun.lock` and `package-lock.json` are committed, but the scripts assume npm |
+| PostgreSQL with pgvector | Neon is what this project targets; the `vector` extension is mandatory |
+| Clerk application | Publishable + secret key |
+| OpenAI + Gemini API keys | Chat and embeddings; Gemini covers the YouTube transcript fallback |
+| Tavily API key | *Optional* — enables web-search tool rounds and resource discovery |
+| Razorpay keys | *Optional* — payments stay off unless `PAYMENTS_ENABLED=true` |
+
+### 1 · Clone and install
+
+```bash
+git clone https://github.com/learnerakshay/Lumora.git lumora && cd lumora && npm install
+```
+
+### 2 · Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Every variable is zod-validated at boot, and [`.env.example`](.env.example) is annotated in full. The groups are: **database** (`DATABASE_URL`, `DIRECT_URL`), **authentication** (`CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`), **AI providers** (`OPENAI_API_KEY`, `GEMINI_API_KEY`, plus chat and embedding tuning), **YouTube transcript relay**, optional **Tavily search**, optional **Razorpay payments** (behind the `PAYMENTS_ENABLED` kill switch), and **runtime** settings.
+
+```env
+DATABASE_URL="postgresql://user:your_value_here@ep-host-pooler.region.aws.neon.tech/lumora?sslmode=require"
+DIRECT_URL="postgresql://user:your_value_here@ep-host.region.aws.neon.tech/lumora?sslmode=require"
+```
+
+**The database split matters.** `DATABASE_URL` must use Neon's pooled (`-pooler`) endpoint — every request path shares that pool, and pointing it at the direct endpoint adds connection-setup latency to every cold Neon resume and risks exhausting the direct connection limit. `DIRECT_URL` stays non-pooled because migrations need a session-level connection.
+
+> **Treat the four embedding variables as migrations.** Changing the embedding provider, model, dimensions, or version invalidates every existing index — retrieval requires an exact contract match and throws rather than degrading to mismatched vectors.
+
+> Never put a secret in a `VITE_`-prefixed variable; those are bundled into the client.
+
+### 3 · Prisma
+
+Validate and generate, then apply the committed migration history to your **local development database**:
+
+```bash
+npm run prisma:validate && npm run prisma:generate && npx prisma migrate deploy
+```
+
+> ### ⚠️ Production migration note
+>
+> The Neon production database has known **pgvector extension drift** relative to Prisma's migration history. `prisma migrate dev` detects that drift and offers `prisma migrate reset` as the fix — which would drop and recreate the entire schema. Do **not** run `prisma migrate dev` or `prisma migrate reset` against production. Existing migrations deploy normally; see [`CLAUDE.md`](CLAUDE.md) for the repository's safe procedure when authoring a new production migration.
+
+### 4 · Run
+
+```bash
+npm run dev
+```
+
+This starts Express **and** Vite middleware in a **single process on port 3000** — there is no separate frontend dev server and no second port. Open <http://localhost:3000>.
+
+For production, `npm run build && npm start` generates the Prisma client, builds the SPA, bundles the server with esbuild, and runs that bundle.
+
+---
+
+## Testing & Validation
+
+Tests use **Node's built-in test runner** through `tsx --test`, colocated beside the unit they cover.
+
+```bash
+npm run typecheck && npm test && npm run build
+```
+
+### Results at documentation time
+
+All three were executed against this repository while writing this document:
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | **Clean** (exit 0, no diagnostics) |
+| `npm test` | **776 tests · 759 passing · 0 failing · 17 skipped**, across all 12 suites in one chain |
+| `npm run build` | **Passing** (Vite build + esbuild server bundle) |
+
+The 17 skipped tests are database-gated, not broken — they require a live database connection and an explicit opt-in flag.
+
+> **Known flake, stated plainly.** The ingestion coordinator's heartbeat-lease test uses real timers and can fail under system load. It failed once during this documentation pass and passed cleanly on the immediate re-run with no code change. Because `npm test` chains its suites with `&&`, an early failure **skips every later suite** — check which suites actually ran before reading a red result as a regression.
+
+### Suites
+
+```bash
+npm run test:ingestion      # 90    npm run test:retrieval     # 12
+npm run test:chat           # 111   npm run test:ai            # 33
+npm run test:usage          # 28    npm run test:resources     # 63
+npm run test:skills         # 136   npm run test:learning      # 57
+npm run test:payments       # 156   npm run test:payments-ui   # 71
+npm run test:ui-components  # 13    npm run test:app-shell     # 6
+```
+
+Component and route behavioral contracts — "this handler never touches that state", "this router never imports that module" — are covered by source-level contract tests alongside the unit suites; the repository does not use React Testing Library or jsdom. One caveat worth stating: `tsconfig.json` does not enable `strict`, so a clean typecheck is a weaker guarantee than it looks.
+
+---
+
+## Project Structure
+
+```text
+lumora/
+├── server.ts                  # Express entry — Clerk → webhook(raw) → json → routers → health → API 404 → Vite/static
+├── api/
+│   └── youtube-transcript.ts  # The one Vercel serverless function (protected transcript relay)
+├── prisma/
+│   ├── schema.prisma          # 18 models · 16 enums · pgvector
+│   └── migrations/            # 14 migrations
+├── src/
+│   ├── App.tsx                # Router + Auth/Access/Usage providers; 18 lazy routes
+│   ├── routes/                # Express routers (server-side, despite living under src/)
+│   ├── lib/                   # ALL backend logic + shared client helpers
+│   │   ├── chat/              # Grounding router, conversation store & lifecycle
+│   │   ├── retrieval/         # pgvector search + citation construction
+│   │   ├── ingestion/         # Coordinator, parsers, chunker, embedder, YouTube
+│   │   ├── ai/                # Orchestrator, tool registry, action catalog
+│   │   ├── skills/  learning/ # Extraction, role matching, gaps → staged plans
+│   │   ├── resources/         # Curated catalog, discovery, ranking
+│   │   ├── payments/  usage/  # Razorpay + entitlement; reserve/commit/discard
+│   │   └── env.ts             # zod-validated environment
+│   ├── pages/                 # 19 page components
+│   └── components/            # landing · workspace · skills · learning · pricing · payments · billing · usage
+├── scripts/                   # Razorpay + coupon admin tooling
+├── docs/                      # screenshots/ · ARCHITECTURE · PRD · VALIDATION · PITCH
+├── CLAUDE.md                  # Engineering guide — invariants, phase status, known issues
+└── vercel.json
+```
+
+---
+
+## Deployment
+
+| Concern | Provider |
+|---|---|
+| SPA assets + protected transcript relay | Vercel |
+| Express API | Render |
+| PostgreSQL + pgvector | Neon |
+| Authentication | Clerk |
+| Payments | Razorpay |
+
+Vercel rewrites `/api/:path*` to the Render origin and everything else to the SPA. The single serverless function is the protected YouTube transcript relay.
+
+**Local and production routing are not identical.** In development everything runs in one Express + Vite process, so route shadowing and rewrite behavior differ from the deployed split — verify any API path change against the deployed setup, not just locally. Relatedly, the Razorpay webhook points at the **Render origin directly** rather than the Vercel domain, because the extra rewrite hop risks re-encoding the exact bytes the signature covers.
+
+---
+
+## Status
+
+Lumora is actively developed and deployed for live testing. It is not a launched commercial product.
+
+| Area | State |
+|---|---|
+| Grounded chat, retrieval, citations | Implemented, test-covered, exercised against real data |
+| Multi-source ingestion (PDF / website / text / YouTube / VTT) | Implemented and test-covered. YouTube timestamp-derivation and grounding-fallback defects are fixed with regression coverage; production log confirmation of those fixes is still outstanding |
+| Career Intelligence (extraction → roles → gaps) | Implemented and frozen |
+| Learning Paths | Implemented and frozen. The full authenticated résumé → plan → Workspace flow has unit and contract coverage but has not been run end to end against live auth |
+| Resource Discovery · Usage metering & quotas | Implemented and test-covered |
+| Payments | Money path verified end to end in Razorpay Test Mode; Live Mode is active with a real payment confirmed. Coupon-exhaustion and decline/retry matrices remain outstanding before payments are closed |
+| Mobile & accessibility | Hardened across payment and landing surfaces; no automated device matrix |
+
+Passing tests are evidence about logic, not about production. Most of the failure modes that matter here — provider output shape, pgvector state, Clerk sessions, cold starts — only appear against real data, and this document tries to say which is which.
+
+### Documentation map
 
 | Document | Contents |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | Engineering guide — architecture, invariants, phase status, known issues |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture deep dive |
+| [`CLAUDE.md`](CLAUDE.md) | Engineering guide — architecture, protected invariants, phase status, known issues |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architecture deep dive |
 | [`docs/PRD.md`](docs/PRD.md) | Product requirements |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | Validation evidence |
-| [`docs/PITCH.md`](docs/PITCH.md) | Pitch and presentation data pack |
-
----
-
-## Credits & License
-
-**Author** — [@learnerakshay](https://github.com/learnerakshay)
-
-**Built with** — React 19 · Vite 6 · TypeScript 5.8 · Tailwind CSS 4 · Express 4 · Prisma 6 · Neon Postgres + pgvector · Clerk · OpenAI · Google Gemini · Tavily · Razorpay · Three.js · GSAP · Framer Motion · Lenis · Lucide
-
-**Resource catalog** — the curated learning catalog references real creators and platforms (including ChaiCode, Udemy, and YouTube channels). All trademarks and course content belong to their respective owners; Lumora links to them and does not host or redistribute their material.
+| [`docs/PITCH.md`](docs/PITCH.md) | Pitch data pack |
+| [`docs/screenshots/README.md`](docs/screenshots/README.md) | Screenshot capture runbook |
 
 ### License
 
-> [!IMPORTANT]
-> **This repository currently has no `LICENSE` file and no `license` field in `package.json`.** Under default copyright law that means all rights are reserved and no reuse permissions are granted. If you intend this to be open source, add a `LICENSE` file (MIT and Apache-2.0 are the common choices for a project like this) and set the matching `"license"` field in `package.json` — then update this section.
+No `LICENSE` file is currently included. Unless a license is added, standard copyright applies and no open-source reuse rights are granted.
+
+The curated learning catalog references real creators and platforms, including ChaiCode, Udemy, and YouTube channels. All trademarks and course content belong to their respective owners; Lumora links to them and hosts nothing.
 
 ---
 
 <div align="center">
 
-**Retrieval finds candidate evidence. Lumora decides whether it's enough.**
+**Answers are easy. Trust is the product.**
+
+Lumora turns your sources into evidence you can verify, your résumé into a role-fit picture you can defend, and the gap between them into a next step you can actually take.
 
 </div>
