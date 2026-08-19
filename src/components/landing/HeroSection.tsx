@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../AuthProvider';
 import { HeroCoreCanvas } from './HeroCoreCanvas';
-import { FileText, Globe, Video, FileCode, ArrowRight, Sparkles } from 'lucide-react';
+import { FileText, Globe, Video, FileCode, ArrowRight, Sparkles, FlaskConical, FileJson2, Briefcase } from 'lucide-react';
 import gsap from 'gsap';
+import { CitationTag } from './CitationTag';
 
 const HERO_CONNECTIONS = [
   'M 180 58 C 305 64, 358 166, 463 218',
@@ -13,6 +14,60 @@ const HERO_CONNECTIONS = [
 ];
 
 const HERO_SOURCE_COLORS = ['#fb7185', '#22d3ee', '#f87171', '#a78bfa'];
+
+// One-click preset queries below the headline — a self-playing, clearly
+// scripted preview (typewriter-revealed, never a real backend call) in the
+// same spirit as EvidenceTrustSection's own scripted grounded/general demo,
+// so a visitor can see the shape of a grounded answer before signing up.
+interface PresetQuery {
+  id: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  question: string;
+  answer: string;
+  citation?: { source: string; coordinate: string; excerpt: string; score: string };
+}
+
+const PRESET_QUERIES: PresetQuery[] = [
+  {
+    id: 'attention-math',
+    icon: FlaskConical,
+    label: 'Cross-check Transformer Attention Math',
+    question: 'Do my sources agree on the attention formula?',
+    answer:
+      "Both sources agree on the scaled dot-product formula, but Research.pdf adds the reasoning behind the 1/√dₖ scaling term that docs.ai/specs omits.",
+    citation: {
+      source: 'Research.pdf',
+      coordinate: 'Page 3',
+      excerpt: 'The 1/√dₖ scaling term keeps dot-product magnitudes stable as dimensionality grows, preventing softmax saturation.',
+      score: '0.93 match',
+    },
+  },
+  {
+    id: 'webhook-spec',
+    icon: FileJson2,
+    label: 'Extract API Webhook Spec',
+    question: 'What does the webhook payload look like?',
+    answer:
+      'docs.ai/specs defines a POST endpoint with an HMAC-SHA256 signature header — Lumora extracts the exact field names and their order.',
+    citation: {
+      source: 'docs.ai/specs',
+      coordinate: 'Section 2',
+      excerpt: 'Requests are signed with HMAC-SHA256 over the raw body; verify the signature before parsing the payload as JSON.',
+      score: '0.89 match',
+    },
+  },
+  {
+    id: 'role-gap-check',
+    icon: Briefcase,
+    label: 'Full-Stack Role Gap Check',
+    question: 'How ready am I for a Full-Stack Lead role?',
+    answer:
+      'Your evidence covers TypeScript and API design well — Cloud Architecture and Vector DBs show the largest gaps against this role.',
+  },
+];
+
+const TYPEWRITER_MS_PER_CHAR = 14;
 
 export function HeroSection() {
   const { isSignedIn } = useAuth();
@@ -27,6 +82,30 @@ export function HeroSection() {
   const [activeConnection, setActiveConnection] = useState<number | null>(null);
   const [coreHovered, setCoreHovered] = useState(false);
   const pulseTimeoutRef = useRef<number | null>(null);
+  const [activeQueryId, setActiveQueryId] = useState<string | null>(null);
+  const [revealedChars, setRevealedChars] = useState(0);
+
+  const activeQuery = PRESET_QUERIES.find((query) => query.id === activeQueryId) ?? null;
+
+  useEffect(() => {
+    if (!activeQuery) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      setRevealedChars(activeQuery.answer.length);
+      return;
+    }
+    setRevealedChars(0);
+    const interval = window.setInterval(() => {
+      setRevealedChars((count) => {
+        if (count >= activeQuery.answer.length) {
+          window.clearInterval(interval);
+          return count;
+        }
+        return count + 1;
+      });
+    }, TYPEWRITER_MS_PER_CHAR);
+    return () => window.clearInterval(interval);
+  }, [activeQuery]);
 
   // A fast pulse (700ms) travels the connection line on hover/focus; when it
   // "arrives" the orb bumps once — a discrete cue layered on top of the
@@ -173,6 +252,54 @@ export function HeroSection() {
           Bring PDFs, websites, videos, and notes into a Workspace for grounded, cited answers — or bring your resume
           and let Career Intelligence show you where you stand and what to learn next.
         </p>
+
+        {/* One-click preset queries — clearly-scripted preview, not a live call */}
+        <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-2 pt-1">
+          {PRESET_QUERIES.map((query) => {
+            const isActive = query.id === activeQueryId;
+            return (
+              <button
+                key={query.id}
+                type="button"
+                onClick={() => setActiveQueryId(isActive ? null : query.id)}
+                aria-pressed={isActive}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                  isActive
+                    ? 'border-sky-500/60 bg-sky-500/15 text-sky-200'
+                    : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700 hover:text-white'
+                }`}
+              >
+                <query.icon className="h-3.5 w-3.5" />
+                <span>{query.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {activeQuery && (
+          <div className="hero-query-preview mx-auto max-w-xl rounded-2xl border border-slate-800 bg-[#0d1420]/90 p-4 text-left shadow-xl shadow-black/30 backdrop-blur-md">
+            <p className="text-[11px] font-medium text-slate-400">{activeQuery.question}</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-200">
+              {activeQuery.answer.slice(0, revealedChars)}
+              {revealedChars < activeQuery.answer.length && (
+                <span aria-hidden="true" className="hero-query-caret ml-0.5 inline-block h-3 w-[2px] translate-y-[2px] bg-sky-300" />
+              )}
+            </p>
+            {activeQuery.citation && revealedChars >= activeQuery.answer.length && (
+              <div className="mt-3 animate-fade-in">
+                <CitationTag
+                  source={activeQuery.citation.source}
+                  coordinate={activeQuery.citation.coordinate}
+                  excerpt={activeQuery.citation.excerpt}
+                  score={activeQuery.citation.score}
+                  className="inline-flex items-center gap-1.5 rounded border border-sky-900/70 bg-sky-950/40 px-1.5 py-0.5 text-[10px] text-sky-300"
+                >
+                  {activeQuery.citation.source} <span className="text-slate-500">{activeQuery.citation.coordinate}</span>
+                </CitationTag>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Primary CTA & Secondary */}
         <div ref={ctaRef} className="pt-2 flex flex-col items-center space-y-3">

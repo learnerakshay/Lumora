@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
-import { LogOut, User, Github, Twitter, Menu, X as CloseIcon, ArrowRight } from 'lucide-react';
+import { LogOut, User, Menu, X as CloseIcon, ArrowRight, Search } from 'lucide-react';
 import { LumoraBrand } from './landing/LumoraBrand';
+import { SpotlightLauncher } from './landing/SpotlightLauncher';
 
 const NAV_SECTION_IDS = ['overview', 'features', 'about'] as const;
 type NavSectionId = (typeof NAV_SECTION_IDS)[number];
@@ -14,6 +15,7 @@ export function Navbar() {
 
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<NavSectionId | null>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const isPublicPresentation = ['/', '/sign-in', '/sign-up', '/pricing'].includes(location.pathname);
@@ -99,14 +101,14 @@ export function Navbar() {
   if (location.pathname.startsWith('/workspaces') || location.pathname === '/usage' || location.pathname === '/skills' || location.pathname === '/billing') return null;
 
   return (
-    <header
-      className={`${isPublicPresentation ? 'landing-navigation' : ''} sticky top-0 z-50 transition-all duration-[250ms] ${
-        scrolled
-          ? 'bg-[#0b0f17]/85 backdrop-blur-md shadow-[inset_0_-1px_0_rgba(56,189,248,0.16),0_12px_30px_-16px_rgba(2,8,23,0.7)] py-3'
-          : 'bg-[#0b0f17]/20 backdrop-blur-[2px] py-4'
-      }`}
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-50 w-full px-3 pt-3 transition-all duration-[250ms] sm:px-4">
+      <div
+        className={`${isPublicPresentation ? 'landing-navigation' : ''} mx-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-full border px-4 py-2.5 backdrop-blur-xl transition-all duration-[250ms] sm:px-6 ${
+          scrolled
+            ? 'border-slate-800/80 bg-[#0b0f17]/85 shadow-2xl shadow-black/40'
+            : 'border-slate-800/40 bg-[#0b0f17]/55 shadow-xl shadow-black/15'
+        }`}
+      >
         {/* Brand Logo */}
         <Link to="/" className="group shrink-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
           <LumoraBrand compact />
@@ -152,24 +154,18 @@ export function Navbar() {
 
           <span aria-hidden="true" className="mx-2 h-4 w-px bg-slate-800" />
 
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            title="GitHub Repository"
+          <button
+            type="button"
+            onClick={() => setSpotlightOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-[#121824]/70 px-2.5 py-1.5 text-[11px] text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer"
+            title="Quick launcher"
           >
-            <Github className="w-4 h-4" />
-          </a>
-          <a
-            href="https://x.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            title="X (Twitter)"
-          >
-            <Twitter className="w-4 h-4" />
-          </a>
+            <Search className="h-3.5 w-3.5" />
+            <span>Search</span>
+            <kbd className="ml-0.5 rounded border border-slate-700 bg-slate-900 px-1 font-mono text-[10px] text-slate-500">
+              ⌘K
+            </kbd>
+          </button>
         </nav>
 
         {/* User Auth CTAs */}
@@ -230,6 +226,8 @@ export function Navbar() {
         </div>
       </div>
 
+      <SpotlightLauncher open={spotlightOpen} onOpenChange={setSpotlightOpen} />
+
       {/* Mobile full-screen nav overlay — the header (z-50) stays above it,
           so the hamburger/close toggle remains reachable throughout. */}
       {mobileMenuOpen && (
@@ -267,25 +265,18 @@ export function Navbar() {
               Pricing
             </Link>
 
-            <div className="mt-4 flex items-center gap-1 border-t border-slate-800/70 pt-4">
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                title="GitHub Repository"
+            <div className="mt-4 border-t border-slate-800/70 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setSpotlightOpen(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg border border-slate-800 bg-[#121824]/70 px-3 py-3 text-left text-sm text-slate-300 transition-colors hover:border-slate-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
-                <Github className="w-5 h-5" />
-              </a>
-              <a
-                href="https://x.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg p-2.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                title="X (Twitter)"
-              >
-                <Twitter className="w-5 h-5" />
-              </a>
+                <Search className="h-4 w-4" />
+                <span>Quick launcher</span>
+              </button>
             </div>
 
             <div className="flex flex-col gap-2.5 pt-5">

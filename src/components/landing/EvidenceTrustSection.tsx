@@ -3,6 +3,7 @@ import { CheckCircle2, HelpCircle, Search, ShieldCheck, Sparkles, Target } from 
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { SpotlightCard } from './motion/SpotlightCard';
+import { CitationTag } from './CitationTag';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -92,7 +93,7 @@ export function EvidenceTrustSection() {
   };
 
   return (
-    <section ref={sectionRef} className="landing-section relative overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
+    <section id="grounding" ref={sectionRef} className="landing-section relative overflow-hidden px-4 py-20 sm:px-6 lg:px-8">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[560px] w-[560px] rounded-full bg-teal-950/18 blur-[130px] pointer-events-none" />
 
       <div className="mx-auto max-w-6xl space-y-14 relative z-10">
@@ -189,14 +190,26 @@ export function EvidenceTrustSection() {
               back to a citation.
             </p>
             <div className="mt-4 space-y-2">
-              <div className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300">
+              <CitationTag
+                source="Research.pdf"
+                coordinate="Page 3"
+                excerpt="Sufficiency of retrieved evidence must be assessed before an answer is treated as grounded, not assumed from the presence of chunks alone."
+                score="0.91 match"
+                className="evidence-citation-row flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300"
+              >
                 <span>Research.pdf</span>
                 <span className="text-emerald-300">Page 3</span>
-              </div>
-              <div className="evidence-citation-row flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300">
+              </CitationTag>
+              <CitationTag
+                source="docs.ai/specs"
+                coordinate="Section 2"
+                excerpt="Grounding decisions must be judged by evidence sufficiency, not retrieval count alone — chunks alone are never proof of coverage."
+                score="0.88 match"
+                className="evidence-citation-row flex w-full items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300"
+              >
                 <span>docs.ai/specs</span>
                 <span className="text-emerald-300">Section 2</span>
-              </div>
+              </CitationTag>
             </div>
           </SpotlightCard>
 

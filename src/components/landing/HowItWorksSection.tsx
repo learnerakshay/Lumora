@@ -1,10 +1,20 @@
-import React, { useEffect, useRef } from 'react';
-import { FileText, Globe, Video, FileCode, Cpu, Sparkles, MessageCircle, Lightbulb, Bookmark, Layers3, ArrowRight } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { FileText, Globe, Video, FileCode, Cpu, Sparkles, MessageCircle, Lightbulb, Bookmark, Layers3, ArrowRight, ChevronDown } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { attachSpotlight } from './motion/spotlight';
 
 gsap.registerPlugin(ScrollTrigger);
+
+// Mock waveform bar heights (percent of track height) — a fixed, hand-tuned
+// shape rather than random noise, so it reads the same on every load.
+const WAVEFORM_BARS = [22, 38, 55, 41, 68, 82, 60, 45, 70, 90, 58, 34, 48, 66, 40, 25, 52, 74, 48, 30];
+
+const YOUTUBE_TRANSCRIPT = [
+  { time: '00:00', text: 'So the first thing we index is the raw transcript, split into timed segments.' },
+  { time: '00:04', text: 'Each segment becomes a chunk once it crosses the size threshold.' },
+  { time: '00:09', text: 'From there, every chunk gets embedded and stored alongside its timestamp.' },
+];
 
 export function HowItWorksSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -14,6 +24,18 @@ export function HowItWorksSection() {
   const collectRef = useRef<HTMLDivElement>(null);
   const understandRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
+
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [activeLine, setActiveLine] = useState(0);
+
+  useEffect(() => {
+    if (!transcriptExpanded) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const interval = window.setInterval(() => {
+      setActiveLine((line) => (line + 1) % YOUTUBE_TRANSCRIPT.length);
+    }, 1600);
+    return () => window.clearInterval(interval);
+  }, [transcriptExpanded]);
 
   useEffect(() => {
     const cleanups = [collectRef, understandRef, transformRef].map((ref) =>
@@ -144,10 +166,48 @@ export function HowItWorksSection() {
                   <span>Web Pages & Documentation</span>
                   <span className="workflow-emit-particle" aria-hidden="true" />
                 </div>
-                <div className="workflow-item workflow-emitter relative flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200" style={{ '--emit-delay': '-2.2s' } as React.CSSProperties}>
-                  <Video className="h-4 w-4 text-cyan-300" />
-                  <span>YouTube Videos</span>
-                  <span className="workflow-emit-particle" aria-hidden="true" />
+                <div className="workflow-item workflow-emitter rounded-lg border border-slate-800 bg-[#182030] text-xs text-slate-200" style={{ '--emit-delay': '-2.2s' } as React.CSSProperties}>
+                  <button
+                    type="button"
+                    onClick={() => setTranscriptExpanded((expanded) => !expanded)}
+                    aria-expanded={transcriptExpanded}
+                    className="relative flex w-full items-center space-x-3 p-2.5 text-left"
+                  >
+                    <Video className="h-4 w-4 shrink-0 text-cyan-300" />
+                    <span className="flex-1">YouTube Videos</span>
+                    <span className="text-[10px] text-slate-500">{transcriptExpanded ? 'Hide' : 'Preview'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${transcriptExpanded ? 'rotate-180' : ''}`} />
+                    <span className="workflow-emit-particle" aria-hidden="true" />
+                  </button>
+                  {transcriptExpanded && (
+                    <div className="animate-fade-in space-y-2.5 border-t border-slate-800/80 px-2.5 pb-3 pt-2.5">
+                      <div className="flex h-8 items-end gap-[3px]" aria-hidden="true">
+                        {WAVEFORM_BARS.map((height, index) => (
+                          <span
+                            key={index}
+                            className="waveform-bar w-full rounded-full bg-cyan-500/50"
+                            style={{ height: `${height}%`, '--bar-delay': `${index * -0.11}s` } as React.CSSProperties}
+                          />
+                        ))}
+                      </div>
+                      <ul className="space-y-1.5">
+                        {YOUTUBE_TRANSCRIPT.map((line, index) => (
+                          <li
+                            key={line.time}
+                            className={`flex items-start gap-2 rounded-md px-1.5 py-1 text-[10px] leading-relaxed transition-colors ${
+                              index === activeLine ? 'bg-cyan-500/10 text-cyan-200' : 'text-slate-500'
+                            }`}
+                          >
+                            <span className="font-mono text-slate-600">{line.time}</span>
+                            <span className="flex-1">{line.text}</span>
+                            {index === activeLine && (
+                              <span className="whitespace-nowrap font-mono text-[9px] text-cyan-400">● embedding</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
                 <div className="workflow-item workflow-emitter relative flex items-center space-x-3 rounded-lg border border-slate-800 bg-[#182030] p-2.5 text-xs text-slate-200" style={{ '--emit-delay': '-3.3s' } as React.CSSProperties}>
                   <FileCode className="w-4 h-4 text-sky-400" />

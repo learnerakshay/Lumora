@@ -2,6 +2,8 @@ const ACCENT_RGB = {
   cyan: '56,189,248',
   amber: '245,158,11',
   green: '16,185,129',
+  violet: '167,139,250',
+  rose: '244,63,94',
 } as const;
 
 export type SpotlightAccent = keyof typeof ACCENT_RGB;
