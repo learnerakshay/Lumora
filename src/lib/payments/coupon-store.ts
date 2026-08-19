@@ -34,6 +34,11 @@ export async function findCouponByCode(code: string): Promise<CouponRecord | nul
   return row ? toCouponRecord(row) : null;
 }
 
+export async function findCouponById(id: string): Promise<CouponRecord | null> {
+  const row = await prisma.coupon.findUnique({ where: { id } });
+  return row ? toCouponRecord(row) : null;
+}
+
 export async function createCoupon(input: {
   code: string;
   kind: CouponKind;

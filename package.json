@@ -33,7 +33,8 @@
     "payments:test-order": "tsx scripts/razorpay-test-order.ts",
     "payments:inspect-order": "tsx scripts/razorpay-inspect-order.ts",
     "payments:verify-order": "tsx scripts/razorpay-verify-order.ts",
-    "payments:create-coupon": "tsx scripts/payments-create-coupon.ts"
+    "payments:create-coupon": "tsx scripts/payments-create-coupon.ts",
+    "payments:rename-coupon": "tsx scripts/payments-rename-coupon.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",

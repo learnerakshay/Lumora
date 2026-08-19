@@ -13,6 +13,8 @@ import type { PlanName } from '../../lib/usage/config';
 interface AccessContextValue {
   plan: PlanName | null;
   planExpiresAt: string | null;
+  isFaculty: boolean;
+  hasSeenFacultyWelcome: boolean;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -34,6 +36,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, authenticatedUserId } = useAuth();
   const [plan, setPlan] = useState<PlanName | null>(null);
   const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
+  const [isFaculty, setIsFaculty] = useState(false);
+  const [hasSeenFacultyWelcome, setHasSeenFacultyWelcome] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +54,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       }
       setPlan(payload.data.plan as PlanName);
       setPlanExpiresAt(payload.data.planExpiresAt ?? null);
+      setIsFaculty(Boolean(payload.data.isFaculty));
+      setHasSeenFacultyWelcome(Boolean(payload.data.hasSeenFacultyWelcome));
       setError(null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Unable to load access.');
@@ -62,6 +68,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     if (!isSignedIn) {
       setPlan(null);
       setPlanExpiresAt(null);
+      setIsFaculty(false);
+      setHasSeenFacultyWelcome(false);
       setError(null);
       return;
     }
@@ -71,8 +79,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
   }, [authenticatedUserId, isSignedIn]);
 
   const value = useMemo(
-    () => ({ plan, planExpiresAt, loading, error, refresh }),
-    [plan, planExpiresAt, loading, error, refresh],
+    () => ({ plan, planExpiresAt, isFaculty, hasSeenFacultyWelcome, loading, error, refresh }),
+    [plan, planExpiresAt, isFaculty, hasSeenFacultyWelcome, loading, error, refresh],
   );
 
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;

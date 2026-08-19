@@ -121,16 +121,18 @@ enum CouponKind {
 }
 
 model User {
-  id            String         @id
-  plan          Plan           @default(FREE)
-  planExpiresAt DateTime?
-  planUpdatedAt DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  usageEvents   UsageEvent[]
-  skillProfiles SkillProfile[]
-  learningPlans LearningPlan[]
-  payments      Payment[]
+  id                    String         @id
+  plan                  Plan           @default(FREE)
+  planExpiresAt         DateTime?
+  planUpdatedAt         DateTime?
+  isFaculty             Boolean        @default(false)
+  hasSeenFacultyWelcome Boolean        @default(false)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  usageEvents           UsageEvent[]
+  skillProfiles         SkillProfile[]
+  learningPlans         LearningPlan[]
+  payments              Payment[]
 }
 
 model UsageEvent {

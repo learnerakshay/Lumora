@@ -5,6 +5,7 @@ import { SettingsModal } from './SettingsModal';
 import { UsageIndicator } from '../usage/UsageIndicator';
 import { LumoraBrand } from '../landing/LumoraBrand';
 import { ExpiryBanner } from '../payments/ExpiryBanner';
+import { FacultyWelcomeModal } from '../payments/FacultyWelcomeModal';
 import {
   Brain,
   ChevronLeft,
@@ -174,6 +175,7 @@ export function DashboardLayout({
       </div>
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSignOut={handleLogout} />
+      <FacultyWelcomeModal />
     </div>
   );
 }

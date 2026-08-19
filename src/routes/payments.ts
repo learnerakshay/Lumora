@@ -16,6 +16,7 @@ import { capturePayment } from '../lib/payments/capture-service';
 import { validateCoupon, type CouponValidationResult } from '../lib/payments/coupon';
 import { findCouponByCode } from '../lib/payments/coupon-store';
 import { syncUserEntitlement } from '../lib/payments/entitlement-sync';
+import { getFacultyStatus, markFacultyWelcomeSeen } from '../lib/payments/faculty-store';
 import {
   countUserCapturedCouponRedemptions,
   createPendingPayment,
@@ -64,16 +65,36 @@ paymentsRouter.get('/plans', (_req: Request, res: Response) => {
 paymentsRouter.get('/access', async (_req: Request, res: Response) => {
   const userId = res.locals.userId;
   try {
-    const entitlement = await syncUserEntitlement(userId, 'ACCESS_REFRESH');
+    const [entitlement, faculty] = await Promise.all([
+      syncUserEntitlement(userId, 'ACCESS_REFRESH'),
+      getFacultyStatus(userId),
+    ]);
     return res.status(200).json(
       successResponse({
         plan: entitlement.plan,
         planExpiresAt: entitlement.planExpiresAt ? entitlement.planExpiresAt.toISOString() : null,
+        isFaculty: faculty.isFaculty,
+        hasSeenFacultyWelcome: faculty.hasSeenFacultyWelcome,
       }),
     );
   } catch (error) {
     logger.error('Failed to resolve access', error, { userId });
     const response = errorResponse(new Error('Failed to resolve access'));
+    return res.status(response.statusCode).json(response.payload);
+  }
+});
+
+// Marks the one-time faculty welcome modal as seen so it never re-triggers
+// for this account — until (if ever) a later CHAICODE99 capture re-arms it
+// via markFacultyEntitlement (see capture-service.ts).
+paymentsRouter.post('/faculty-welcome/seen', async (_req: Request, res: Response) => {
+  const userId = res.locals.userId;
+  try {
+    await markFacultyWelcomeSeen(userId);
+    return res.status(200).json(successResponse({ hasSeenFacultyWelcome: true }));
+  } catch (error) {
+    logger.error('Failed to mark faculty welcome as seen', error, { userId });
+    const response = errorResponse(new Error('Failed to update faculty welcome status'));
     return res.status(response.statusCode).json(response.payload);
   }
 });

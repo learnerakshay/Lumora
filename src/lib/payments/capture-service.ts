@@ -1,7 +1,8 @@
 import { logger } from '../logger';
 import { computeAccessWindow } from './access';
-import { incrementCouponRedemption } from './coupon-store';
+import { findCouponById, incrementCouponRedemption } from './coupon-store';
 import { syncUserEntitlement, type EntitlementSyncReason, type EntitlementSyncResult } from './entitlement-sync';
+import { FACULTY_COUPON_CODE, markFacultyEntitlement } from './faculty-store';
 import { getLatestUnexpiredAccessUntil, getPaymentByOrderId, markPaymentCaptured } from './payment-store';
 
 export interface CaptureResult {
@@ -71,6 +72,25 @@ export async function capturePayment(input: {
             couponId: captured.couponId,
           });
         });
+
+        // Faculty/instructor status is granted off the coupon actually
+        // redeemed on capture, not the plan — CHAICODE99 applies to both
+        // CORE and MAX, and either should grant it. Checked here (inside
+        // the CAS-winning branch only, like the redemption increment above)
+        // so a webhook/verify race or retry can never grant it twice or
+        // race a duplicate write; a lookup failure never blocks the
+        // payment capture that already succeeded.
+        try {
+          const coupon = await findCouponById(captured.couponId);
+          if (coupon?.code === FACULTY_COUPON_CODE) {
+            await markFacultyEntitlement(existing.userId);
+          }
+        } catch (error) {
+          logger.error('Failed to grant faculty entitlement after capture', error, {
+            userId: existing.userId,
+            couponId: captured.couponId,
+          });
+        }
       }
       logger.info('Payment captured and access granted', {
         userId: existing.userId,
