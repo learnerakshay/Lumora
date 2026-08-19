@@ -149,6 +149,78 @@ workspaceRouter.get('/source-summaries', async (_req: Request, res: Response) =>
   }
 });
 
+// GET /api/workspaces/export-data — Settings > Data & privacy > Export JSON.
+// Read-only. Workspace IDs are derived from the caller's own scoped list, never
+// from client input, so this cannot cross into another user's data.
+workspaceRouter.get('/export-data', async (_req: Request, res: Response) => {
+  try {
+    const workspaces = await getWorkspaces(res.locals.userId);
+    const exportedWorkspaces = await Promise.all(
+      workspaces.map(async (workspace) => {
+        const [sources, messages] = await Promise.all([
+          getWorkspaceSources(workspace.id),
+          getWorkspaceMessages(workspace.id),
+        ]);
+        return {
+          id: workspace.id,
+          name: workspace.name,
+          description: workspace.description,
+          createdAt: workspace.createdAt,
+          updatedAt: workspace.updatedAt,
+          sources: sources.map((source) => ({
+            id: source.id,
+            title: source.title,
+            type: source.type,
+            url: source.url ?? null,
+            status: source.status,
+            createdAt: source.createdAt,
+          })),
+          messages: messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            mode: message.mode,
+            responseMode: message.responseMode,
+            createdAt: message.createdAt,
+          })),
+        };
+      }),
+    );
+    return res.status(200).json(successResponse({
+      exportedAt: new Date().toISOString(),
+      workspaces: exportedWorkspaces,
+    }));
+  } catch (err) {
+    logger.error('Failed to export Workspace data', err);
+    return res
+      .status(500)
+      .json(errorResponse(new Error('Failed to export Workspace data')).payload);
+  }
+});
+
+// DELETE /api/workspaces/delete-all-data — Settings > Data & privacy > Delete Data.
+// Deletes every Workspace owned by the caller (and everything that cascades from
+// it: sources, indexes, chunks, messages, citations). Reuses the same
+// ownership-scoped, transactional deleteWorkspace() used by the single-workspace
+// delete flow, one call per Workspace. Payment/User rows are structurally
+// unreachable from Workspace (no FK relation), so this never touches them.
+workspaceRouter.delete('/delete-all-data', async (_req: Request, res: Response) => {
+  try {
+    const workspaces = await getWorkspaces(res.locals.userId);
+    let deletedCount = 0;
+    for (const workspace of workspaces) {
+      const deleted = await deleteWorkspace(workspace.id, res.locals.userId);
+      if (deleted) deletedCount += 1;
+    }
+    return res.status(200).json(successResponse({ deletedWorkspaceCount: deletedCount }));
+  } catch (err) {
+    logger.error('Failed to delete all Workspace data', err);
+    return res
+      .status(500)
+      .json(errorResponse(new Error('Failed to delete Workspace data')).payload);
+  }
+});
+
 workspaceRouter.param('id', async (req: Request, res: Response, next, workspaceId: string) => {
   try {
     const workspace = await getWorkspaceById(workspaceId, res.locals.userId);
@@ -753,7 +825,14 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     action: requestedAction,
     regenerateMessageId,
     operationId: requestedOperationId,
+    strictGrounding: requestedStrictGrounding,
+    webDiscovery: requestedWebDiscovery,
   } = req.body || {};
+  // Learner preferences from Settings (Learning preferences tab), sent per-request.
+  // Absent/non-boolean values preserve prior behavior: web search stays available,
+  // and no extra strict-grounding instruction is added.
+  const strictGrounding = requestedStrictGrounding === true;
+  const webSearchAllowed = requestedWebDiscovery !== false;
   const validModes = ['CONCISE', 'DETAILED', 'CRITICAL', 'CREATIVE'] as const;
   const isRegeneration = regenerateMessageId !== undefined;
   let regenerationTurn:
@@ -1342,6 +1421,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       hasWorkspaceContext: hasGroundedContext,
       hasActionContext: actionPlan?.allowWithoutWorkspaceContext === true,
       allowGeneralKnowledge: responseMode === 'GENERAL',
+      strictGrounding,
+      webSearchAllowed,
       instructions: hasGroundedContext
         ? `${ragContext.contextPrompt}${
             actionPlan

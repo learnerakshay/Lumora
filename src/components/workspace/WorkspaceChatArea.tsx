@@ -24,6 +24,7 @@ import { SourceTypeIcon } from './SourceTypeIcon';
 import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presentation';
 import { citationsForResponse, formatCitationTimestamp } from './workspace-interactions';
 import { LearningResourceSection } from './LearningResourceSection';
+import { useLearningPreferences } from '../../context/LearningPreferencesContext';
 
 interface WorkspaceChatAreaProps {
   messages: StoredMessage[];
@@ -151,9 +152,13 @@ function renderCitationChildren(
   citations: StoredCitation[],
   availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
+  showInlineCitations = true,
 ): React.ReactNode {
   return React.Children.map(children, (child) => {
     if (typeof child === 'string') {
+      if (!showInlineCitations) {
+        return splitCitationMarkers(child).map((part) => (part.type === 'text' ? part.value : '')).join('');
+      }
       return splitCitationMarkers(child).map((part, index) => {
         if (part.type === 'text') return part.value;
         const citation = citations[part.citationNumber - 1];
@@ -175,7 +180,7 @@ function renderCitationChildren(
     }
     if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props.children) {
       return React.cloneElement(child, {
-        children: renderCitationChildren(child.props.children, citations, availableSourceIds, onSelectCitation),
+        children: renderCitationChildren(child.props.children, citations, availableSourceIds, onSelectCitation, showInlineCitations),
       });
     }
     return child;
@@ -186,8 +191,9 @@ function createMarkdownComponents(
   citations: StoredCitation[],
   availableSourceIds: ReadonlySet<string>,
   onSelectCitation?: (citation: StoredCitation, evidence?: StoredCitation[]) => void,
+  showInlineCitations = true,
 ): Components {
-  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, availableSourceIds, onSelectCitation);
+  const citationChildren = (children: React.ReactNode) => renderCitationChildren(children, citations, availableSourceIds, onSelectCitation, showInlineCitations);
   return {
   h1: ({ children, ...props }) => <h1 {...props} className="mb-3 mt-6 text-xl font-bold tracking-tight text-white first:mt-0">{children}</h1>,
   h2: ({ children, ...props }) => <h2 {...props} className="mb-2.5 mt-5 text-lg font-bold text-white first:mt-0">{children}</h2>,
@@ -250,13 +256,14 @@ export function WorkspaceChatArea({
   const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<string | null>(null);
   const deleteButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  const { inlineCitations } = useLearningPreferences();
   const availableSourceIds = useMemo(
     () => new Set(sources.map(({ id }) => id)),
     [sources],
   );
   const streamingMarkdownComponents = useMemo(
-    () => createMarkdownComponents(streamingCitations, availableSourceIds, onSelectCitation),
-    [streamingCitations, availableSourceIds, onSelectCitation],
+    () => createMarkdownComponents(streamingCitations, availableSourceIds, onSelectCitation, inlineCitations),
+    [streamingCitations, availableSourceIds, onSelectCitation, inlineCitations],
   );
 
   useEffect(() => {
@@ -469,12 +476,12 @@ export function WorkspaceChatArea({
                       </div>
 
                       <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
-                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation)}>{message.content}</Markdown>
+                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation, inlineCitations)}>{message.content}</Markdown>
                       </div>
 
                       <LearningResourceSection resources={message.resourceRecommendations || []} />
 
-                      {messageCitations.length > 0 && (
+                      {inlineCitations && messageCitations.length > 0 && (
                         <div className="mt-5 space-y-2 border-t border-slate-800/60 pt-3">
                           <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
                             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
@@ -651,7 +658,7 @@ export function WorkspaceChatArea({
                   </div>
                 )}
 
-                {streamingCitations.length > 0 && (
+                {inlineCitations && streamingCitations.length > 0 && (
                   <div className="mt-4 border-t border-slate-800/80 pt-3">
                     <div className="flex flex-wrap gap-2">
                       {streamingCitations.map((citation, index) => (

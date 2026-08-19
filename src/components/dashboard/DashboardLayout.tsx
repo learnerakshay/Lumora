@@ -94,14 +94,16 @@ export function DashboardLayout({
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0b0f17] text-[#f0f4f8] antialiased md:flex-row">
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800/80 bg-[#101621]/95 px-4 py-3 backdrop-blur md:hidden">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" />
+      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10" />
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800/60 bg-slate-950/80 px-4 py-3 backdrop-blur-md md:hidden">
         <Link to="/workspaces" className="flex items-center gap-2 rounded-lg">
           <LumoraBrand compact markOnly />
           <span className="font-semibold tracking-tight text-white">Lumora</span>
         </Link>
         <div className="flex items-center gap-2">
           <UsageIndicator compact />
-          {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} aria-label="Create Workspace" className="rounded-lg bg-sky-400 p-2 text-slate-950 transition hover:bg-sky-300"><Plus className="h-4 w-4" /></button>}
+          {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} aria-label="Create Workspace" className="rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 p-2 text-white shadow-md shadow-cyan-500/20 transition-all duration-300 ease-out hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:scale-[1.02] active:scale-[0.98]"><Plus className="h-4 w-4" /></button>}
           <button type="button" onClick={() => setIsMobileSidebarOpen(true)} aria-label="Open navigation" aria-expanded={isMobileSidebarOpen} className="rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-300"><Menu className="h-5 w-5" /></button>
         </div>
       </header>
@@ -111,9 +113,9 @@ export function DashboardLayout({
       <aside
         aria-label="Dashboard navigation"
         style={{ '--sidebar-width': `${desktopWidth}px` } as React.CSSProperties}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[min(86vw,288px)] flex-col border-r border-slate-800/80 bg-[#101621] shadow-2xl transition-transform duration-200 md:sticky md:w-[var(--sidebar-width)] md:translate-x-0 md:shadow-none ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(86vw,288px)] flex-col overflow-x-hidden border-r border-slate-800/80 bg-[#101621] shadow-2xl transition-transform duration-200 md:sticky md:w-[var(--sidebar-width)] md:translate-x-0 md:shadow-none ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-3">
           <div className={`flex h-12 items-center ${isCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
             <Link to="/workspaces" onClick={() => setIsMobileSidebarOpen(false)} className="flex min-w-0 items-center gap-2.5 rounded-lg">
               <LumoraBrand compact markOnly />
@@ -124,20 +126,20 @@ export function DashboardLayout({
 
           <nav className="mt-6 space-y-1" aria-label="Workspace navigation">
             {!isCollapsed && <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Workspace</p>}
-            <Link to="/workspaces" title={isCollapsed ? 'Workspaces' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/workspaces' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300 shadow-[inset_0_0_18px_rgba(34,211,238,0.025)] before:absolute before:left-[-1px] before:h-5 before:w-0.5 before:rounded-full before:bg-cyan-300 before:shadow-[0_0_10px_rgba(103,232,249,0.35)]' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
-              <LayoutDashboard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Workspaces</span>
+            <Link to="/workspaces" title={isCollapsed ? 'Workspaces' : undefined} aria-label={isCollapsed ? 'Workspaces' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center overflow-hidden rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/workspaces' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300 shadow-[inset_0_0_18px_rgba(34,211,238,0.025)] before:absolute before:left-[-1px] before:h-5 before:w-0.5 before:rounded-full before:bg-cyan-300 before:shadow-[0_0_10px_rgba(103,232,249,0.35)]' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <LayoutDashboard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'hidden' : 'truncate'}>Workspaces</span>
             </Link>
-            <Link to="/skills" title={isCollapsed ? 'Skill Intelligence' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/skills' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
-              <Brain className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Skill Intelligence</span>
+            <Link to="/skills" title={isCollapsed ? 'Skill Intelligence' : undefined} aria-label={isCollapsed ? 'Skill Intelligence' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center overflow-hidden rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/skills' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <Brain className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'hidden' : 'truncate'}>Skill Intelligence</span>
             </Link>
-            <Link to="/usage" title={isCollapsed ? 'Usage' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/usage' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
-              <Gauge className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Usage</span>
+            <Link to="/usage" title={isCollapsed ? 'Usage' : undefined} aria-label={isCollapsed ? 'Usage' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center overflow-hidden rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/usage' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <Gauge className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'hidden' : 'truncate'}>Usage</span>
             </Link>
-            <Link to="/billing" title={isCollapsed ? 'Billing' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/billing' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
-              <CreditCard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Billing</span>
+            <Link to="/billing" title={isCollapsed ? 'Billing' : undefined} aria-label={isCollapsed ? 'Billing' : undefined} onClick={() => setIsMobileSidebarOpen(false)} className={`relative flex h-10 items-center overflow-hidden rounded-xl border text-sm font-medium transition ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'} ${location.pathname === '/billing' ? 'border-cyan-400/15 bg-cyan-400/[0.07] text-cyan-300' : 'border-transparent text-slate-400 hover:bg-slate-900 hover:text-white'}`}>
+              <CreditCard className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'hidden' : 'truncate'}>Billing</span>
             </Link>
-            <button type="button" title={isCollapsed ? 'Settings' : undefined} onClick={() => { setIsSettingsOpen(true); setIsMobileSidebarOpen(false); }} className={`flex h-10 w-full items-center rounded-xl border border-transparent text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-white ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}>
-              <Settings className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'sr-only' : ''}>Settings</span>
+            <button type="button" title={isCollapsed ? 'Settings' : undefined} aria-label={isCollapsed ? 'Settings' : undefined} onClick={() => { setIsSettingsOpen(true); setIsMobileSidebarOpen(false); }} className={`flex h-10 w-full items-center overflow-hidden rounded-xl border border-transparent text-sm font-medium text-slate-400 transition hover:bg-slate-900 hover:text-white ${isCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}>
+              <Settings className="h-4 w-4 shrink-0" /><span className={isCollapsed ? 'hidden' : 'truncate'}>Settings</span>
             </button>
           </nav>
 
@@ -147,28 +149,30 @@ export function DashboardLayout({
                 {user?.imageUrl ? <img src={user.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-full border border-slate-700 object-cover" /> : <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-cyan-700 text-xs font-bold text-white">{initials}</span>}
                 {!isCollapsed && <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-white">{user?.fullName || 'Learner'}</span><span className="block truncate text-[10px] text-slate-500">{user?.email}</span></span>}
               </div>
-              <div className={isCollapsed ? 'flex justify-center' : 'px-2'}><UsageIndicator compact={isCollapsed} /></div>
-              <button type="button" onClick={handleLogout} title={isCollapsed ? 'Sign out' : undefined} className={`flex h-9 w-full items-center rounded-xl text-xs font-medium text-slate-400 transition hover:bg-rose-950/30 hover:text-rose-300 ${isCollapsed ? 'justify-center' : 'justify-center gap-2'}`}><LogOut className="h-3.5 w-3.5" /><span className={isCollapsed ? 'sr-only' : ''}>Sign out</span></button>
+              <div className={isCollapsed ? 'flex justify-center' : 'px-2'}><UsageIndicator compact={isCollapsed} iconOnly={isCollapsed} /></div>
+              <button type="button" onClick={handleLogout} title="Sign out" aria-label="Sign out" className={`flex h-9 w-full items-center rounded-xl text-xs font-medium text-slate-400 transition hover:bg-rose-950/30 hover:text-rose-300 ${isCollapsed ? 'justify-center' : 'justify-center gap-2'}`}><LogOut className="h-3.5 w-3.5 shrink-0" /><span className={isCollapsed ? 'hidden' : ''}>Sign out</span></button>
             </div>
           </div>
         </div>
 
-        <button type="button" onClick={toggleSidebar} className="hidden h-11 items-center justify-center gap-2 border-t border-slate-800/80 text-xs text-slate-400 transition hover:bg-slate-900 hover:text-white md:flex" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{isCollapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /><span>Collapse sidebar</span></>}</button>
+        <button type="button" onClick={toggleSidebar} title={isCollapsed ? 'Expand sidebar' : undefined} className="hidden h-11 items-center justify-center gap-2 overflow-hidden border-t border-slate-800/80 text-xs text-slate-400 transition hover:bg-slate-900 hover:text-white md:flex" aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0" /> : <><ChevronLeft className="h-4 w-4 shrink-0" /><span>Collapse sidebar</span></>}</button>
         {!isCollapsed && <button type="button" onPointerDown={startResize} aria-label="Resize sidebar" title="Drag to resize sidebar" className="absolute inset-y-0 -right-1 hidden w-2 cursor-col-resize touch-none bg-transparent after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-sky-400/0 hover:after:bg-sky-400/60 focus-visible:after:bg-sky-400 md:block" />}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <ExpiryBanner />
         {(onSearchChange || onCreateWorkspaceClick) && (
-          <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between border-b border-slate-800/70 bg-[#0d131d]/90 px-6 backdrop-blur md:flex lg:px-8">
-            {onSearchChange && (
+          <header className="sticky top-0 z-30 hidden h-[72px] items-center justify-between gap-3 border-b border-slate-800/60 bg-slate-950/80 px-6 backdrop-blur-md md:flex lg:px-8">
+            {onSearchChange ? (
               <div className="relative w-full max-w-sm">
                 <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input type="search" value={searchTerm} onChange={(e) => onSearchChange(e.target.value)} placeholder="Search Workspaces" aria-label="Search Workspaces" className="workspace-toolbar-control h-10 w-full pl-10 pr-4 text-sm text-white placeholder:text-slate-500 focus:outline-none" />
               </div>
-            )}
-            {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} className="ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-cyan-300 px-4 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 active:translate-y-px"><Plus className="h-4 w-4" />Create Workspace</button>}
-            <div className="ml-3"><UsageIndicator /></div>
+            ) : <div />}
+            <div className="flex shrink-0 items-center gap-3">
+              {onCreateWorkspaceClick && <button type="button" onClick={onCreateWorkspaceClick} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-all duration-300 ease-out hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:scale-[1.02] active:scale-[0.98]"><Plus className="h-4 w-4" />Create Workspace</button>}
+              <UsageIndicator />
+            </div>
           </header>
         )}
         <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 sm:p-6 lg:p-8">{children}</main>

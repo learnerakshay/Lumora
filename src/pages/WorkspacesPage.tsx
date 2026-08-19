@@ -14,6 +14,7 @@ import {
   type DashboardSourceSummary,
   type DashboardWorkspace,
 } from '../lib/workspace-dashboard-data';
+import { toTitleCase } from '../lib/text-format';
 import {
   Plus,
   ArrowRight,
@@ -282,7 +283,7 @@ export function WorkspacesPage() {
       <article
         key={workspace.id}
         style={{ '--identity-color': identity.color, '--identity-rgb': identity.rgb } as React.CSSProperties}
-        className="workspace-card group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border p-4 transition-[transform,border-color,background-color,box-shadow] duration-200 focus-within:ring-2 focus-within:ring-[rgb(var(--identity-rgb)/0.24)] sm:p-[18px]"
+        className="workspace-card group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border p-5 shadow-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-[rgb(var(--identity-rgb)/0.24)]"
       >
         <button
           type="button"
@@ -296,7 +297,7 @@ export function WorkspacesPage() {
               <WorkspaceIcon name={workspace.icon} className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-100 transition-colors group-hover:text-white">
+              <h3 title={workspace.name} className="truncate text-[15px] font-semibold tracking-tight text-slate-100 transition-colors group-hover:text-white">
                 {workspace.name}
               </h3>
               <p className="mt-1 text-[11px] text-slate-500">
@@ -333,8 +334,8 @@ export function WorkspacesPage() {
           </div>
         </div>
 
-        <div className="pointer-events-none relative z-10 mt-4 flex min-h-8 items-center justify-between gap-3 border-t border-slate-800/70 pt-3">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="pointer-events-none relative z-10 mt-4 flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-slate-800/70 pt-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {!sourceSummariesLoaded ? (
               <span aria-label="Loading source metadata" className="inline-flex items-center gap-2 text-[11px] text-slate-600">
                 <span className="h-3.5 w-16 animate-pulse rounded bg-slate-800/70" />
@@ -352,13 +353,14 @@ export function WorkspacesPage() {
                   {workspace.sourcesCount} {workspace.sourcesCount === 1 ? 'source' : 'sources'}
                 </span>
                 {sourceTypes.length > 0 && (
-                  <div className="flex items-center -space-x-1" aria-label={`Source types: ${sourceTypes.map((type) => SOURCE_META[type].label).join(', ')}`}>
+                  <div className="flex flex-wrap items-center gap-1" aria-label={`Source types: ${sourceTypes.map((type) => SOURCE_META[type].label).join(', ')}`}>
                     {sourceTypes.slice(0, 4).map((type) => {
                       const meta = SOURCE_META[type];
                       const Icon = meta.icon;
                       return (
-                        <span key={type} title={meta.label} className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-700/90 bg-[#0d131d]">
-                          <Icon className={`h-2.5 w-2.5 ${meta.className}`} />
+                        <span key={type} title={meta.label} className="inline-flex items-center gap-1 rounded-md border border-slate-700/60 bg-slate-800/80 px-2 py-0.5 text-xs font-medium text-slate-400">
+                          <Icon className={`h-3 w-3 shrink-0 ${meta.className}`} />
+                          {meta.label}
                         </span>
                       );
                     })}
@@ -388,7 +390,7 @@ export function WorkspacesPage() {
       onSearchChange={loading || workspaces.length > 0 ? setSearchTerm : undefined}
       onCreateWorkspaceClick={!loading && workspaces.length > 0 ? () => setIsCreateOpen(true) : undefined}
     >
-      <div className="animate-fade-in">
+      <div className="mx-auto w-full max-w-7xl animate-fade-in">
         {/* Toast Feedback */}
         {toastMessage && (
           <div className="fixed bottom-6 right-6 z-50 flex items-center space-x-3 rounded-2xl border border-emerald-800 bg-emerald-950 p-4 text-xs text-emerald-200 shadow-2xl animate-fade-in">
@@ -410,20 +412,20 @@ export function WorkspacesPage() {
         {loading && workspaces.length === 0 ? (
           <div className="space-y-7" aria-busy="true" aria-label="Loading Workspaces">
             <div className="h-24 animate-pulse rounded-2xl border border-slate-800/80 bg-[#111824]" />
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[1, 2, 3].map((n) => (
-                <div key={n} className="min-h-[190px] animate-pulse space-y-4 rounded-2xl border border-slate-800/80 bg-[#111824] p-5">
+                <div key={n} className="h-44 animate-pulse space-y-4 rounded-2xl border border-slate-800/80 bg-slate-800/50 p-5">
                   <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800" />
-                    <div className="w-16 h-4 rounded bg-slate-800" />
+                    <div className="w-10 h-10 rounded-xl bg-slate-700/60" />
+                    <div className="w-16 h-4 rounded bg-slate-700/60" />
                   </div>
                   <div className="space-y-2">
-                    <div className="w-3/4 h-5 rounded bg-slate-800" />
-                    <div className="w-full h-3 rounded bg-slate-800/60" />
+                    <div className="w-3/4 h-5 rounded bg-slate-700/60" />
+                    <div className="w-full h-3 rounded bg-slate-700/40" />
                   </div>
-                  <div className="pt-3 border-t border-slate-800/60 flex justify-between">
-                    <div className="w-20 h-4 rounded bg-slate-800" />
-                    <div className="w-24 h-4 rounded bg-slate-800" />
+                  <div className="pt-3 border-t border-slate-700/40 flex justify-between">
+                    <div className="w-20 h-4 rounded bg-slate-700/60" />
+                    <div className="w-24 h-4 rounded bg-slate-700/60" />
                   </div>
                 </div>
               ))}
@@ -473,7 +475,7 @@ export function WorkspacesPage() {
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
-                className="lumora-zero-enter lumora-zero-enter-3 mt-10 inline-flex h-11 items-center gap-2 rounded-xl bg-cyan-300 px-5 text-sm font-semibold text-slate-950 shadow-[0_12px_28px_rgba(34,211,238,0.16)] transition-[background-color,box-shadow] duration-200 hover:bg-cyan-200 hover:shadow-[0_16px_34px_rgba(34,211,238,0.22)]"
+                className="lumora-zero-enter lumora-zero-enter-3 mt-10 inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2 text-sm font-medium text-white shadow-md transition-all duration-300 ease-out hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] hover:scale-[1.02] active:scale-[0.98]"
               >
                 <Plus className="h-4 w-4" />
                 Create Workspace
@@ -484,8 +486,8 @@ export function WorkspacesPage() {
           <div className="workspace-library-canvas relative isolate space-y-7">
             <section className="flex flex-col gap-5 border-b border-slate-800/70 pb-7 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs font-medium text-cyan-400">Welcome back, {user?.fullName?.split(' ')[0] || 'learner'}</p>
-                <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Your Workspaces</h1>
+                <p className="text-xs font-medium text-cyan-400">Welcome back, {toTitleCase(user?.fullName?.split(' ')[0] || 'learner')}</p>
+                <h1 className="mt-1.5 bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl">Your Workspaces</h1>
                 <p className="mt-2 text-sm text-slate-400">Find a Workspace or create a new one to keep learning.</p>
               </div>
 
@@ -517,7 +519,7 @@ export function WorkspacesPage() {
                   <h2 id="continue-heading" className="text-base font-semibold tracking-tight text-slate-100">Continue where you left off</h2>
                   <p className="mt-1 text-xs text-slate-500">Your most recently updated Workspaces.</p>
                 </div>
-                <div className="grid max-w-[1120px] grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {recentWorkspaces.map(renderWorkspaceCard)}
                 </div>
               </section>
@@ -528,8 +530,8 @@ export function WorkspacesPage() {
                 <h2 id="library-heading" className="text-[17px] font-semibold tracking-[-0.018em] text-slate-100">
                   {showContinueSection ? 'All Workspaces' : 'Workspace library'}
                 </h2>
-                <span className="inline-flex min-w-6 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-cyan-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_0_16px_rgba(34,211,238,0.035)]">
-                  {filteredWorkspaces.length}
+                <span className="inline-flex items-center justify-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-cyan-300/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_0_16px_rgba(34,211,238,0.035)]">
+                  {filteredWorkspaces.length} Total
                 </span>
               </div>
 
@@ -541,7 +543,7 @@ export function WorkspacesPage() {
                   <button type="button" onClick={() => setSearchTerm('')} className="mt-5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-800">Clear search</button>
                 </div>
               ) : (
-                <div className="grid max-w-[1120px] grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredWorkspaces.map(renderWorkspaceCard)}
                 </div>
               )}

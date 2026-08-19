@@ -7,6 +7,7 @@ import { PublicOnlyRoute } from './components/PublicOnlyRoute';
 import { AppShellLoader } from './components/AppShellLoader';
 import { UsageProvider } from './components/usage/UsageProvider';
 import { AccessProvider } from './components/payments/AccessProvider';
+import { LearningPreferencesProvider } from './context/LearningPreferencesContext';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { ScrollToTop } from './components/shared/ScrollToTop';
 
@@ -43,6 +44,7 @@ export default function App() {
       <AuthProvider>
         <AccessProvider>
         <UsageProvider>
+        <LearningPreferencesProvider>
         <div className="min-h-screen bg-[#0b0f17] text-[#f0f4f8] selection:bg-sky-500/30 selection:text-sky-200">
           <Navbar />
           <Suspense fallback={<AppShellLoader />}>
@@ -131,6 +133,7 @@ export default function App() {
           </Routes>
           </Suspense>
         </div>
+        </LearningPreferencesProvider>
         </UsageProvider>
         </AccessProvider>
       </AuthProvider>

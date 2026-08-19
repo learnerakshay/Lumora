@@ -12,6 +12,7 @@ export interface AuthUser {
   fullName: string;
   imageUrl?: string;
   provider?: string;
+  authProvider: 'google' | 'github' | 'email' | 'other';
 }
 
 interface AuthContextType {
@@ -41,6 +42,14 @@ if (!clerkPublishableKey) {
   throw new Error('VITE_CLERK_PUBLISHABLE_KEY is required');
 }
 
+function resolveAuthProvider(clerkUser: ReturnType<typeof useClerkUser>['user']): AuthUser['authProvider'] {
+  const externalProvider = clerkUser?.externalAccounts?.[0]?.provider;
+  if (!externalProvider) return 'email';
+  if (externalProvider.includes('google')) return 'google';
+  if (externalProvider.includes('github')) return 'github';
+  return 'other';
+}
+
 function resolveDisplayName(
   fullName?: string | null,
   firstName?: string | null,
@@ -66,6 +75,7 @@ function ClerkAuthContextProvider({ children }: { children: React.ReactNode }) {
         fullName: resolveDisplayName(clerkUser.fullName, clerkUser.firstName, email),
         imageUrl: clerkUser.imageUrl,
         provider: 'clerk',
+        authProvider: resolveAuthProvider(clerkUser),
       }
     : null;
 

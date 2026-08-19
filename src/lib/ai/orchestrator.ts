@@ -26,6 +26,10 @@ export interface OrchestrationInput
   hasWorkspaceContext?: boolean;
   hasActionContext?: boolean;
   allowGeneralKnowledge?: boolean;
+  /** Learner preference. Omitted/true keeps existing behavior; explicit false excludes the Tavily tool from this request's tool list. */
+  webSearchAllowed?: boolean;
+  /** Learner preference. When true and Workspace evidence is in use, adds a stricter instruction to answer only from that evidence. */
+  strictGrounding?: boolean;
   onToolStatus?: (update: ToolStatusUpdate) => void;
   onToolResult?: (record: ToolExecutionRecord) => void;
 }
@@ -63,8 +67,12 @@ Web search is unavailable. ${
               ? 'No Workspace evidence is available for this answer. Use general model knowledge without implying that any claim came from the Workspace. Do not emit Workspace-style [Citation #N] markers, and acknowledge uncertainty where appropriate.'
               : 'No verified Workspace or web evidence is available. Do not answer factual questions from general model knowledge; clearly report insufficient verified knowledge.'
       }`;
+  const strictGroundingPolicy = input.strictGrounding && hasWorkspaceContext
+    ? `\n\n=== STRICT EVIDENCE GROUNDING ===
+The learner has enabled Strict Evidence Grounding. Answer using only the exact Workspace evidence in the citations above. Do not supplement gaps with general model knowledge, even minor ones. If the retrieved evidence does not fully cover part of the question, explicitly say so instead of filling it in.`
+    : '';
   return {
-    instructions: `${input.instructions}\n\n${responseModeInstructions(input.mode)}${searchPolicy}`,
+    instructions: `${input.instructions}\n\n${responseModeInstructions(input.mode)}${searchPolicy}${strictGroundingPolicy}`,
     history: input.history,
     query: input.query,
     userId: input.userId,
@@ -166,7 +174,10 @@ export class AIOrchestrator {
   }
 
   async run(input: OrchestrationInput): Promise<OrchestrationResult> {
-    const tools = this.registry.definitions();
+    const registeredTools = this.registry.definitions();
+    const tools = input.webSearchAllowed === false
+      ? registeredTools.filter((tool) => tool.name !== TAVILY_TOOL_NAME)
+      : registeredTools;
     const toolExecutions: ToolExecutionRecord[] = [];
     let accumulatedText = '';
     let lastResult: GenerateChatResult | undefined;

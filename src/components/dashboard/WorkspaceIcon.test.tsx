@@ -29,11 +29,13 @@ test('different persisted Workspace identities retain distinct configured hover 
   assert.notEqual(yellow.rgb, purple.rgb);
 });
 
-test('Workspace cards pass their identity color to hover and focus-visible styling', () => {
+test('Workspace cards pass their identity color to icon and focus-visible styling', () => {
   const cardSource = readFileSync(new URL('../../pages/WorkspacesPage.tsx', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../../index.css', import.meta.url), 'utf8');
   assert.match(cardSource, /--identity-rgb/);
   assert.match(cardSource, /focus-within:ring-\[rgb\(var\(--identity-rgb\)/);
   assert.match(styles, /\.workspace-card:hover/);
-  assert.match(styles, /border-color: rgb\(var\(--identity-rgb\) \/ 0\.56\)/);
+  // Hover border is a deliberate uniform cyan accent (not per-identity) as of the
+  // glassmorphic card redesign, so this checks the current cyan hover treatment.
+  assert.match(styles, /border-color: rgb\(6 182 212 \/ 0\.5\)/);
 });

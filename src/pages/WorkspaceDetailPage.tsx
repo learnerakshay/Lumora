@@ -53,6 +53,7 @@ import {
 } from '../lib/usage/client';
 import type { UsageLimitDetails } from '../lib/usage/types';
 import { isChatResponseMode, type ChatResponseMode } from '../types';
+import { useLearningPreferences } from '../context/LearningPreferencesContext';
 
 interface WorkspaceData {
   id: string;
@@ -68,6 +69,7 @@ interface WorkspaceData {
 export function WorkspaceDetailPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
+  const { strictGrounding, webDiscovery } = useLearningPreferences();
 
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -411,11 +413,13 @@ export function WorkspaceDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           isRegeneration
-            ? { regenerateMessageId: regenerateAssistant!.id, operationId }
+            ? { regenerateMessageId: regenerateAssistant!.id, operationId, strictGrounding, webDiscovery }
             : {
                 message: promptText.trim(),
                 mode,
                 operationId,
+                strictGrounding,
+                webDiscovery,
                 ...(action ? { action } : {}),
               },
         ),
