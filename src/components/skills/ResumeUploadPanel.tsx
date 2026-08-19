@@ -166,7 +166,7 @@ export function ResumeUploadPanel({
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-[#101621]/90 shadow-2xl backdrop-blur-2xl"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 pt-4">
+      <div className="flex flex-col gap-2 border-b border-slate-800/80 px-5 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="flex items-center gap-5">
           {(['file', 'text'] as const).map((tab) => (
             <button
@@ -189,7 +189,7 @@ export function ResumeUploadPanel({
             </button>
           ))}
         </div>
-        {usageCaption && <span className="pb-3 text-[10px] font-medium text-slate-500">{usageCaption}</span>}
+        {usageCaption && <span className="pb-3 text-[10px] font-medium text-slate-500 sm:pb-3">{usageCaption}</span>}
       </div>
 
       <div className="p-5">

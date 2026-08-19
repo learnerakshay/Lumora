@@ -342,8 +342,22 @@ export function HeroCoreCanvas({ onHoverChange, activeSourceColor }: HeroCoreCan
     let parallaxZ = 0;
 
     const clock = new THREE.Clock();
+    // Mobile GPUs/batteries don't need this scene updating at a phone's full
+    // 60-120Hz display rate — cap real work to ~30fps there. Desktop keeps
+    // its existing every-frame behavior (minFrameIntervalMs stays 0, so the
+    // throttle branch below never triggers).
+    const minFrameIntervalMs = mobile ? 1000 / 30 : 0;
+    let lastFrameTime = 0;
     const render = () => {
       if (!inView || !pageVisible) return;
+      if (minFrameIntervalMs > 0) {
+        const now = performance.now();
+        if (now - lastFrameTime < minFrameIntervalMs) {
+          if (!reducedMotion) frame = requestAnimationFrame(render);
+          return;
+        }
+        lastFrameTime = now;
+      }
       const elapsed = clock.getElapsedTime();
       updateGeometry(elapsed);
 

@@ -18,16 +18,29 @@ export function Navbar() {
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<NavSectionId | null>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const [hideOnMobileScroll, setHideOnMobileScroll] = useState(false);
   const isPublicPresentation = ['/', '/sign-in', '/sign-up', '/pricing'].includes(location.pathname);
 
   const navListRef = useRef<HTMLElement>(null);
   const navButtonRefs = useRef<Partial<Record<NavSectionId, HTMLButtonElement | null>>>({});
+  const lastScrollYRef = useRef(0);
 
+  // Mobile-only: hide the pill on scroll-down past 80px, restore instantly
+  // on scroll-up — reclaims viewport on small screens without touching
+  // desktop, where the navbar always stays put.
   useEffect(() => {
     const handleScroll = () => {
-      setScrolled(window.scrollY > 40);
+      const y = window.scrollY;
+      setScrolled(y > 40);
+      if (window.innerWidth < 768) {
+        if (y > 80 && y > lastScrollYRef.current) setHideOnMobileScroll(true);
+        else if (y < lastScrollYRef.current) setHideOnMobileScroll(false);
+      } else {
+        setHideOnMobileScroll(false);
+      }
+      lastScrollYRef.current = y;
     };
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -100,14 +113,36 @@ export function Navbar() {
   // Keep the existing header on the learning Workspace route unchanged.
   if (location.pathname.startsWith('/workspaces') || location.pathname === '/usage' || location.pathname === '/skills' || location.pathname === '/billing') return null;
 
+  // hideOnMobileScroll is only ever set true from within the
+  // window.innerWidth < 768 branch of the scroll handler above, so this
+  // transform is already runtime-gated to mobile without needing a
+  // responsive CSS variant — applied via inline style so desktop is
+  // untouched by construction, not by a breakpoint class.
+  //
+  // The transform lives on this inner div, never on <header> itself:
+  // <header> is position:sticky, and transform on an actively-stuck sticky
+  // element is a known-fragile interaction (confirmed directly in this
+  // environment — a fresh, never-stuck sticky element responds to transform
+  // normally, but the live, already-stuck header did not). A plain child
+  // div has no such edge case. It also keeps SpotlightLauncher and the
+  // mobile overlay (both position:fixed, rendered as later siblings of this
+  // div, not inside it) off of a transformed ancestor — a transformed
+  // ancestor would otherwise become their containing block and break their
+  // viewport-relative fixed positioning.
+  const mobileNavHidden = hideOnMobileScroll && !mobileMenuOpen && !spotlightOpen;
+
   return (
-    <header className="sticky top-0 z-50 w-full px-3 pt-3 transition-all duration-[250ms] sm:px-4">
+    <header className="sticky top-0 z-50 w-full px-3 pt-3 sm:px-4">
       <div
-        className={`${isPublicPresentation ? 'landing-navigation' : ''} mx-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-full border px-4 py-2.5 backdrop-blur-xl transition-all duration-[250ms] sm:px-6 ${
+        className={`${isPublicPresentation ? 'landing-navigation' : ''} mx-auto flex w-full max-w-5xl items-center justify-between gap-4 rounded-full border px-4 py-2.5 backdrop-blur-xl sm:px-6 ${
           scrolled
             ? 'border-slate-800/80 bg-[#0b0f17]/85 shadow-2xl shadow-black/40'
             : 'border-slate-800/40 bg-[#0b0f17]/55 shadow-xl shadow-black/15'
         }`}
+        style={{
+          transform: mobileNavHidden ? 'translateY(-6rem)' : 'translateY(0)',
+          transition: 'transform 300ms ease, background-color 250ms ease, border-color 250ms ease, box-shadow 250ms ease',
+        }}
       >
         {/* Brand Logo */}
         <Link to="/" className="group shrink-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400">

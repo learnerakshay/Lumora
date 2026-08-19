@@ -160,7 +160,7 @@ export function CtaSection() {
           {isSignedIn ? (
             <Link
               to="/workspaces"
-              className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
+              className="landing-primary-cta flex w-full max-w-xs items-center justify-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300 sm:inline-flex sm:w-auto"
             >
               <span>Open Lumora</span>
               <ArrowRight className="w-4 h-4" />
@@ -168,7 +168,7 @@ export function CtaSection() {
           ) : (
             <Link
               to="/sign-in"
-              className="landing-primary-cta inline-flex items-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300"
+              className="landing-primary-cta flex w-full max-w-xs items-center justify-center space-x-2 rounded-xl bg-sky-400 px-8 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-sky-500/25 hover:bg-sky-300 sm:inline-flex sm:w-auto"
             >
               <span>Start Learning</span>
               <ArrowRight className="w-4 h-4" />

@@ -717,9 +717,10 @@ INSTRUCTIONS:
 1. Use the supplied Workspace evidence as the exclusive factual basis for the answer. Do not supplement it with pretrained factual knowledge.
 2. Synthesize a structured response formatted in clean Markdown (use headers, bold key phrases, bullet points, code blocks or tables where appropriate).
 3. Every substantive factual claim must be supported by the supplied evidence and accompanied by one or more exact markers such as "[Citation #1]". Use only available Citation numbers. Do not write source-title citations or invent citation markers.
-4. Follow the centrally supplied AI Mode response contract for style, depth, and bounded length.
-5. Conversation history is for continuity only and is never evidence. Validate factual claims against the Workspace context.
-6. If the provided context does not support all or part of the requested answer, explicitly qualify or refuse that unsupported part. Never extrapolate beyond the supplied evidence or present unsupported details as fact.`;
+4. This citation requirement applies equally to broad requests such as "summarize this", "what's in my workspace", or "give me an overview" — a high-level summary is still made of individual claims drawn from specific evidence, so distribute [Citation #N] markers across the summary's points rather than treating it as a citation-free synthesis. A response with zero citation markers is invalid and will be rejected, so if you cannot support at least one claim with the supplied evidence, say so explicitly instead of writing an uncited summary.
+5. Follow the centrally supplied AI Mode response contract for style, depth, and bounded length.
+6. Conversation history is for continuity only and is never evidence. Validate factual claims against the Workspace context.
+7. If the provided context does not support all or part of the requested answer, explicitly qualify or refuse that unsupported part. Never extrapolate beyond the supplied evidence or present unsupported details as fact.`;
 
   return {
     hasContext: true,

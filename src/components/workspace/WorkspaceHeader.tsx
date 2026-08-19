@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Settings,
   Edit3,
@@ -8,6 +8,7 @@ import {
   Loader2,
   Plus,
   PanelRight,
+  MoreVertical,
 } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { getWorkspaceIdentity, WorkspaceIcon } from '../dashboard/WorkspaceIcon';
@@ -47,6 +48,29 @@ export function WorkspaceHeader({
   const [nameInput, setNameInput] = useState(workspace.name);
   const [descInput, setDescInput] = useState(workspace.description || '');
   const [saving, setSaving] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Mobile-only overflow menu (Response context + Settings) — closes on an
+  // outside click or Escape, same lightweight pattern used by the source
+  // card's own dropdown in WorkspaceSourcesSidebar.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const closeMenu = (event: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [moreMenuOpen]);
 
   const handleSave = async () => {
     if (!nameInput.trim()) return;
@@ -149,7 +173,7 @@ export function WorkspaceHeader({
         <button
           type="button"
           onClick={onToggleContext}
-          className="relative rounded-xl border border-slate-800/80 bg-slate-900/70 p-2 text-slate-400 transition hover:border-slate-700 hover:text-white xl:hidden"
+          className="relative hidden rounded-xl border border-slate-800/80 bg-slate-900/70 p-2 text-slate-400 transition hover:border-slate-700 hover:text-white sm:block xl:hidden"
           title="Response context"
           aria-label="Open response context"
         >
@@ -161,12 +185,60 @@ export function WorkspaceHeader({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors"
+          className="hidden rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition-colors hover:border-slate-700 hover:text-white sm:block"
           title="Settings"
           aria-label="Open settings"
         >
           <Settings className="w-4 h-4" />
         </button>
+
+        {/* Mobile-only overflow menu: Response context + Settings, kept off
+            the header row below sm so the title has room to breathe. */}
+        <div ref={moreMenuRef} className="relative sm:hidden">
+          <button
+            type="button"
+            onClick={() => setMoreMenuOpen((open) => !open)}
+            className="relative rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 transition-colors hover:border-slate-700 hover:text-white"
+            title="More actions"
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={moreMenuOpen}
+          >
+            <MoreVertical className="h-4 w-4" />
+            {citationCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-1 text-[9px] font-bold text-slate-950">{citationCount}</span>}
+          </button>
+          {moreMenuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-11 z-30 w-52 space-y-0.5 rounded-xl border border-slate-700 bg-[#161c2b] p-1.5 text-xs shadow-2xl animate-fade-in"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  onToggleContext();
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-slate-300 hover:bg-slate-800/80 hover:text-white"
+              >
+                <span className="flex items-center gap-2"><PanelRight className="h-3.5 w-3.5 text-sky-400" /><span>Response context</span></span>
+                {citationCount > 0 && <span className="rounded-full bg-sky-400 px-1.5 text-[9px] font-bold text-slate-950">{citationCount}</span>}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  onOpenSettings();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-300 hover:bg-slate-800/80 hover:text-white"
+              >
+                <Settings className="h-3.5 w-3.5 text-slate-400" />
+                <span>Settings</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* User Profile Badge */}
         <div className="hidden items-center space-x-2.5 border-l border-slate-800/80 pl-2 lg:flex">
