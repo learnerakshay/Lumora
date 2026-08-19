@@ -1050,8 +1050,21 @@
   border: 0;
   border-radius: 50%;
   background: transparent;
-  box-shadow: 0 0 40px rgba(14, 165, 233, 0.12);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
   animation: auth-mark-glow 4.8s ease-in-out infinite;
+}
+
+.auth-telemetry-float {
+  animation: auth-telemetry-float 6s ease-in-out infinite;
+}
+
+.auth-telemetry-float--right {
+  animation-delay: 1.2s;
+}
+
+@keyframes auth-telemetry-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
 .auth-hero-mark .lumora-brand-image {
@@ -1593,10 +1606,10 @@
 @keyframes auth-mark-glow {
   0%,
   100% {
-    box-shadow: 0 0 32px rgba(14, 165, 233, 0.1);
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
   }
   50% {
-    box-shadow: 0 0 48px rgba(14, 165, 233, 0.2);
+    box-shadow: 0 0 34px rgba(6, 182, 212, 0.4);
   }
 }
 

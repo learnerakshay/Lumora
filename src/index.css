@@ -178,7 +178,10 @@ textarea {
 }
 
 .dashboard-starfield {
-  opacity: 0.35;
+  /* Opacity is intentionally NOT set here — callers control it with a
+     Tailwind opacity-* utility on the element. A CSS-level opacity on this
+     class would win the cascade over any utility class at equal
+     specificity, silently making every page's opacity override a no-op. */
   background-image:
     radial-gradient(1px 1px at 40px 60px, rgb(255 255 255 / 0.9), transparent 100%),
     radial-gradient(1px 1px at 140px 20px, rgb(255 255 255 / 0.7), transparent 100%),
@@ -255,6 +258,30 @@ textarea {
 @keyframes dropzone-breathe {
   0%, 100% { box-shadow: 0 0 12px rgba(6, 182, 212, 0.08); }
   50% { box-shadow: 0 0 22px rgba(6, 182, 212, 0.22); }
+}
+
+.about-star-node {
+  position: absolute;
+  border-radius: 9999px;
+  background: white;
+  animation: about-star-twinkle 4s ease-in-out infinite, about-star-drift 12s ease-in-out infinite;
+}
+
+@keyframes about-star-twinkle {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes about-star-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(5px, -9px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-star-node {
+    animation: none;
+    opacity: 0.35;
+  }
 }
 
 .priority-gap-pulse {

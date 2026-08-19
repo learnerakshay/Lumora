@@ -95,7 +95,7 @@ export function DashboardLayout({
   return (
     <div className="flex min-h-screen flex-col bg-[#0b0f17] text-[#f0f4f8] antialiased md:flex-row">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" />
-      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10" />
+      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10 opacity-35" />
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-800/60 bg-slate-950/80 px-4 py-3 backdrop-blur-md md:hidden">
         <Link to="/workspaces" className="flex items-center gap-2 rounded-lg">
           <LumoraBrand compact markOnly />

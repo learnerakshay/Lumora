@@ -41,6 +41,32 @@ const WORKSPACE_STEPS = [
   },
 ];
 
+// Decorative twinkling nodes concentrated toward the outer margins, where
+// the wide max-w containers otherwise leave long stretches of flat black on
+// large viewports. Positioned as percentages of the full page height (this
+// layer is absolutely positioned against <main>, not the viewport), so they
+// scroll naturally with the page instead of repeating in one fixed band.
+const STAR_NODES: ReadonlyArray<{ left: string; top: string; size: number; delay: string }> = [
+  { left: '3%', top: '4%', size: 2, delay: '0s' },
+  { left: '8%', top: '14%', size: 1, delay: '0.6s' },
+  { left: '2%', top: '26%', size: 2, delay: '1.4s' },
+  { left: '6%', top: '38%', size: 1, delay: '2.1s' },
+  { left: '4%', top: '52%', size: 2, delay: '0.3s' },
+  { left: '9%', top: '64%', size: 1, delay: '1.8s' },
+  { left: '3%', top: '76%', size: 2, delay: '2.6s' },
+  { left: '7%', top: '88%', size: 1, delay: '0.9s' },
+  { left: '5%', top: '96%', size: 2, delay: '1.2s' },
+  { left: '96%', top: '6%', size: 1, delay: '0.4s' },
+  { left: '92%', top: '18%', size: 2, delay: '1.6s' },
+  { left: '97%', top: '30%', size: 1, delay: '2.3s' },
+  { left: '93%', top: '44%', size: 2, delay: '0.8s' },
+  { left: '98%', top: '56%', size: 1, delay: '1.9s' },
+  { left: '94%', top: '68%', size: 2, delay: '0.2s' },
+  { left: '96%', top: '80%', size: 1, delay: '2.7s' },
+  { left: '91%', top: '92%', size: 2, delay: '1.1s' },
+  { left: '95%', top: '98%', size: 1, delay: '0.5s' },
+];
+
 const CAREER_STEPS = [
   { icon: FileSearch, label: 'Resume / CV', body: 'Upload a resume or paste its text.' },
   { icon: Brain, label: 'Skill Understanding', body: 'Lumora extracts your skills and the evidence behind each one.' },
@@ -58,16 +84,26 @@ export function AboutPage() {
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-black text-[#f0f4f8]">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" />
-      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10 opacity-30" />
+      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10 opacity-60" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        {STAR_NODES.map((star, index) => (
+          <span
+            key={index}
+            className="about-star-node"
+            style={{ left: star.left, top: star.top, width: star.size, height: star.size, animationDelay: star.delay }}
+          />
+        ))}
+      </div>
 
       <div className="relative z-10">
         {/* Intro */}
-        <section className="px-4 pb-16 pt-20 sm:px-6 lg:px-8">
+        <section className="relative px-4 pb-16 pt-20 sm:px-6 lg:px-8">
+          <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-12 z-0 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[120px]" />
           <motion.div
             initial="hidden"
             animate="show"
             variants={fadeUp}
-            className="mx-auto max-w-3xl space-y-5 text-center"
+            className="relative z-10 mx-auto max-w-3xl space-y-5 text-center"
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-950/40 px-3.5 py-1 font-mono text-xs uppercase tracking-wider text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)] backdrop-blur-md">
               <span>About Lumora</span>
@@ -131,8 +167,8 @@ export function AboutPage() {
 
         {/* Pillar 2 — Career Intelligence */}
         <section className="relative px-4 py-16 sm:px-6 lg:px-8">
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 -z-10 h-72 -translate-y-1/2 bg-[radial-gradient(circle_at_50%_50%,rgba(129,140,248,0.06),transparent_60%)]" />
-          <div className="mx-auto max-w-6xl">
+          <div aria-hidden="true" className="pointer-events-none absolute bottom-1/3 left-1/2 z-0 h-[350px] w-[700px] -translate-x-1/2 rounded-full bg-violet-500/10 blur-[140px]" />
+          <div className="relative z-10 mx-auto max-w-6xl">
             <motion.div
               initial="hidden"
               whileInView="show"
