@@ -120,6 +120,10 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
   try {
     let receivedUrl = '';
     const result = await fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+      // No official transcript, so this exercises the intended fallback to Gemini.
+      directFetch: async () => {
+        throw new Error('no direct transcript for this fixture video');
+      },
       geminiAcquire: async (input) => {
         receivedUrl = input.youtubeUrl;
         return {
@@ -140,6 +144,9 @@ test('normal YouTube provider adapts Gemini seconds into Lumora millisecond cues
 
     await assert.rejects(
       fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+        directFetch: async () => {
+          throw new Error('no direct transcript for this fixture video');
+        },
         geminiAcquire: async () => {
           throw new GeminiYouTubeAcquisitionError(
             'NO_SPEECH_DETECTED',
@@ -179,6 +186,10 @@ test('Gemini seconds-to-milliseconds conversion always yields integer cue timest
   });
   try {
     const result = await fetchYouTubeTranscript('-moW9jvvMr4', undefined, {
+      // No official transcript, so this exercises the intended fallback to Gemini.
+      directFetch: async () => {
+        throw new Error('no direct transcript for this fixture video');
+      },
       geminiAcquire: async () => ({
         language: 'en',
         segments: [
@@ -417,4 +428,112 @@ test('proxy YouTube provider retries transient HTTP failures and exposes status 
       error.provider === 'proxy',
   );
   assert.equal(attempts, 3);
+});
+
+const BASE_ENV = {
+  DATABASE_URL: 'postgresql://user:pass@host/db',
+  CLERK_SECRET_KEY: 'sk_test_abc',
+  VITE_CLERK_PUBLISHABLE_KEY: 'pk_test_abc',
+};
+const YOUTUBE_ENV_KEYS = [
+  'YOUTUBE_TRANSCRIPT_PROVIDER',
+  'YOUTUBE_TRANSCRIPT_PROXY_URL',
+  'YOUTUBE_TRANSCRIPT_PROXY_TOKEN',
+  'YOUTUBE_TRANSCRIPT_TIMEOUT_MS',
+  'GEMINI_API_KEY',
+];
+
+// getServerEnv() re-parses process.env on every call (no module-level
+// caching), so each test can freely mutate process.env and call it again.
+// Mirrors the withEnv helper in src/lib/env.test.ts.
+async function withEnv<T>(
+  overrides: Record<string, string | undefined>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const original = { ...process.env };
+  try {
+    for (const key of YOUTUBE_ENV_KEYS) delete process.env[key];
+    for (const [key, value] of Object.entries({ ...BASE_ENV, ...overrides })) {
+      if (value !== undefined) process.env[key] = value;
+    }
+    return await fn();
+  } finally {
+    process.env = original;
+  }
+}
+
+test('the real environment-driven config resolves a direct fast path by default (regression: this previously fell straight to Gemini for every video)', async () => {
+  await withEnv({}, async () => {
+    let directCalls = 0;
+    let geminiCalls = 0;
+    const result = await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+      directFetch: async () => {
+        directCalls += 1;
+        return [{ text: 'Fast transcript', offset: 0, duration: 1_500, lang: 'en' }];
+      },
+      geminiAcquire: async () => {
+        geminiCalls += 1;
+        throw new Error('Gemini should not have been called');
+      },
+    });
+    assert.equal(result.provider, 'direct');
+    assert.equal(directCalls, 1);
+    assert.equal(geminiCalls, 0);
+  });
+});
+
+test('a misconfigured proxy fails fast instead of attempting a doomed Gemini fallback', async () => {
+  await withEnv(
+    {
+      YOUTUBE_TRANSCRIPT_PROVIDER: 'proxy',
+      YOUTUBE_TRANSCRIPT_PROXY_URL: 'https://relay.example.com/api/youtube-transcript',
+      YOUTUBE_TRANSCRIPT_PROXY_TOKEN: 'shared-secret',
+    },
+    async () => {
+      let geminiCalls = 0;
+      await assert.rejects(
+        fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+          validateEndpoint: async (value) => new URL(value),
+          fetchImpl: async () => new Response('unauthorized', { status: 401, statusText: 'Unauthorized' }),
+          geminiAcquire: async () => {
+            geminiCalls += 1;
+            throw new Error('Gemini should not have been called');
+          },
+        }),
+        (error: unknown) =>
+          error instanceof IngestionFailure &&
+          error.errorCode === 'TRANSCRIPT_PROVIDER_ERROR' &&
+          error.retryable === true &&
+          /proxy failed/.test(error.message),
+      );
+      assert.equal(geminiCalls, 0);
+    },
+  );
+});
+
+test('a proxy-confirmed missing transcript still falls back to Gemini', async () => {
+  await withEnv(
+    {
+      YOUTUBE_TRANSCRIPT_PROVIDER: 'proxy',
+      YOUTUBE_TRANSCRIPT_PROXY_URL: 'https://relay.example.com/api/youtube-transcript',
+      YOUTUBE_TRANSCRIPT_PROXY_TOKEN: 'shared-secret',
+      GEMINI_API_KEY: 'gemini-key',
+    },
+    async () => {
+      let geminiCalls = 0;
+      const result = await fetchYouTubeTranscript('dQw4w9WgXcQ', undefined, {
+        validateEndpoint: async (value) => new URL(value),
+        fetchImpl: async () => new Response('not found', { status: 404, statusText: 'Not Found' }),
+        geminiAcquire: async () => {
+          geminiCalls += 1;
+          return {
+            language: 'en',
+            segments: [{ text: 'Gemini transcript', startSeconds: 0, endSeconds: 2 }],
+          };
+        },
+      });
+      assert.equal(result.provider, 'gemini');
+      assert.equal(geminiCalls, 1);
+    },
+  );
 });

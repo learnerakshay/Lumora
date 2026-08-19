@@ -238,7 +238,7 @@ export function createVercelYouTubeTranscriptHandler(dependencies: RelayDependen
         throw new RelayFailure(500, 'RELAY_NOT_CONFIGURED', 'Transcript relay is not configured.');
       }
       const authorization = requestHeader(request, 'authorization') || '';
-      const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+      const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
       if (!token || !secureEqual(token, secret)) {
         throw new RelayFailure(401, 'UNAUTHORIZED', 'A valid bearer token is required.');
       }

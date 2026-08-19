@@ -337,6 +337,16 @@ async function fetchProxyTranscript(
           continue;
         }
         const unavailable = response.status === 404 || response.status === 422;
+        const failureBody = await response.text().catch(() => '');
+        logger.error('YouTube transcript proxy request failed', undefined, {
+          videoId,
+          url: endpoint.toString(),
+          status: response.status,
+          statusText: response.statusText,
+          attempt,
+          // Bounded and never includes the Authorization header/token.
+          responseBody: failureBody.slice(0, 500),
+        });
         throw new IngestionFailure({
           message: `YouTube transcript proxy returned HTTP ${response.status}`,
           errorCode: unavailable ? 'TRANSCRIPT_UNAVAILABLE' : 'TRANSCRIPT_PROVIDER_ERROR',
@@ -395,6 +405,13 @@ async function fetchProxyTranscript(
       if (error instanceof IngestionFailure) throw error;
       if (error?.name === 'AbortError' || controller.signal.aborted) {
         if (attempt < maximumAttempts) continue;
+        logger.error('YouTube transcript proxy request failed', undefined, {
+          videoId,
+          url: endpoint.toString(),
+          reason: 'TIMEOUT',
+          timeoutMs: config.timeoutMs,
+          attempt,
+        });
         throw new IngestionFailure({
           message: 'YouTube transcript proxy timed out',
           errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
@@ -405,6 +422,14 @@ async function fetchProxyTranscript(
         });
       }
       if (attempt < maximumAttempts) continue;
+      logger.error('YouTube transcript proxy request failed', undefined, {
+        videoId,
+        url: endpoint.toString(),
+        reason: 'NETWORK_ERROR',
+        errorName: error?.name || typeof error,
+        errorMessage: error?.message || String(error),
+        attempt,
+      });
       throw new IngestionFailure({
         message: `YouTube transcript proxy request failed: ${error?.message || 'network error'}`,
         errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
@@ -441,6 +466,10 @@ export async function fetchYouTubeTranscript(
   const log = dependencies.logger || logger;
   const runtime = dependencies.runtimeConfig || (() => {
     const env = getServerEnv();
+    // YOUTUBE_TRANSCRIPT_PROVIDER is 'proxy' | 'direct' (schema default: 'direct') —
+    // every value must resolve to a fastPath config, or the 'direct' provider
+    // silently never runs and every video falls straight through to the much
+    // slower, timeout-prone Gemini native-video fallback below.
     return {
       geminiApiKey: env.GEMINI_API_KEY,
       fastPath: env.YOUTUBE_TRANSCRIPT_PROVIDER === 'proxy'
@@ -451,7 +480,10 @@ export async function fetchYouTubeTranscript(
             proxyToken: env.YOUTUBE_TRANSCRIPT_PROXY_TOKEN,
             maxAttempts: 1,
           }
-        : undefined,
+        : {
+            provider: 'direct' as const,
+            timeoutMs: env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
+          },
     };
   })();
 
@@ -489,6 +521,33 @@ export async function fetchYouTubeTranscript(
         textLength: 0,
         classification,
       });
+
+      // TRANSCRIPT_UNAVAILABLE means the proxy reached YouTube and confirmed
+      // this specific video has no captions — Gemini is the correct next
+      // step. Any other classification (bad token, wrong URL, unreachable,
+      // malformed response) means the configured proxy itself is broken,
+      // which is true for every video, not just this one. Falling back to a
+      // 120s Gemini attempt per video while it's down makes ingestion slow
+      // *and* still failing, so fail fast instead — but only when the proxy
+      // was explicitly chosen; 'direct' failures are inherently per-request
+      // (a specific YouTube block/response), so they still fall back below.
+      if (runtime.fastPath.provider === 'proxy' && classification !== 'TRANSCRIPT_UNAVAILABLE') {
+        log.info('YOUTUBE_ACQUISITION_FALLBACK', {
+          videoId,
+          fromStrategy: 'transcript_fast_path',
+          toStrategy: 'none',
+          reason: classification,
+        });
+        throw new IngestionFailure({
+          message: `YouTube transcript proxy failed [${classification}] while explicitly configured as the required provider`,
+          errorCode: 'TRANSCRIPT_PROVIDER_ERROR',
+          userMessage: 'YouTube transcript extraction is temporarily unavailable. Please try again shortly.',
+          retryable: true,
+          provider: 'proxy',
+          cause: error,
+        });
+      }
+
       log.info('YOUTUBE_ACQUISITION_FALLBACK', {
         videoId,
         fromStrategy: 'transcript_fast_path',
