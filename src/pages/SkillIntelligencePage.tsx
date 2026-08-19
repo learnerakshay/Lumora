@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   Brain,
+  CheckCircle2,
   Clock3,
   FolderSearch,
   ListChecks,
@@ -56,6 +57,37 @@ async function parseJsonResponse(response: Response): Promise<any> {
   return response.json().catch(() => null);
 }
 
+// A bare `fetch()` has no default timeout — if the server or an
+// intermediate proxy ever hangs a connection open without closing it, the
+// awaited promise never settles, so a surrounding try/finally never runs and
+// a loading button (e.g. "Re-running…") is stuck forever. Every fetch on
+// this page goes through this so a hang always resolves into a real,
+// user-facing error instead of an indefinite spinner.
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+// Re-run and start-over are documented as fast, local/deterministic
+// operations (no AI or extraction provider call) — a generous but tight
+// ceiling catches a genuine hang quickly. The initial analyze call can
+// involve real PDF parsing and AI extraction, so it gets a much longer
+// ceiling — comfortably past the 30s point where the "Deep Analysis in
+// Progress" banner already reassures the user a slow-but-real analysis is
+// still running.
+const ANALYZE_TIMEOUT_MS = 120_000;
+const REANALYZE_TIMEOUT_MS = 20_000;
+const START_OVER_TIMEOUT_MS = 20_000;
+
 export function SkillIntelligencePage() {
   const navigate = useNavigate();
   const [view, setView] = useState<ViewState>('loading');
@@ -78,6 +110,17 @@ export function SkillIntelligencePage() {
 
   const [gapSelection, setGapSelection] = useState<GapSelectionState>(blankGapSelection());
   const [buildPlanAttempt, setBuildPlanAttempt] = useState<BuildPlanAttemptState>(blankBuildPlanAttempt());
+
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((kind: 'success' | 'error', text: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ kind, text });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   const { summary: usageSummary } = useUsage();
   const skillIntelUsage = usageSummary?.perAction.SKILL_INTELLIGENCE;
@@ -130,7 +173,7 @@ export function SkillIntelligencePage() {
       } else {
         formData.set('resumeText', upload.resumeText.trim());
       }
-      const response = await fetch(`${API_PATHS.skills}/profile`, { method: 'POST', body: formData });
+      const response = await fetchWithTimeout(`${API_PATHS.skills}/profile`, { method: 'POST', body: formData }, ANALYZE_TIMEOUT_MS);
       const payload = await parseJsonResponse(response);
       if (!response.ok || !payload?.success) {
         const limitError = usageLimitFromPayload(payload);
@@ -145,7 +188,10 @@ export function SkillIntelligencePage() {
       setView('ready');
       setUpload(blankUploadAttempt());
     } catch (error: any) {
-      setUpload((current) => ({ ...current, submitError: error.message || 'Resume analysis failed.' }));
+      const message = isTimeoutError(error)
+        ? 'This is taking longer than expected. Please try again.'
+        : error.message || 'Resume analysis failed.';
+      setUpload((current) => ({ ...current, submitError: message }));
     } finally {
       if (deepAnalysisTimerRef.current) {
         clearTimeout(deepAnalysisTimerRef.current);
@@ -167,14 +213,19 @@ export function SkillIntelligencePage() {
     setReanalyzing(true);
     setReanalyzeError(null);
     try {
-      const response = await fetch(`${API_PATHS.skills}/analysis`, { method: 'POST' });
+      const response = await fetchWithTimeout(`${API_PATHS.skills}/analysis`, { method: 'POST' }, REANALYZE_TIMEOUT_MS);
       const payload = await parseJsonResponse(response);
       if (!response.ok || !payload?.success) {
         throw new Error(payload?.error?.message || 'Could not re-run the analysis.');
       }
       setProfileState(payload.data);
+      showToast('success', 'Skill re-run analysis completed successfully.');
     } catch (error: any) {
-      setReanalyzeError(error.message || 'Could not re-run the analysis.');
+      const message = isTimeoutError(error)
+        ? 'The request took too long. Please try again.'
+        : error.message || 'Could not re-run the analysis.';
+      setReanalyzeError(message);
+      showToast('error', 'Failed to re-run analysis. Please try again.');
     } finally {
       setReanalyzing(false);
     }
@@ -188,7 +239,7 @@ export function SkillIntelligencePage() {
     if (startingOver) return;
     setStartingOver(true);
     try {
-      await fetch(`${API_PATHS.skills}/profile`, { method: 'DELETE' });
+      await fetchWithTimeout(`${API_PATHS.skills}/profile`, { method: 'DELETE' }, START_OVER_TIMEOUT_MS);
     } catch {
       // Best-effort: the local reset below still gives the user a fresh
       // attempt even if the delete request itself failed to reach the server.
@@ -241,6 +292,29 @@ export function SkillIntelligencePage() {
 
   return (
     <DashboardLayout>
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            role="status"
+            className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border p-4 text-xs shadow-2xl ${
+              toast.kind === 'success'
+                ? 'border-emerald-800 bg-emerald-950 text-emerald-200'
+                : 'border-rose-800 bg-rose-950 text-rose-200'
+            }`}
+          >
+            {toast.kind === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            )}
+            <span className="font-medium">{toast.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="relative z-10 mx-auto max-w-5xl space-y-6 px-6 py-10">
         <div className="border-b border-slate-800/70 pb-6">
           <div className="mb-2 flex items-center gap-2 text-cyan-300">
