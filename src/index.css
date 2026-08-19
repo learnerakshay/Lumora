@@ -228,7 +228,6 @@ textarea {
   position: relative;
   display: block;
   height: 2px;
-  width: 2rem;
   overflow: hidden;
   border-radius: 9999px;
   background: rgb(30 41 59 / 0.8);

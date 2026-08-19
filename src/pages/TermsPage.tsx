@@ -81,7 +81,7 @@ export function TermsPage() {
         </ul>
       </LegalSection>
 
-      <LegalSection id="workspaces" title="6. Workspaces and Uploaded Content">
+      <LegalSection id="workspaces" title="6. Workspaces and Uploaded Content" variant="security">
         <p>
           A Workspace is a private container for your sources and chat history. Source content you upload (including
           PDF file bytes) is stored so it can be parsed, chunked, embedded, and retrieved for your questions. You may
@@ -99,14 +99,14 @@ export function TermsPage() {
         </ul>
       </LegalSection>
 
-      <LegalSection id="ai-output" title="8. AI-Generated Output">
+      <LegalSection id="ai-output" title="8. AI-Generated Output" variant="ai">
         <p>
           Lumora's chat and Career Intelligence features use AI models to generate output. AI-generated content can be
           incomplete or wrong. Review anything you rely on, especially before making decisions based on it.
         </p>
       </LegalSection>
 
-      <LegalSection id="citations" title="9. Source-Grounded Responses and Citations">
+      <LegalSection id="citations" title="9. Source-Grounded Responses and Citations" variant="ai">
         <p>
           When Lumora answers from your Workspace evidence, it labels the answer as grounded and attaches citations
           back to the specific page, section, or timestamp the claim came from. Grounded answers are only produced
@@ -139,7 +139,7 @@ export function TermsPage() {
         <p>Each provider's own terms and policies apply to the data they process on Lumora's behalf.</p>
       </LegalSection>
 
-      <LegalSection id="payments" title="12. Payments">
+      <LegalSection id="payments" title="12. Payments" variant="security">
         <p>
           CORE and MAX are one-time purchases processed through Razorpay, in Indian Rupees. Lumora does not use
           Razorpay Subscriptions, UPI Autopay, or any recurring-mandate product — there is no auto-renewal and no

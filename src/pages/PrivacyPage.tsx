@@ -65,7 +65,7 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="career-data" title="5. Resume & Career Intelligence Data">
+      <LegalSection id="career-data" title="5. Resume & Career Intelligence Data" variant="ai">
         <p>
           If you use Career Intelligence, the resume file or text you provide is processed to extract a skill
           profile, matched against target roles, and used to generate a gap analysis and, if you build one, a
@@ -115,7 +115,7 @@ export function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="security" title="10. Security">
+      <LegalSection id="security" title="10. Security" variant="security">
         <p>
           Access to Workspace and source data is scoped and re-verified per request against your account. Payment
           webhooks are signature-verified before anything is trusted, and application logs exclude source content,

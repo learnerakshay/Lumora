@@ -263,7 +263,7 @@ export function SkillIntelligencePage() {
                       <span className="text-[11px] font-medium">{step.label}</span>
                     </div>
                     {index < HOW_IT_WORKS.length - 1 && (
-                      <span className="pipeline-beam" aria-hidden="true"><span className="pipeline-beam-fill" /></span>
+                      <span className="pipeline-beam w-8" aria-hidden="true"><span className="pipeline-beam-fill" /></span>
                     )}
                   </React.Fragment>
                 );

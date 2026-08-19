@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Check, Copy, Mail } from 'lucide-react';
+import { ArrowLeft, Check, Clipboard, Copy, Mail } from 'lucide-react';
 import { Footer } from '../components/landing/Footer';
 import { SUPPORT_EMAIL } from '../lib/support-config';
 
@@ -17,8 +17,17 @@ const CATEGORIES = [
   'Other',
 ] as const;
 
+type Category = (typeof CATEGORIES)[number];
+
+const PRESET_CHIPS: ReadonlyArray<{ emoji: string; label: string; category: Category }> = [
+  { emoji: '🛠️', label: 'Workspace', category: 'Workspace' },
+  { emoji: '🤖', label: 'Skill Intelligence', category: 'Skill Intelligence' },
+  { emoji: '💳', label: 'Billing & Razorpay', category: 'Payments' },
+  { emoji: '📄', label: 'Ingestion/RAG', category: 'Source ingestion' },
+];
+
 interface BugFormState {
-  category: (typeof CATEGORIES)[number];
+  category: Category;
   title: string;
   description: string;
   stepsToReproduce: string;
@@ -37,8 +46,11 @@ const BLANK_FORM: BugFormState = {
   pageContext: '',
 };
 
-const inputClasses =
-  'w-full rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 transition-colors focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500';
+const baseInputClasses =
+  'w-full rounded-xl border border-slate-800 bg-slate-900/80 px-3.5 py-3 text-sm text-white placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2';
+const inputClasses = `${baseInputClasses} focus:border-cyan-500/80 focus:ring-cyan-500/50`;
+const expectedInputClasses = `${baseInputClasses} focus:border-emerald-500/80 focus:ring-emerald-500/30`;
+const actualInputClasses = `${baseInputClasses} focus:border-rose-500/80 focus:ring-rose-500/30`;
 
 function buildReportText(form: BugFormState): string {
   const lines = [
@@ -63,11 +75,36 @@ function buildReportText(form: BugFormState): string {
   return lines.join('\n');
 }
 
+function buildMarkdownReport(form: BugFormState): string {
+  const lines = [
+    `## Bug Report: ${form.title.trim() || '(untitled)'}`,
+    '',
+    `**Category:** ${form.category}`,
+    '',
+    '### Description',
+    form.description.trim() || '_(none provided)_',
+    '',
+    '### Steps to Reproduce',
+    form.stepsToReproduce.trim() || '_(none provided)_',
+    '',
+    '### Expected Behavior',
+    form.expectedBehavior.trim() || '_(none provided)_',
+    '',
+    '### Actual Behavior',
+    form.actualBehavior.trim() || '_(none provided)_',
+  ];
+  if (form.pageContext.trim()) {
+    lines.push('', `**Page / feature:** ${form.pageContext.trim()}`);
+  }
+  return lines.join('\n');
+}
+
 export function ReportBugPage() {
   const [form, setForm] = useState<BugFormState>(BLANK_FORM);
   const [errors, setErrors] = useState<Partial<Record<'title' | 'description', string>>>({});
   const [prepared, setPrepared] = useState<{ mailtoHref: string; reportText: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [markdownCopied, setMarkdownCopied] = useState(false);
 
   const update = <K extends keyof BugFormState>(key: K, value: BugFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -99,6 +136,17 @@ export function ReportBugPage() {
     }
   };
 
+  const handleCopyMarkdown = async () => {
+    try {
+      await navigator.clipboard.writeText(buildMarkdownReport(form));
+      setMarkdownCopied(true);
+      setTimeout(() => setMarkdownCopied(false), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context); the
+      // "Prepare report & open email" path still works as a fallback.
+    }
+  };
+
   const handleStartOver = () => {
     setForm(BLANK_FORM);
     setErrors({});
@@ -107,22 +155,27 @@ export function ReportBugPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#070b12] text-[#f0f4f8]">
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-[radial-gradient(circle_at_50%_0%,rgba(56,189,248,0.07),transparent_60%)]" />
+    <main className="relative min-h-screen overflow-x-hidden bg-black text-[#f0f4f8]">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" />
+      <div aria-hidden="true" className="dashboard-starfield pointer-events-none fixed inset-0 -z-10 opacity-30" />
 
-      <div className="px-4 pb-16 pt-16 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-2xl space-y-8">
+      <div className="relative z-10 px-4 pb-16 pt-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl space-y-8">
           <Link
             to="/contact"
-            className="inline-flex items-center gap-1.5 rounded-lg text-xs font-medium text-slate-400 transition-colors hover:text-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            className="group inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-3.5 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md transition-all hover:border-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
             Back to Contact
           </Link>
 
           <div className="space-y-3">
-            <p className="font-mono text-xs uppercase tracking-[0.18em] text-sky-400">Report a bug</p>
-            <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Tell us what broke</h1>
+            <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-950/40 px-3.5 py-1 font-mono text-xs uppercase tracking-[0.18em] text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)] backdrop-blur-md">
+              Report a bug
+            </div>
+            <h1 className="bg-gradient-to-r from-white via-cyan-200 to-blue-400 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent sm:text-4xl">
+              Tell us what broke
+            </h1>
             <p className="max-w-xl text-sm leading-7 text-slate-400">
               Lumora doesn't yet have a ticketing backend, so this form prepares a structured report and opens it as
               an email to {SUPPORT_EMAIL} — nothing is silently "submitted" behind the scenes.
@@ -130,13 +183,40 @@ export function ReportBugPage() {
           </div>
 
           {!prepared ? (
-            <form onSubmit={handleSubmit} noValidate className="space-y-5 rounded-2xl border border-slate-800/70 bg-[#101826]/80 p-6">
+            <form onSubmit={handleSubmit} noValidate className="space-y-6 rounded-2xl border border-slate-800/80 bg-[#101621]/90 p-8 shadow-2xl backdrop-blur-2xl">
               <div>
-                <label htmlFor="bug-category" className="mb-1.5 block text-xs font-medium text-slate-300">
+                <label htmlFor="bug-category" className="mb-2 block text-xs font-medium text-slate-300">
+                  Quick category
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {PRESET_CHIPS.map((chip) => {
+                    const active = form.category === chip.category;
+                    return (
+                      <button
+                        key={chip.category}
+                        type="button"
+                        onClick={() => update('category', chip.category)}
+                        aria-pressed={active}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
+                          active
+                            ? 'border-cyan-500/60 bg-cyan-950/30 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                            : 'border-slate-700 bg-slate-900/60 text-slate-300 hover:border-cyan-500/50 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span aria-hidden="true">{chip.emoji}</span>
+                        {chip.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="bug-category-select" className="mb-1.5 block text-xs font-medium text-slate-300">
                   Category
                 </label>
                 <select
-                  id="bug-category"
+                  id="bug-category-select"
                   value={form.category}
                   onChange={(e) => update('category', e.target.value as BugFormState['category'])}
                   className={inputClasses}
@@ -151,7 +231,7 @@ export function ReportBugPage() {
 
               <div>
                 <label htmlFor="bug-title" className="mb-1.5 block text-xs font-medium text-slate-300">
-                  Short title <span className="text-red-400">*</span>
+                  Short title <span className="text-rose-400">*</span>
                 </label>
                 <input
                   id="bug-title"
@@ -164,7 +244,7 @@ export function ReportBugPage() {
                   aria-describedby={errors.title ? 'bug-title-error' : undefined}
                 />
                 {errors.title && (
-                  <p id="bug-title-error" className="mt-1.5 text-xs text-red-400">
+                  <p id="bug-title-error" className="mt-1.5 text-xs text-rose-400">
                     {errors.title}
                   </p>
                 )}
@@ -172,7 +252,7 @@ export function ReportBugPage() {
 
               <div>
                 <label htmlFor="bug-description" className="mb-1.5 block text-xs font-medium text-slate-300">
-                  Description <span className="text-red-400">*</span>
+                  Description <span className="text-rose-400">*</span>
                 </label>
                 <textarea
                   id="bug-description"
@@ -185,7 +265,7 @@ export function ReportBugPage() {
                   aria-describedby={errors.description ? 'bug-description-error' : undefined}
                 />
                 {errors.description && (
-                  <p id="bug-description-error" className="mt-1.5 text-xs text-red-400">
+                  <p id="bug-description-error" className="mt-1.5 text-xs text-rose-400">
                     {errors.description}
                   </p>
                 )}
@@ -215,7 +295,7 @@ export function ReportBugPage() {
                     value={form.expectedBehavior}
                     onChange={(e) => update('expectedBehavior', e.target.value)}
                     rows={2}
-                    className={`${inputClasses} resize-none`}
+                    className={`${expectedInputClasses} resize-none`}
                   />
                 </div>
                 <div>
@@ -227,7 +307,7 @@ export function ReportBugPage() {
                     value={form.actualBehavior}
                     onChange={(e) => update('actualBehavior', e.target.value)}
                     rows={2}
-                    className={`${inputClasses} resize-none`}
+                    className={`${actualInputClasses} resize-none`}
                   />
                 </div>
               </div>
@@ -246,13 +326,23 @@ export function ReportBugPage() {
                 />
               </div>
 
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md shadow-sky-500/20 transition-all hover:bg-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 sm:w-auto"
-              >
-                <Mail className="h-4 w-4" />
-                Prepare report &amp; open email
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-6 py-3 text-sm font-medium text-white shadow-md transition-all hover:scale-[1.01] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 active:scale-[0.99]"
+                >
+                  <Mail className="h-4 w-4" />
+                  Prepare report &amp; open email
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyMarkdown}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-3 text-sm font-medium text-slate-300 transition-all hover:bg-slate-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+                >
+                  {markdownCopied ? <Check className="h-4 w-4 text-emerald-400" /> : <Clipboard className="h-4 w-4" />}
+                  {markdownCopied ? 'Copied to clipboard!' : 'Copy Raw Markdown Report'}
+                </button>
+              </div>
             </form>
           ) : (
             <div className="animate-fade-in space-y-5 rounded-2xl border border-emerald-800/40 bg-emerald-950/10 p-6">
@@ -302,7 +392,7 @@ export function ReportBugPage() {
         </div>
       </div>
 
-      <div className="relative overflow-hidden border-t border-slate-800/40">
+      <div className="relative z-10 overflow-hidden border-t border-slate-800/40">
         <Footer />
       </div>
     </main>
