@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, FileType, Image as ImageIcon, Sparkles, Type, Upload, X } from 'lucide-react';
+import { AlertCircle, FileType, Image as ImageIcon, Loader2, Sparkles, Type, Upload, X } from 'lucide-react';
 
 const ACCEPTED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -8,6 +8,83 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const FORMAT_CHIPS: Array<{ label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { label: 'PDF', icon: FileType },
   { label: 'JPG / PNG / WEBP', icon: ImageIcon },
+];
+
+// Realistic sample resumes for a 1-click demo path — lets a judge or a new
+// visitor see a full gap analysis without needing a local file to upload.
+const SAMPLE_RESUMES: ReadonlyArray<{ emoji: string; label: string; text: string }> = [
+  {
+    emoji: '🚀',
+    label: 'Senior React Engineer',
+    text: `Priya Nair
+Senior Frontend Engineer
+
+EXPERIENCE
+Senior Frontend Engineer — Zenith Retail (2021–Present)
+- Led the migration of a 40k-line Angular app to React 18 + TypeScript, cutting bundle size by 35%.
+- Built a component library used across 6 product teams, adopted with Storybook and visual regression tests.
+- Owned performance budget: reduced Time to Interactive from 4.2s to 1.6s via code-splitting and route-based lazy loading.
+- Mentored 4 junior engineers on React hooks, state management, and accessibility (WCAG 2.1 AA).
+
+Frontend Engineer — Northwind Labs (2018–2021)
+- Built real-time dashboards with React, Redux, and WebSockets for a logistics tracking product.
+- Wrote Jest/React Testing Library suites, raising coverage from 40% to 85%.
+- Integrated CI/CD via GitHub Actions for automated lint, test, and preview deploys.
+
+SKILLS
+React, TypeScript, Redux, Next.js, Tailwind CSS, Jest, React Testing Library, Webpack, Vite, GraphQL, REST APIs, Node.js, Git, CI/CD, Web Accessibility, Performance Optimization
+
+EDUCATION
+B.Tech in Computer Science — VIT Vellore (2018)`,
+  },
+  {
+    emoji: '🤖',
+    label: 'AI/ML Architect',
+    text: `Arjun Mehta
+AI / Machine Learning Architect
+
+EXPERIENCE
+ML Architect — Solstice AI (2020–Present)
+- Designed and shipped a retrieval-augmented generation (RAG) pipeline serving 2M+ queries/month, using pgvector and OpenAI embeddings.
+- Led model evaluation framework comparing GPT-4-class, Llama, and Mistral models on domain-specific benchmarks.
+- Built a feature store and MLOps pipeline (MLflow, Airflow, Docker, Kubernetes) cutting model deployment time from weeks to days.
+- Owned architecture for a multi-tenant vector search system handling 50M+ embeddings with sub-200ms latency.
+
+Machine Learning Engineer — Vertex Analytics (2017–2020)
+- Built fraud-detection models (XGBoost, LightGBM) reducing false positives by 22%.
+- Productionized models via FastAPI microservices with A/B testing and shadow deployments.
+- Trained and fine-tuned NLP models (BERT-family) for document classification.
+
+SKILLS
+Python, PyTorch, TensorFlow, LangChain, RAG, Vector Databases (pgvector, Pinecone), MLOps, Kubernetes, Docker, AWS SageMaker, Feature Engineering, Distributed Training, LLM Fine-tuning, SQL
+
+EDUCATION
+M.S. in Computer Science, Machine Learning — IIIT Hyderabad (2017)`,
+  },
+  {
+    emoji: '📊',
+    label: 'Lead Data Scientist',
+    text: `Sara Thomas
+Lead Data Scientist
+
+EXPERIENCE
+Lead Data Scientist — Meridian Health Analytics (2019–Present)
+- Led a team of 5 data scientists building predictive models for patient readmission risk, improving recall by 18%.
+- Designed the org's experimentation framework (A/B testing, causal inference) adopted by 3 product lines.
+- Built end-to-end pipelines in Python/SQL processing 500GB+ of clinical data daily via Airflow and dbt.
+- Presented quarterly insights to executive leadership, directly informing a $2M resource allocation decision.
+
+Data Scientist — Bright Path Insurance (2016–2019)
+- Built churn-prediction models (Random Forest, Gradient Boosting) improving retention campaign ROI by 30%.
+- Automated reporting dashboards in Tableau, replacing 15 hours/week of manual analyst work.
+- Partnered with engineering to productionize models via batch scoring jobs.
+
+SKILLS
+Python, R, SQL, Pandas, Scikit-learn, XGBoost, A/B Testing, Causal Inference, Statistical Modeling, Tableau, Airflow, dbt, Data Storytelling, Stakeholder Communication
+
+EDUCATION
+M.S. in Statistics — Indian Statistical Institute (2016)`,
+  },
 ];
 
 interface ResumeUploadPanelProps {
@@ -87,7 +164,7 @@ export function ResumeUploadPanel({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="overflow-hidden rounded-2xl border border-slate-700/60 bg-[#101722] shadow-[inset_0_1px_0_rgba(255,255,255,0.02),0_16px_36px_rgba(0,0,0,0.18)]"
+      className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-[#101621]/90 shadow-2xl backdrop-blur-2xl"
     >
       <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 px-5 pt-4">
         <div className="flex items-center gap-5">
@@ -148,15 +225,16 @@ export function ResumeUploadPanel({
                   onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
                   onDragLeave={() => setDragActive(false)}
                   onDrop={handleDrop}
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition ${
+                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all duration-300 ${
                     dragActive
                       ? 'border-cyan-300 bg-cyan-400/[0.07]'
-                      : 'border-slate-700/80 hover:border-cyan-400/35 hover:bg-slate-900/40'
+                      : 'dropzone-breathing border-slate-700/80 hover:border-cyan-500/60 hover:bg-slate-900/60'
                   }`}
                 >
                   <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="sr-only" onChange={handleInputChange} />
                   <motion.span
-                    animate={dragActive ? { scale: 1.08 } : { scale: 1 }}
+                    animate={{ scale: dragActive ? 1.08 : 1, y: [0, -4, 0] }}
+                    transition={{ y: { repeat: Infinity, duration: 2.4, ease: 'easeInOut' }, scale: { duration: 0.2 } }}
                     className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300"
                   >
                     <Upload className="h-4 w-4" />
@@ -193,6 +271,20 @@ export function ResumeUploadPanel({
           )}
         </AnimatePresence>
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">Try a sample</span>
+          {SAMPLE_RESUMES.map((sample) => (
+            <button
+              key={sample.label}
+              type="button"
+              onClick={() => { onTextChange(sample.text); switchMode('text'); }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-[11px] font-medium text-slate-300 transition-all hover:border-cyan-500/50 hover:bg-slate-800 hover:text-white"
+            >
+              <span aria-hidden="true">{sample.emoji}</span>{sample.label}
+            </button>
+          ))}
+        </div>
+
         <AnimatePresence>
           {visibleError && (
             <motion.p
@@ -211,17 +303,15 @@ export function ResumeUploadPanel({
           <motion.button
             type="submit"
             disabled={submitting || !canSubmit}
-            whileTap={canSubmit && !submitting ? { scale: 0.98 } : undefined}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 text-sm font-semibold text-slate-950 shadow-md shadow-cyan-500/10 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none sm:w-auto sm:px-7"
+            whileTap={canSubmit && !submitting ? { scale: 0.99 } : undefined}
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-medium transition-all sm:w-auto ${
+              submitting || !canSubmit
+                ? 'cursor-not-allowed bg-slate-800 text-slate-500'
+                : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md hover:scale-[1.01] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)] active:scale-[0.99]'
+            }`}
           >
-            {submitting ? (
-              <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}>
-                <Sparkles className="h-4 w-4" />
-              </motion.span>
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-            {submitting ? 'Analyzing your resume…' : 'Analyze resume'}
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {submitting ? 'Extracting skill nodes & mapping experience…' : 'Analyze resume'}
           </motion.button>
         </div>
       </div>

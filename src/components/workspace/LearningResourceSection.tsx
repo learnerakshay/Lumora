@@ -13,6 +13,12 @@ function typeIcon(type: LearningResourceRecommendation['type']) {
   return <GraduationCap className="h-3.5 w-3.5" />;
 }
 
+// Video/playlist resources are YouTube-sourced, so their icon well gets the
+// platform's red accent; everything else keeps the neutral cyan treatment.
+function isVideoResource(type: LearningResourceRecommendation['type']): boolean {
+  return type === 'video' || type === 'playlist';
+}
+
 function typeLabel(resource: LearningResourceRecommendation): string {
   if (resource.platform === 'Udemy') return 'Udemy course';
   if (resource.type === 'cohort') return 'Cohort';
@@ -41,10 +47,10 @@ export function LearningResourceSection({ resources }: LearningResourceSectionPr
         {resources.map((resource) => (
           <article
             key={`${resource.id}-${resource.url}`}
-            className="group/resource relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-700/70 bg-gradient-to-br from-slate-900/85 to-[#101722] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_22px_rgba(0,0,0,0.12)] transition duration-200 hover:-translate-y-0.5 hover:border-cyan-400/35 hover:shadow-[inset_0_1px_0_rgba(103,232,249,0.07),0_12px_28px_rgba(0,0,0,0.2)] focus-within:border-cyan-400/45"
+            className="group/resource relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-slate-700/70 bg-gradient-to-br from-slate-900/85 to-[#101722] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025),0_8px_22px_rgba(0,0,0,0.12)] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-500/50 hover:shadow-[0_0_20px_rgba(6,182,212,0.2)] focus-within:border-cyan-400/45"
           >
             <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-400/15 bg-cyan-400/[0.06] text-cyan-300">
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border p-2.5 ${isVideoResource(resource.type) ? 'border-red-500/20 bg-red-500/10 text-red-400' : 'border-cyan-400/15 bg-cyan-400/[0.06] text-cyan-300'}`}>
                 {typeIcon(resource.type)}
               </span>
               <div className="min-w-0 flex-1">
@@ -70,8 +76,14 @@ export function LearningResourceSection({ resources }: LearningResourceSectionPr
               {resource.reason}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide text-slate-500">
-              <span className="rounded-md border border-slate-700/80 bg-slate-950/45 px-1.5 py-0.5 text-slate-400">{typeLabel(resource)}</span>
-              {resource.accessType !== 'unknown' && <span className={resource.accessType === 'paid' ? 'rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-1.5 py-0.5 text-amber-200' : 'rounded-md border border-slate-700/80 bg-slate-950/45 px-1.5 py-0.5'}>{resource.accessType}</span>}
+              <span className="rounded-md border border-cyan-400/20 bg-cyan-400/[0.06] px-1.5 py-0.5 text-cyan-200 shadow-[0_0_6px_rgba(34,211,238,0.15)]">{typeLabel(resource)}</span>
+              {resource.accessType !== 'unknown' && (
+                <span className={
+                  resource.accessType === 'paid'
+                    ? 'rounded-md border border-amber-400/20 bg-amber-400/[0.06] px-1.5 py-0.5 text-amber-200 shadow-[0_0_6px_rgba(251,191,36,0.15)]'
+                    : 'rounded-md border border-emerald-400/20 bg-emerald-400/[0.06] px-1.5 py-0.5 text-emerald-200 shadow-[0_0_6px_rgba(52,211,153,0.15)]'
+                }>{resource.accessType}</span>
+              )}
               {resource.deliveryMode && (
                 <>
                   <span className={resource.deliveryMode === 'LIVE' ? 'rounded-md border border-cyan-400/20 bg-cyan-400/[0.06] px-1.5 py-0.5 text-cyan-200' : 'rounded-md border border-slate-700/80 bg-slate-950/45 px-1.5 py-0.5'}>{resource.deliveryMode === 'LIVE' ? 'Live snapshot' : 'Recorded'}</span>

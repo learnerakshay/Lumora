@@ -39,16 +39,16 @@ const CATEGORY_META: Record<
   'interview-prep': { label: 'Interview preparation gaps', icon: MessagesSquare, text: 'text-cyan-300', border: 'border-cyan-400/20', bg: 'bg-cyan-400/[0.04]' },
 };
 
-const SEVERITY_META: Record<GapSeverity, { dot: string; text: string; border: string }> = {
-  HIGH: { dot: 'bg-rose-400', text: 'text-rose-300', border: 'border-rose-500/25 bg-rose-500/[0.08]' },
-  MEDIUM: { dot: 'bg-amber-400', text: 'text-amber-300', border: 'border-amber-500/25 bg-amber-500/[0.08]' },
-  LOW: { dot: 'bg-slate-500', text: 'text-slate-400', border: 'border-slate-700 bg-slate-800/40' },
+const SEVERITY_META: Record<GapSeverity, { dot: string; text: string; border: string; shadow: string }> = {
+  HIGH: { dot: 'bg-rose-400', text: 'text-rose-400', border: 'border-rose-500/30 bg-rose-500/10', shadow: 'shadow-[0_0_10px_rgba(244,63,94,0.2)]' },
+  MEDIUM: { dot: 'bg-amber-400', text: 'text-amber-400', border: 'border-amber-500/30 bg-amber-500/10', shadow: '' },
+  LOW: { dot: 'bg-slate-500', text: 'text-slate-400', border: 'border-slate-700 bg-slate-800', shadow: '' },
 };
 
 function SeverityBadge({ severity }: { severity: GapSeverity }) {
   const meta = SEVERITY_META[severity];
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${meta.border} ${meta.text}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${meta.border} ${meta.text} ${meta.shadow}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} /> {severity}
     </span>
   );
@@ -56,6 +56,14 @@ function SeverityBadge({ severity }: { severity: GapSeverity }) {
 
 function fitScorePercent(role: TargetRole): number {
   return Math.round(role.fitScore * 100);
+}
+
+// Semantic gradient by match quality — a low match should never look as
+// confident as a strong one, so the bar's color carries real signal.
+function matchBarClasses(percent: number): { bar: string; glow: string } {
+  if (percent > 60) return { bar: 'from-cyan-400 to-emerald-400', glow: 'shadow-[0_0_10px_rgba(52,211,153,0.4)]' };
+  if (percent >= 40) return { bar: 'from-amber-400 to-cyan-400', glow: 'shadow-[0_0_10px_rgba(251,191,36,0.3)]' };
+  return { bar: 'from-rose-400 to-amber-400', glow: 'shadow-[0_0_10px_rgba(251,113,133,0.3)]' };
 }
 
 function PriorityFocus({ gaps, roles }: { gaps: Gap[]; roles: TargetRole[] }) {
@@ -74,7 +82,7 @@ function PriorityFocus({ gaps, roles }: { gaps: Gap[]; roles: TargetRole[] }) {
       </p>
       <div className="flex flex-wrap gap-2">
         {highPriority.map((gap) => (
-          <span key={gap.id} className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/25 bg-[#101722] px-2.5 py-1 text-[11px] text-rose-100">
+          <span key={gap.id} className="priority-gap-pulse inline-flex items-center gap-1.5 rounded-full border border-rose-500/25 bg-[#101722] px-2.5 py-1 text-[11px] text-rose-100">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" />
             {gap.subject}
             <span className="text-rose-400/60">· {roleTitleById.get(gap.roleId) ?? 'role'}</span>
@@ -156,7 +164,7 @@ export function SkillGapReport({
                   <div className="mt-2.5 flex items-center gap-2.5">
                     <div className={`overflow-hidden rounded-full bg-slate-800/90 ${isTopMatch ? 'h-2 w-48 max-w-[42vw]' : 'h-1.5 w-32 max-w-[35vw]'}`}>
                       <motion.div
-                        className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500"
+                        className={`h-full rounded-full bg-gradient-to-r ${matchBarClasses(percent).bar} ${matchBarClasses(percent).glow}`}
                         initial={{ width: 0 }}
                         animate={{ width: `${percent}%` }}
                         transition={{ duration: 0.6, delay: Math.min(index, 5) * 0.05 + 0.1, ease: 'easeOut' }}
@@ -241,9 +249,9 @@ export function SkillGapReport({
                                       onClick={() => onToggleGap?.(role.roleId, gap.id)}
                                       disabled={disabledByLimit}
                                       aria-pressed={selected}
-                                      className={`flex w-full items-start gap-2.5 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      className={`flex w-full items-start gap-2.5 rounded-lg border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                                         selected
-                                          ? 'border-cyan-400/40 bg-cyan-400/[0.06]'
+                                          ? 'border-cyan-500/60 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
                                           : 'border-slate-800 bg-[#0d131d] hover:border-slate-700'
                                       }`}
                                     >
@@ -264,29 +272,10 @@ export function SkillGapReport({
                         <p className="text-xs text-slate-500">No signal for this role yet.</p>
                       )}
 
-                      {onBuildPlan && roleGaps.length > 0 && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3">
-                          <span className="text-[11px] text-slate-400">
-                            {selection?.roleId === role.roleId && selection.selectedGapIds.length > 0
-                              ? `${selection.selectedGapIds.length} gap${selection.selectedGapIds.length === 1 ? '' : 's'} selected`
-                              : 'Select gaps above to build a learning plan'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onBuildPlan(role.roleId)}
-                            disabled={
-                              buildingRoleId === role.roleId ||
-                              !(selection?.roleId === role.roleId && selection.selectedGapIds.length > 0)
-                            }
-                            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-cyan-300 px-3 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                          >
-                            {buildingRoleId === role.roleId ? (
-                              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building…</>
-                            ) : (
-                              <><GraduationCap className="h-3.5 w-3.5" /> Build learning plan</>
-                            )}
-                          </button>
-                        </div>
+                      {onBuildPlan && roleGaps.length > 0 && !(selection?.roleId === role.roleId && selection.selectedGapIds.length > 0) && (
+                        <p className="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3 text-[11px] text-slate-400">
+                          Select gaps above to build a learning plan
+                        </p>
                       )}
                     </div>
                   </motion.div>
@@ -296,6 +285,40 @@ export function SkillGapReport({
           );
         })}
       </div>
+
+      {onBuildPlan && (
+        <AnimatePresence>
+          {selection && selection.roleId && selection.selectedGapIds.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 sm:bottom-6"
+            >
+              <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-cyan-500/40 bg-slate-900/90 px-4 py-3 shadow-[0_0_25px_rgba(6,182,212,0.2)] backdrop-blur-2xl">
+                <span className="min-w-0 truncate text-xs font-medium text-slate-200">
+                  {selection.selectedGapIds.length} gap{selection.selectedGapIds.length === 1 ? '' : 's'} selected
+                  {' · '}
+                  {roles.find((role) => role.roleId === selection.roleId)?.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onBuildPlan(selection.roleId!)}
+                  disabled={buildingRoleId === selection.roleId}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 text-xs font-semibold text-white shadow-md transition-all hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {buildingRoleId === selection.roleId ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Building…</>
+                  ) : (
+                    <><GraduationCap className="h-3.5 w-3.5" /> Build learning plan</>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
     </div>
   );
 }
@@ -310,9 +333,9 @@ export function SkillProfileSummary({
   strengthLabel: string;
 }) {
   const tiles = [
-    { label: 'Skills identified', value: String(skillCount), icon: Award },
-    { label: 'Shipped-level skills', value: String(shippedCount), icon: Zap },
-    { label: 'Strongest area', value: strengthLabel, icon: Check },
+    { label: 'Skills identified', value: String(skillCount), icon: Award, iconWrap: 'border-cyan-400/20 bg-cyan-400/[0.08]', iconColor: 'text-cyan-300' },
+    { label: 'Shipped-level skills', value: String(shippedCount), icon: Zap, iconWrap: 'border-emerald-400/20 bg-emerald-400/[0.08]', iconColor: 'text-emerald-300' },
+    { label: 'Strongest area', value: strengthLabel, icon: Check, iconWrap: 'border-violet-400/20 bg-violet-400/[0.08]', iconColor: 'text-violet-300' },
   ];
   return (
     <div className="grid gap-2.5 sm:grid-cols-3">
@@ -322,10 +345,11 @@ export function SkillProfileSummary({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, delay: index * 0.05 }}
-          className="rounded-xl border border-slate-800 bg-[#101722] p-3.5"
+          className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 backdrop-blur-xl"
         >
-          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><tile.icon className="h-3 w-3" /> {tile.label}</p>
-          <p className={`mt-1.5 truncate font-semibold text-white ${index === 2 ? 'text-sm' : 'text-lg'}`}>{tile.value}</p>
+          <span className={`flex h-8 w-8 items-center justify-center rounded-lg border ${tile.iconWrap} ${tile.iconColor}`}><tile.icon className="h-4 w-4" /></span>
+          <p className="mt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tile.label}</p>
+          <p className={`mt-1 truncate font-bold text-white ${index === 2 ? 'text-sm' : 'text-xl'}`}>{tile.value}</p>
         </motion.div>
       ))}
     </div>

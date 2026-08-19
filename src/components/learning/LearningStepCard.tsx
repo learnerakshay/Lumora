@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { CheckCircle2, ListChecks, Target } from 'lucide-react';
+import { Check, ListChecks, Target } from 'lucide-react';
 import { LearningResourceSection } from '../workspace/LearningResourceSection';
 import type { LearningStep, PriorityBand } from '../../lib/learning/types';
 
@@ -65,13 +65,16 @@ export function LearningStepCard({ step, index }: LearningStepCardProps) {
         </ol>
       </div>
 
-      <div className="mt-3 rounded-xl border border-violet-500/15 bg-violet-500/[0.03] p-3">
-        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-300">{step.evidenceTask.title}</p>
+      <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-950/10 p-5">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-300">{step.evidenceTask.title}</p>
         <p className="text-[11px] leading-relaxed text-slate-400">{step.evidenceTask.brief}</p>
-        <ul className="mt-2 space-y-1">
+        <ul className="mt-3 space-y-2">
           {step.evidenceTask.acceptanceCriteria.map((criterion, criterionIndex) => (
-            <li key={criterionIndex} className="flex items-start gap-1.5 text-[11px] text-slate-400">
-              <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-violet-400/70" /> {criterion}
+            <li key={criterionIndex} className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-300">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                <Check className="h-3 w-3" />
+              </span>
+              {criterion}
             </li>
           ))}
         </ul>

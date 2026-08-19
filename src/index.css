@@ -224,6 +224,64 @@ textarea {
   box-shadow: 0 0 0 3px rgb(34 211 238 / 0.09), inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
+.pipeline-beam {
+  position: relative;
+  display: block;
+  height: 2px;
+  width: 2rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(30 41 59 / 0.8);
+}
+
+.pipeline-beam-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 60%;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, rgb(34 211 238), rgb(167 139 250), transparent);
+  animation: pipeline-beam-flow 1.8s ease-in-out infinite;
+}
+
+@keyframes pipeline-beam-flow {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+
+.dropzone-breathing {
+  animation: dropzone-breathe 3s ease-in-out infinite;
+}
+
+@keyframes dropzone-breathe {
+  0%, 100% { box-shadow: 0 0 12px rgba(6, 182, 212, 0.08); }
+  50% { box-shadow: 0 0 22px rgba(6, 182, 212, 0.22); }
+}
+
+.priority-gap-pulse {
+  animation: priority-gap-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes priority-gap-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(244, 63, 94, 0.15); }
+  50% { box-shadow: 0 0 14px rgba(244, 63, 94, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-beam-fill {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .dropzone-breathing {
+    animation: none;
+  }
+
+  .priority-gap-pulse {
+    animation: none;
+  }
+}
+
 .workspace-library-canvas::before {
   position: absolute;
   z-index: -1;

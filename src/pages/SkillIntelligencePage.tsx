@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   Brain,
+  Clock3,
   FolderSearch,
   ListChecks,
   Loader2,
@@ -63,11 +64,17 @@ export function SkillIntelligencePage() {
 
   const [upload, setUpload] = useState<UploadAttemptState>(blankUploadAttempt());
   const [submitting, setSubmitting] = useState(false);
+  const [showDeepAnalysisBanner, setShowDeepAnalysisBanner] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [startingOver, setStartingOver] = useState(false);
   const submissionGate = useRef<SubmissionGate>({ current: false });
   const buildPlanGate = useRef<SubmissionGate>({ current: false });
+  const deepAnalysisTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (deepAnalysisTimerRef.current) clearTimeout(deepAnalysisTimerRef.current);
+  }, []);
 
   const [gapSelection, setGapSelection] = useState<GapSelectionState>(blankGapSelection());
   const [buildPlanAttempt, setBuildPlanAttempt] = useState<BuildPlanAttemptState>(blankBuildPlanAttempt());
@@ -113,6 +120,8 @@ export function SkillIntelligencePage() {
       return;
     }
     setSubmitting(true);
+    setShowDeepAnalysisBanner(false);
+    deepAnalysisTimerRef.current = setTimeout(() => setShowDeepAnalysisBanner(true), 30_000);
     setUpload((current) => ({ ...current, submitError: null, usageLimit: null }));
     try {
       const formData = new FormData();
@@ -138,6 +147,11 @@ export function SkillIntelligencePage() {
     } catch (error: any) {
       setUpload((current) => ({ ...current, submitError: error.message || 'Resume analysis failed.' }));
     } finally {
+      if (deepAnalysisTimerRef.current) {
+        clearTimeout(deepAnalysisTimerRef.current);
+        deepAnalysisTimerRef.current = null;
+      }
+      setShowDeepAnalysisBanner(false);
       releaseSubmission(submissionGate.current);
       setSubmitting(false);
     }
@@ -227,7 +241,7 @@ export function SkillIntelligencePage() {
 
   return (
     <DashboardLayout>
-      <div className="mx-auto max-w-5xl space-y-6">
+      <div className="relative z-10 mx-auto max-w-5xl space-y-6 px-6 py-10">
         <div className="border-b border-slate-800/70 pb-6">
           <div className="mb-2 flex items-center gap-2 text-cyan-300">
             <span className="rounded-lg border border-cyan-400/20 bg-cyan-400/[0.07] p-1.5"><Brain className="h-3.5 w-3.5" /></span>
@@ -240,15 +254,20 @@ export function SkillIntelligencePage() {
 
           {view !== 'ready' && (
             <div className="mt-4 flex flex-wrap items-center gap-2 sm:gap-3">
-              {HOW_IT_WORKS.map((step, index) => (
-                <React.Fragment key={step.label}>
-                  <div className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/40 py-1 pl-1.5 pr-3">
-                    <span className="flex h-4.5 w-4.5 items-center justify-center rounded-full bg-cyan-400/10 text-cyan-300"><step.icon className="h-2.5 w-2.5" /></span>
-                    <span className="text-[11px] font-medium text-slate-400">{step.label}</span>
-                  </div>
-                  {index < HOW_IT_WORKS.length - 1 && <span className="h-px w-4 bg-slate-800" aria-hidden="true" />}
-                </React.Fragment>
-              ))}
+              {HOW_IT_WORKS.map((step, index) => {
+                const isActive = index === 0;
+                return (
+                  <React.Fragment key={step.label}>
+                    <div className={`flex items-center gap-2 rounded-xl border px-4 py-2 shadow-md backdrop-blur-md transition-colors ${isActive ? 'border-cyan-500/40 bg-cyan-400/[0.08] text-cyan-200' : 'border-slate-800 bg-slate-900/80 text-slate-400'}`}>
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-full ${isActive ? 'bg-cyan-400/20 text-cyan-300' : 'bg-slate-800 text-slate-500'}`}><step.icon className="h-3 w-3" /></span>
+                      <span className="text-[11px] font-medium">{step.label}</span>
+                    </div>
+                    {index < HOW_IT_WORKS.length - 1 && (
+                      <span className="pipeline-beam" aria-hidden="true"><span className="pipeline-beam-fill" /></span>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </div>
           )}
         </div>
@@ -295,7 +314,26 @@ export function SkillIntelligencePage() {
           )}
 
           {view === 'empty' && (
-            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+              <AnimatePresence>
+                {showDeepAnalysisBanner && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    role="status"
+                    className="overflow-hidden rounded-2xl border border-cyan-500/25 bg-slate-900/80 p-4 shadow-[0_0_15px_rgba(6,182,212,0.1)] backdrop-blur-md"
+                  >
+                    <p className="flex items-center gap-2 text-sm font-semibold text-cyan-200">
+                      <Clock3 className="h-4 w-4 shrink-0" /> Deep Analysis in Progress...
+                    </p>
+                    <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
+                      Lumora is cross-referencing your experience against target role benchmarks and generating explainable gap insights. Thanks for your patience!
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <ResumeUploadPanel
                 selectedFile={upload.selectedFile}
                 resumeText={upload.resumeText}

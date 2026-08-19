@@ -170,7 +170,7 @@ export function LearningPathPage() {
                   <button
                     type="button"
                     onClick={() => setWorkspaceState((current) => openCreateWorkspaceDialog(current))}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-cyan-300 px-3 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200"
+                    className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2.5 text-xs font-medium text-white shadow-md transition-all hover:shadow-[0_0_20px_rgba(6,182,212,0.4)]"
                   >
                     <FolderPlus className="h-3.5 w-3.5" /> Create Learning Workspace
                   </button>
