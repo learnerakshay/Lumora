@@ -110,6 +110,7 @@ export function WorkspaceDetailPage() {
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = useState(false);
   const [contextCitations, setContextCitations] = useState<StoredCitation[] | null>(null);
   const [activeCitationId, setActiveCitationId] = useState<string | null>(null);
+  const [retryingSourceId, setRetryingSourceId] = useState<string | null>(null);
   const sourceRefreshRef = useRef(false);
   const sourceStatusRef = useRef<Map<string, SourceRecord['status']>>(new Map());
   const slowYouTubeNoticeShownRef = useRef(new Set<string>());
@@ -815,6 +816,32 @@ export function WorkspaceDetailPage() {
     }
   };
 
+  const handleRetrySource = async (source: SourceRecord) => {
+    if (!workspace || retryingSourceId) return;
+    setRetryingSourceId(source.id);
+    try {
+      const response = await fetch(
+        `/api/workspaces/${workspace.id}/sources/${source.id}/reprocess`,
+        { method: 'POST' },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const limitError = usageLimitFromPayload(payload);
+        if (limitError) {
+          setUsageLimit(limitError.details);
+          return;
+        }
+        throw new Error(payload?.error?.message || 'Unable to retry this source.');
+      }
+      setActivityError(null);
+      await fetchSources();
+    } catch (err: any) {
+      setActivityError(err.message || 'Unable to retry this source.');
+    } finally {
+      setRetryingSourceId(null);
+    }
+  };
+
   const handleConfirmDeleteSource = async (source: SourceRecord) => {
     const response = await fetch(
       `/api/workspaces/${workspace!.id}/sources/${source.id}`,
@@ -954,6 +981,8 @@ export function WorkspaceDetailPage() {
           onRequestDeleteSource={setSourcePendingDeletion}
           onRefreshSources={handleRefreshSources}
           onOpenAddSource={handleOpenAddSource}
+          onRetrySource={handleRetrySource}
+          retryingSourceId={retryingSourceId}
         />
       </div>
 
@@ -986,13 +1015,15 @@ export function WorkspaceDetailPage() {
               onRequestDeleteSource={setSourcePendingDeletion}
               onRefreshSources={handleRefreshSources}
               onOpenAddSource={handleOpenAddSource}
+              onRetrySource={handleRetrySource}
+              retryingSourceId={retryingSourceId}
             />
           </div>
         </div>
       )}
 
       {/* Right Main Area */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#0b0f17]">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-950/20 via-slate-950 to-[#030712]">
         {/* Workspace Header */}
         <WorkspaceHeader
           workspace={workspace}
@@ -1043,6 +1074,7 @@ export function WorkspaceDetailPage() {
             sources={visibleSources}
             hasIndexedSources={hasIndexedSources}
             sourceCount={visibleSources.length}
+            readySourceCount={visibleSources.filter((source) => source.status === 'COMPLETED').length}
             processingSourceCount={visibleSources.filter(
               (source) => source.status === 'PENDING' || source.status === 'PROCESSING'
             ).length}

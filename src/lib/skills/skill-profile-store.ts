@@ -16,6 +16,7 @@ export interface SkillProfileRecord {
   version: number;
   status: SkillProfileStatus;
   sourceKind: SkillProfileSourceKind;
+  sourceText: string | null;
   extraction: ExtractedProfile | null;
   normalizedSkills: NormalizedSkill[] | null;
   extractionModel: string | null;
@@ -40,6 +41,7 @@ function toSkillProfileRecord(row: {
   version: number;
   status: string;
   sourceKind: string;
+  sourceText: string | null;
   extraction: unknown;
   normalizedSkills: unknown;
   extractionModel: string | null;
@@ -54,6 +56,7 @@ function toSkillProfileRecord(row: {
     version: row.version,
     status: row.status as SkillProfileStatus,
     sourceKind: row.sourceKind as SkillProfileSourceKind,
+    sourceText: row.sourceText,
     extraction: (row.extraction as ExtractedProfile | null) ?? null,
     normalizedSkills: (row.normalizedSkills as NormalizedSkill[] | null) ?? null,
     extractionModel: row.extractionModel,
@@ -86,6 +89,9 @@ export async function createExtractingSkillProfile(input: {
   userId: string;
   sourceKind: SkillProfileSourceKind;
   contractVersion: string;
+  /** Raw resume text, when available, so a later "Re-run analysis" can
+   * re-extract from it. Omitted/null for IMAGE-sourced profiles. */
+  sourceText?: string | null;
 }): Promise<SkillProfileRecord> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const latest = await prisma.skillProfile.findFirst({
@@ -101,6 +107,7 @@ export async function createExtractingSkillProfile(input: {
           version: nextVersion,
           status: 'EXTRACTING',
           sourceKind: input.sourceKind,
+          sourceText: input.sourceText ?? null,
           contractVersion: input.contractVersion,
         },
       });

@@ -99,6 +99,7 @@ export function SkillIntelligencePage() {
   const [showDeepAnalysisBanner, setShowDeepAnalysisBanner] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  const [reanalyzeUsageLimit, setReanalyzeUsageLimit] = useState<UsageLimitDetails | null>(null);
   const [startingOver, setStartingOver] = useState(false);
   const submissionGate = useRef<SubmissionGate>({ current: false });
   const buildPlanGate = useRef<SubmissionGate>({ current: false });
@@ -203,21 +204,31 @@ export function SkillIntelligencePage() {
     }
   };
 
-  // Re-run analysis only recomputes deterministic role-matching + gap
-  // analysis from the already-stored extraction (see POST /analysis on the
-  // backend) — it must never touch the upload attempt or leave the results
-  // view, and any failure surfaces its own inline error, separate from the
-  // full-page load-error state.
+  // Re-run analysis sends the stored resume text through the full
+  // extraction pipeline again (see POST /analysis on the backend) — a real
+  // new LLM pass, not a recompute of the existing extraction — so it is
+  // metered under SKILL_INTELLIGENCE exactly like the initial upload. A
+  // usage-limit response surfaces through its own state (reanalyzeUsageLimit),
+  // never through the unrelated upload attempt, and any other failure
+  // surfaces its own inline error, separate from the full-page load-error
+  // state. It must never leave the results view.
   const handleReanalyze = async () => {
     if (reanalyzing) return;
     setReanalyzing(true);
     setReanalyzeError(null);
+    setReanalyzeUsageLimit(null);
     try {
       const response = await fetchWithTimeout(`${API_PATHS.skills}/analysis`, { method: 'POST' }, REANALYZE_TIMEOUT_MS);
       const payload = await parseJsonResponse(response);
       if (!response.ok || !payload?.success) {
+        const limitError = usageLimitFromPayload(payload);
+        if (limitError) {
+          setReanalyzeUsageLimit(limitError.details);
+          return;
+        }
         throw new Error(payload?.error?.message || 'Could not re-run the analysis.');
       }
+      notifyUsageChanged();
       setProfileState(payload.data);
       showToast('success', 'Skill re-run analysis completed successfully.');
     } catch (error: any) {
@@ -249,6 +260,7 @@ export function SkillIntelligencePage() {
       setProfileState(reset.profileState);
       setLoadError(reset.loadError);
       setReanalyzeError(reset.reanalyzeError);
+      setReanalyzeUsageLimit(null);
       setUpload(reset.upload);
       setGapSelection(blankGapSelection());
       setBuildPlanAttempt(blankBuildPlanAttempt());
@@ -436,7 +448,21 @@ export function SkillIntelligencePage() {
                 <button type="button" onClick={handleStartOver} disabled={startingOver || reanalyzing} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/60 px-3 text-xs font-medium text-slate-400 transition hover:border-rose-500/30 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-60">
                   {startingOver ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} {startingOver ? 'Starting over…' : 'Start over'}
                 </button>
+                {usageCaption && <span className="text-[10px] text-slate-500">{usageCaption} · re-running uses one analysis</span>}
               </div>
+
+              <AnimatePresence>
+                {reanalyzeUsageLimit && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden rounded-2xl border border-amber-400/20"
+                  >
+                    <UsageLimitNotice details={reanalyzeUsageLimit} onDismiss={() => setReanalyzeUsageLimit(null)} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <AnimatePresence>
                 {reanalyzeError && (

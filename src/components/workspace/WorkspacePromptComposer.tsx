@@ -63,7 +63,7 @@ export function WorkspacePromptComposer({
   return (
     <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-800/70 bg-[#0d131d]/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 backdrop-blur-xl sm:px-4 md:px-5">
       <div className="mx-auto max-w-3xl">
-        <div className="overflow-visible rounded-2xl border border-slate-700/85 bg-[#121a26] shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-[border-color,background-color,box-shadow,opacity] duration-200 focus-within:border-cyan-400/60 focus-within:bg-[#141e2b] focus-within:shadow-[0_16px_38px_rgba(0,0,0,0.28),0_0_0_1px_rgba(34,211,238,0.08),0_0_24px_rgba(34,211,238,0.07)]">
+        <div className="overflow-visible rounded-xl border border-slate-800 bg-slate-900/80 shadow-2xl backdrop-blur-md transition-all focus-within:border-cyan-500/80">
           <textarea
             ref={textareaRef}
             value={promptText}
@@ -116,7 +116,7 @@ export function WorkspacePromptComposer({
                   type="button"
                   onClick={handleSubmit}
                   disabled={!promptText.trim()}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-[background-color,color,box-shadow,opacity] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${promptText.trim() ? 'bg-cyan-300 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.18)] hover:bg-cyan-200 hover:shadow-[0_10px_24px_rgba(34,211,238,0.25)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${promptText.trim() ? 'bg-gradient-to-br from-cyan-400 to-violet-500 text-slate-950 shadow-[0_8px_20px_rgba(34,211,238,0.25)] hover:shadow-[0_10px_24px_rgba(139,92,246,0.3)]' : 'cursor-not-allowed bg-slate-800/60 text-slate-600 opacity-45 shadow-none'}`}
                   aria-label="Send chat prompt"
                 >
                   <Send className="h-4 w-4" />

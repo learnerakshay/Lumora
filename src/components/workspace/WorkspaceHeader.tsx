@@ -115,7 +115,7 @@ export function WorkspaceHeader({
             </div>
           ) : (
             <div className="flex items-center space-x-2 min-w-0">
-              <h1 className="text-sm md:text-base font-bold text-white truncate">{workspace.name}</h1>
+              <h1 className="text-sm md:text-base font-bold tracking-wide text-white truncate">{workspace.name}</h1>
               <button
                 type="button"
                 onClick={() => {
@@ -136,11 +136,11 @@ export function WorkspaceHeader({
 
       {/* Right Actions & User Profile */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        <UsageIndicator compact onOpen={onOpenUsage} />
+        <UsageIndicator compact accent="violet" onOpen={onOpenUsage} />
         <button
           type="button"
           onClick={onOpenAddSource}
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cyan-300 px-3 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-500/10 transition hover:bg-cyan-200"
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cyan-400 px-3 text-xs font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition-all hover:bg-cyan-300"
         >
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add Source</span>

@@ -121,7 +121,9 @@ async function fetchGeminiTranscript(
       ? 'This YouTube video cannot be processed because access is restricted.'
       : error.classification === 'EXTRACTION_MALFORMED'
         ? 'We could not finish processing this video because the extraction was incomplete. Please try again shortly.'
-        : 'We could not finish processing this video right now. Please try again shortly.';
+        : error.classification === 'TIMEOUT'
+          ? 'This video took too long to process without official captions. Try a video with public captions, or a shorter video.'
+          : 'We could not finish processing this video right now. Please try again shortly.';
     throw new IngestionFailure({
       message: `Gemini YouTube acquisition failed: ${error.classification}`,
       errorCode,

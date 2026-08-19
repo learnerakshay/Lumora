@@ -465,6 +465,11 @@ export async function acquireGeminiYouTubeTranscript(input: {
       if (
         verifyingNoSpeech ||
         !failure.retryable ||
+        // A per-attempt timeout on a long video is very likely to time out
+        // again on retry, so retrying just burns the shrinking total budget
+        // before failing anyway. Fail fast instead; `retryable` stays true
+        // on the thrown error so the user can still manually retry later.
+        failure.classification === 'TIMEOUT' ||
         attempt === MAX_PRIMARY_ATTEMPTS
       ) {
         logFinalClassification(failure.classification, failure.retryable);

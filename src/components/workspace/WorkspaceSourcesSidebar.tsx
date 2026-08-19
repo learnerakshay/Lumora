@@ -11,6 +11,7 @@ import {
   Info,
   RefreshCw,
   Plus,
+  RotateCcw,
 } from 'lucide-react';
 import { SourceRecord, SourceType } from '../../lib/source-store';
 import { SourceTypeIcon } from './SourceTypeIcon';
@@ -32,6 +33,8 @@ interface WorkspaceSourcesSidebarProps {
   onRequestDeleteSource: (source: SourceRecord) => void;
   onRefreshSources?: () => void | Promise<void>;
   onOpenAddSource?: () => void;
+  onRetrySource?: (source: SourceRecord) => void;
+  retryingSourceId?: string | null;
 }
 
 export function WorkspaceSourcesSidebar({
@@ -43,6 +46,8 @@ export function WorkspaceSourcesSidebar({
   onRequestDeleteSource,
   onRefreshSources,
   onOpenAddSource,
+  onRetrySource,
+  retryingSourceId = null,
 }: WorkspaceSourcesSidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<SourceType | 'ALL'>('ALL');
@@ -126,7 +131,7 @@ export function WorkspaceSourcesSidebar({
         <div className="flex items-center justify-between pt-1">
           <div>
             <h2 className="text-sm font-semibold text-white">Sources</h2>
-            <p className="mt-0.5 text-[10px] text-slate-500">{sources.length} {sources.length === 1 ? 'item' : 'items'} in this Workspace</p>
+            <p className="mt-0.5 text-[10px] text-slate-300">{sources.length} {sources.length === 1 ? 'item' : 'items'} in this Workspace</p>
           </div>
 
           {onRefreshSources && (
@@ -213,7 +218,7 @@ export function WorkspaceSourcesSidebar({
           </div>
         ) : filteredSources.length === 0 ? (
           /* Empty State */
-          <div className="p-6 text-center space-y-3 bg-slate-900/30 border border-dashed border-slate-700/80 rounded-2xl my-4 animate-fade-in">
+          <div className="p-6 text-center space-y-3 bg-slate-900/30 border border-dashed border-slate-800 rounded-2xl my-4 animate-fade-in">
             <div className="lumora-empty-icon-muted mx-auto flex h-10 w-10 items-center justify-center rounded-2xl">
               <Layers className="w-5 h-5" />
             </div>
@@ -223,7 +228,7 @@ export function WorkspaceSourcesSidebar({
                   ? 'No matching sources'
                   : 'Your source library is empty'}
               </p>
-              <p className="text-[11px] text-slate-400 leading-relaxed max-w-[200px] mx-auto">
+              <p className="text-[11px] text-slate-300 leading-relaxed max-w-[200px] mx-auto">
                 {searchTerm || selectedTypeFilter !== 'ALL'
                   ? 'Adjust your search or choose a different source type.'
                   : 'Add a PDF, webpage, plain text, or YouTube video to start learning.'}
@@ -241,10 +246,15 @@ export function WorkspaceSourcesSidebar({
             const youtubeFailure = source.type === 'YOUTUBE' && source.status === 'FAILED'
               ? getYouTubeFailureMessage(source.metadata)
               : null;
+            const isActivelyProcessing =
+              source.status === 'PENDING' || source.status === 'PROCESSING';
+            const canRetry =
+              source.status === 'FAILED' && source.metadata?.retryable === true;
+            const isRetrying = retryingSourceId === source.id;
             return (
             <article
               key={source.id}
-              className={`group relative rounded-2xl border border-l-2 bg-slate-900/55 p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-black/15 ${sourceAccent[source.type]}`}
+              className={`group relative overflow-hidden rounded-2xl border border-l-2 bg-slate-900/55 p-3.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-black/15 ${sourceAccent[source.type]}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <button
@@ -270,7 +280,22 @@ export function WorkspaceSourcesSidebar({
                 </button>
 
                 {/* Options Menu Button */}
-                <div className="relative shrink-0">
+                <div className="relative flex shrink-0 items-center gap-1">
+                  {canRetry && onRetrySource && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRetrySource(source);
+                      }}
+                      disabled={isRetrying}
+                      aria-label={`Retry ingestion for ${source.title}`}
+                      title="Retry ingestion"
+                      className="rounded-lg p-1.5 text-cyan-300 opacity-90 transition hover:bg-cyan-400/10 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -351,6 +376,11 @@ export function WorkspaceSourcesSidebar({
                 <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-rose-300/80">
                   {youtubeFailure.title}
                 </p>
+              )}
+              {isActivelyProcessing && (
+                <span className="pipeline-beam absolute inset-x-0 bottom-0 w-full rounded-none" aria-hidden="true">
+                  <span className="pipeline-beam-fill" />
+                </span>
               )}
             </article>
             );

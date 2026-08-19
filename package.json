@@ -34,7 +34,8 @@
     "payments:inspect-order": "tsx scripts/razorpay-inspect-order.ts",
     "payments:verify-order": "tsx scripts/razorpay-verify-order.ts",
     "payments:create-coupon": "tsx scripts/payments-create-coupon.ts",
-    "payments:rename-coupon": "tsx scripts/payments-rename-coupon.ts"
+    "payments:rename-coupon": "tsx scripts/payments-rename-coupon.ts",
+    "payments:update-coupon": "tsx scripts/payments-update-coupon.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",
@@ -59,6 +60,7 @@
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.1",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
     "vite": "^6.2.3",

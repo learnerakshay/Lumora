@@ -215,7 +215,7 @@ test('Gemini acquisition retries one 429 then succeeds', async () => {
   assert.equal(result.segments.length, 2);
 });
 
-test('Gemini acquisition times out after exactly one retry', async () => {
+test('Gemini acquisition fails fast on timeout without retrying', async () => {
   let attempts = 0;
   await assert.rejects(
     acquireGeminiYouTubeTranscript(
@@ -232,9 +232,12 @@ test('Gemini acquisition times out after exactly one retry', async () => {
     ),
     (error: unknown) =>
       error instanceof GeminiYouTubeAcquisitionError &&
-      error.classification === 'TIMEOUT',
+      error.classification === 'TIMEOUT' &&
+      error.retryable === true,
   );
-  assert.equal(attempts, 2);
+  // A timed-out attempt on a long video is very likely to time out again,
+  // so retrying would only waste the remaining total-budget window.
+  assert.equal(attempts, 1);
 });
 
 test('Gemini acquisition does not retry an unavailable or private video', async () => {

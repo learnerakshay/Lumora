@@ -2,15 +2,22 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import {
   Bot,
+  BookOpen,
   Check,
   Clock3,
   Code2,
   Copy,
   ExternalLink,
   FileText,
+  GitCompare,
   Globe,
+  HelpCircle,
+  ListChecks,
+  Loader2,
   MessageSquare,
+  Plus,
   RotateCcw,
+  Route,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -39,6 +46,7 @@ interface WorkspaceChatAreaProps {
   error?: string | null;
   loadingHistory: boolean;
   sourceCount: number;
+  readySourceCount: number;
   processingSourceCount: number;
   sources: SourceRecord[];
   hasIndexedSources: boolean;
@@ -218,6 +226,18 @@ function createMarkdownComponents(
   };
 }
 
+const GENERAL_STARTER_PROMPTS = [
+  { label: 'Explain a concept', icon: BookOpen },
+  { label: 'Build a learning roadmap', icon: Route },
+  { label: 'Compare two technologies', icon: GitCompare },
+];
+
+const INDEXED_STARTER_PROMPTS = [
+  { label: 'Summarize my sources', icon: FileText },
+  { label: 'Quiz me from this Workspace', icon: HelpCircle },
+  { label: 'What should I learn first?', icon: ListChecks },
+];
+
 function formatCitationLocation(citation: StoredCitation) {
   if (citation.page) return `Page ${citation.page}`;
   if (citation.timestampStartMs != null) {
@@ -239,6 +259,7 @@ export function WorkspaceChatArea({
   error,
   loadingHistory,
   sourceCount,
+  readySourceCount,
   processingSourceCount,
   sources,
   hasIndexedSources,
@@ -335,11 +356,23 @@ export function WorkspaceChatArea({
     >
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
         <div className="mb-2 flex items-center justify-between gap-3 border-b border-slate-800/70 pb-2.5">
-          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-400">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-400">
             <MessageSquare className="h-4 w-4 shrink-0 text-sky-400" />
             <span className="truncate font-semibold text-slate-300">Learning conversation</span>
-            <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-500">{sourceCount} {sourceCount === 1 ? 'source' : 'sources'}</span>
-            {processingSourceCount > 0 && <span className="inline-flex items-center gap-1.5 text-[10px] text-sky-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />{processingSourceCount} processing</span>}
+            {readySourceCount > 0 && (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                {readySourceCount} ready
+              </span>
+            )}
+            {processingSourceCount > 0 && (
+              <span className="inline-flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                {processingSourceCount} processing
+              </span>
+            )}
+            {sourceCount === 0 && (
+              <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-500">No sources yet</span>
+            )}
           </div>
           {messages.length > 0 && (
             <button
@@ -356,6 +389,17 @@ export function WorkspaceChatArea({
         </div>
 
         <div className="flex-1 space-y-1" aria-live="polite">
+          {processingSourceCount > 0 && (
+            <div className="mb-5 overflow-hidden rounded-xl border border-cyan-500/20 bg-cyan-500/[0.04] px-4 py-3 animate-fade-in">
+              <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-300" />
+                <span>Ingesting Knowledge Sources — Extracting tokens &amp; building vector embeddings…</span>
+              </div>
+              <span className="pipeline-beam mt-2.5 w-full" aria-hidden="true">
+                <span className="pipeline-beam-fill" />
+              </span>
+            </div>
+          )}
           {error && (
             <div role="alert" className="mb-5 rounded-xl border border-rose-900/70 bg-rose-950/30 px-4 py-3 text-xs text-rose-200">
               {error}
@@ -372,16 +416,26 @@ export function WorkspaceChatArea({
 
           {messages.length === 0 && !isGenerating && !loadingHistory && !error && (
             <div className="flex min-h-[340px] items-center justify-center py-8 text-center">
-              <div className="w-full max-w-xl rounded-2xl border border-slate-800/70 bg-slate-900/25 px-5 py-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] sm:px-8">
-                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300"><Sparkles className="h-4 w-4" /></div>
-                <h2 className="mt-4 text-lg font-semibold text-white">{hasIndexedSources ? 'Learn from this Workspace' : 'Start learning with Lumora'}</h2>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">{hasIndexedSources ? 'Ask about your sources, then use the evidence in Context to go deeper.' : 'Ask anything now, or add sources when you want grounded learning with citations.'}</p>
-                {!hasIndexedSources && <button type="button" onClick={onOpenAddSource} className="mt-5 rounded-xl bg-cyan-300 px-3.5 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Add your first source</button>}
+              <div className="w-full max-w-xl rounded-2xl border border-cyan-500/20 bg-slate-900/40 p-8 shadow-2xl shadow-cyan-950/30 backdrop-blur-xl">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-cyan-400"><Sparkles className="h-5 w-5" /></div>
+                <h2 className="mt-4 text-2xl font-bold tracking-tight text-white">{hasIndexedSources ? 'Learn from this Workspace' : 'Start learning with Lumora'}</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm text-slate-300">{hasIndexedSources ? 'Ask about your sources, then use the evidence in Context to go deeper.' : 'Ask anything now, or add sources when you want grounded learning with citations.'}</p>
+                {!hasIndexedSources && (
+                  <button type="button" onClick={onOpenAddSource} className="mt-5 inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+                    <Plus className="h-3.5 w-3.5" /> Add your first source
+                  </button>
+                )}
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
-                  {(hasIndexedSources
-                    ? ['Summarize my sources', 'Quiz me from this Workspace', 'What should I learn first?']
-                    : ['Explain a concept', 'Build a learning roadmap', 'Compare two technologies']).map((question) => (
-                    <button key={question} type="button" onClick={() => onSubmitMessage(question)} className="rounded-full border border-slate-700/80 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 transition hover:border-cyan-400/35 hover:bg-slate-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{question}</button>
+                  {(hasIndexedSources ? INDEXED_STARTER_PROMPTS : GENERAL_STARTER_PROMPTS).map(({ label, icon: Icon }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => onSubmitMessage(label)}
+                      className="group inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800/40 px-3 py-1.5 text-xs text-slate-200 shadow-sm transition-all hover:border-cyan-400/60 hover:bg-cyan-500/10 hover:text-cyan-300 hover:shadow-cyan-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                    >
+                      <Icon className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover:text-cyan-300" />
+                      {label}
+                    </button>
                   ))}
                 </div>
               </div>

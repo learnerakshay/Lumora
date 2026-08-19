@@ -36,6 +36,7 @@ export function SourceStatusBadge({
   const isFailed = status === 'FAILED' || stage === 'FAILED';
   const isCompleted = status === 'COMPLETED' && stage === 'COMPLETED';
   const isQueued = status === 'PENDING' || stage === 'CREATED' || stage === 'QUEUED';
+  const isCompute = stage === 'PROCESSING' || stage === 'EMBEDDING';
   const label = isFailed
     ? 'Failed'
     : isCompleted
@@ -47,10 +48,12 @@ export function SourceStatusBadge({
   const styles = isFailed
     ? 'border-rose-800/60 bg-rose-950/70 text-rose-300'
     : isCompleted
-      ? 'border-emerald-800/60 bg-emerald-950/70 text-emerald-300'
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
       : isQueued
         ? 'border-slate-700 bg-slate-900 text-slate-300'
-        : 'border-sky-800/60 bg-sky-950/70 text-sky-300';
+        : isCompute
+          ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 font-mono animate-pulse'
+          : 'border-sky-800/60 bg-sky-950/70 text-sky-300';
 
   const Icon = isFailed ? AlertCircle : isCompleted ? CheckCircle2 : isQueued ? Clock3 : Loader2;
 
@@ -58,7 +61,7 @@ export function SourceStatusBadge({
     <span
       role="status"
       aria-label={`Source status: ${label}`}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${styles} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${styles} ${className}`}
     >
       <Icon
         aria-hidden="true"

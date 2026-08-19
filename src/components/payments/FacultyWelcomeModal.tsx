@@ -63,11 +63,13 @@ export function FacultyWelcomeModal() {
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4"
       onClick={() => void handleDismiss()}
     >
+      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[400px] w-[400px] -translate-x-[70%] -translate-y-1/2 rounded-full bg-cyan-500/10 blur-[120px]" />
+      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[400px] w-[400px] -translate-x-[30%] -translate-y-1/2 rounded-full bg-violet-500/10 blur-[120px]" />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="faculty-welcome-title"
-        className="flex w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-400/20 bg-[#101826] shadow-[0_0_0_1px_rgba(34,211,238,0.08),0_24px_60px_rgba(8,145,178,0.16)] sm:rounded-2xl"
+        className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-slate-950/90 shadow-[0_0_0_1px_rgba(34,211,238,0.08),0_24px_60px_rgba(8,145,178,0.16)] backdrop-blur-xl sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-800/80 bg-gradient-to-b from-cyan-400/[0.08] to-transparent p-5">
@@ -75,7 +77,7 @@ export function FacultyWelcomeModal() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-400/30 bg-cyan-400/10 text-cyan-300">
               <GraduationCap className="h-4.5 w-4.5" />
             </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-cyan-300/60 bg-gradient-to-r from-cyan-300 to-sky-300 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-950 shadow-[0_6px_20px_rgba(34,211,238,0.25)]">
+            <span className="faculty-badge-glow inline-flex items-center gap-1 rounded-full border border-cyan-300/60 bg-gradient-to-r from-cyan-300 to-sky-300 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-950 shadow-[0_0_15px_rgba(56,189,248,0.25)]">
               Faculty Access
             </span>
           </div>
@@ -103,10 +105,12 @@ export function FacultyWelcomeModal() {
 
           <div className="h-px bg-gradient-to-r from-transparent via-cyan-400/25 to-transparent" />
 
-          <ul className="space-y-2.5 text-xs text-slate-300">
+          <ul className="space-y-2.5 text-xs text-slate-200">
             {PERKS.map((perk) => (
-              <li key={perk} className="flex items-start gap-2">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+              <li key={perk} className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.3)]">
+                  <Check className="h-3 w-3" />
+                </span>
                 <span>{perk}</span>
               </li>
             ))}
@@ -116,10 +120,10 @@ export function FacultyWelcomeModal() {
             type="button"
             onClick={() => void handleDismiss()}
             disabled={dismissing}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-300 to-sky-300 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/25 transition hover:-translate-y-0.5 hover:shadow-cyan-500/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#101826] active:translate-y-0 disabled:opacity-60"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_25px_rgba(6,182,212,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.99] disabled:opacity-60 disabled:hover:scale-100"
           >
             Enter Workspace
-            <ArrowRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />
           </button>
         </div>
       </div>

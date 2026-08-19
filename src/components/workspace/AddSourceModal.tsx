@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
   X,
   FileText,
@@ -165,6 +166,9 @@ export function AddSourceModal({
     }
 
     if (!tryBeginSubmission(submittingRef)) return;
+    const toastId = toast.loading('Vectorizing source...', {
+      description: 'Extracting content and generating chunk embeddings.',
+    });
     try {
       setSubmitting(true);
       const formData = new FormData();
@@ -191,6 +195,7 @@ export function AddSourceModal({
         const errJson = await res.json().catch(() => ({}));
         const limitError = usageLimitFromPayload(errJson);
         if (limitError) {
+          toast.dismiss(toastId);
           setUsageLimit(limitError.details);
           return;
         }
@@ -199,13 +204,19 @@ export function AddSourceModal({
 
       const payload = await res.json();
       if (payload.success && payload.data) {
+        toast.success('Source added', {
+          id: toastId,
+          description: `${finalTitle} is now processing in your Workspace.`,
+        });
         onSourceAdded(payload.data);
         handleClose();
       } else {
         throw new Error(payload.error?.message || 'Failed to create source.');
       }
     } catch (err: any) {
-      setError(err.message || 'Error creating source.');
+      const message = err.message || 'Error creating source.';
+      toast.error('Failed to add source', { id: toastId, description: message });
+      setError(message);
     } finally {
       releaseSubmission(submittingRef);
       setSubmitting(false);
@@ -225,11 +236,11 @@ export function AddSourceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-0 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="add-source-title" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-slate-800 bg-[#121824] shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="add-source-title" className="flex max-h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-slate-900/90 shadow-2xl shadow-cyan-950/60 backdrop-blur-2xl sm:max-h-[90vh] sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/60">
           <div>
-            <h2 id="add-source-title" className="text-base font-bold text-white">Add Knowledge Source</h2>
+            <h2 id="add-source-title" className="text-xl font-bold text-white">Add Knowledge Source</h2>
             <p className="text-xs text-slate-400">
               Add material Lumora can process and use in grounded answers.
             </p>
@@ -265,18 +276,18 @@ export function AddSourceModal({
                       setUsageLimit(null);
                     }}
                     aria-pressed={isSelected}
-                    className={`flex flex-col p-3 rounded-xl border text-left transition-all relative ${
+                    className={`flex flex-col p-4 rounded-xl border text-left transition-all cursor-pointer relative ${
                       isSelected
-                        ? 'bg-sky-950/50 border-sky-500/80 ring-1 ring-sky-500/50'
-                        : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
+                        ? 'border-2 border-cyan-400 bg-cyan-500/10 shadow-lg shadow-cyan-500/10'
+                        : 'border border-slate-800 bg-slate-950/50 hover:border-slate-700 hover:bg-slate-900/50'
                     }`}
                   >
                     <div className="flex items-center justify-between w-full mb-1.5">
-                      <div className={`p-1.5 rounded-lg border ${opt.badgeColor}`}>
+                      <div className={`p-1.5 rounded-lg border ${isSelected ? 'bg-cyan-400/20 text-cyan-300 border-cyan-400/40' : opt.badgeColor}`}>
                         <Icon className="w-4 h-4" />
                       </div>
                       {isSelected && (
-                        <div className="w-4 h-4 rounded-full bg-sky-500 text-slate-950 flex items-center justify-center">
+                        <div className="w-4 h-4 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center">
                           <Check className="w-3 h-3 stroke-[3]" />
                         </div>
                       )}
@@ -318,7 +329,7 @@ export function AddSourceModal({
                 value={titleInput}
                 onChange={(e) => setTitleInput(e.target.value)}
                 placeholder="e.g. Lumora System Specs"
-                className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                className="w-full border border-slate-800 bg-slate-950/80 px-3 py-2.5 rounded-lg text-sm text-white placeholder-slate-500 transition-all focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
               />
             </div>
 
@@ -327,7 +338,7 @@ export function AddSourceModal({
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-slate-400">PDF Document File</label>
-                  <div className="relative border-2 border-dashed border-slate-800 hover:border-sky-500/50 rounded-xl p-4 text-center bg-slate-900/40 transition-colors">
+                  <div className="relative border-2 border-dashed border-cyan-500/30 hover:border-cyan-400 rounded-xl p-8 text-center bg-slate-950/60 hover:bg-cyan-500/5 transition-all">
                     <input
                       type="file"
                       accept=".pdf,application/pdf"
@@ -335,12 +346,12 @@ export function AddSourceModal({
                       aria-label="Choose PDF document"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
-                    <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1" />
-                    <p className="text-xs text-slate-300 font-medium">
-                      {selectedFile ? selectedFile.name : 'Choose a PDF document'}
+                    <Upload className="w-6 h-6 text-cyan-400 mx-auto mb-2 drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" />
+                    <p className="text-sm font-medium text-slate-200">
+                      {selectedFile ? selectedFile.name : 'Drag & drop PDF here'}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {selectedFile ? 'Ready to upload' : 'PDF only · Maximum size 20 MB'}
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {selectedFile ? 'Ready to upload' : 'PDF up to 20MB'}
                     </p>
                   </div>
                 </div>
@@ -354,7 +365,7 @@ export function AddSourceModal({
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   placeholder="https://example.com/document.pdf"
-                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full border border-slate-800 bg-slate-950/80 px-3 py-2.5 rounded-lg font-mono text-sm text-white placeholder-slate-500 transition-all focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
             )}
@@ -367,7 +378,7 @@ export function AddSourceModal({
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   placeholder="https://docs.lumora.ai/knowledge-operating-system"
-                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full border border-slate-800 bg-slate-950/80 px-3 py-2.5 rounded-lg font-mono text-sm text-white placeholder-slate-500 transition-all focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
             )}
@@ -380,7 +391,7 @@ export function AddSourceModal({
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   placeholder="https://www.youtube.com/watch?v=..."
-                  className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full border border-slate-800 bg-slate-950/80 px-3 py-2.5 rounded-lg font-mono text-sm text-white placeholder-slate-500 transition-all focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
                 <p className="flex items-start gap-1.5 text-[10px] leading-relaxed text-slate-500">
                   <Info aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
@@ -397,7 +408,7 @@ export function AddSourceModal({
                   onChange={(e) => setTextContent(e.target.value)}
                   rows={5}
                   placeholder="Paste documentation notes, specs, meeting transcripts, or text snippets here..."
-                  className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 leading-relaxed"
+                  className="w-full border border-slate-800 bg-slate-950/80 px-3 py-2.5 rounded-lg text-sm leading-relaxed text-white placeholder-slate-500 transition-all focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
             )}
@@ -415,11 +426,11 @@ export function AddSourceModal({
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex items-center space-x-1.5 rounded-xl bg-cyan-300 px-5 py-2 text-xs font-semibold text-slate-950 shadow-sm shadow-cyan-500/10 transition-colors hover:bg-cyan-200 disabled:opacity-50"
+                className="flex items-center rounded-lg bg-cyan-400 px-4 py-2 text-xs font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition-all hover:bg-cyan-300 disabled:opacity-50"
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin text-slate-950" />
                     <span>Adding source...</span>
                   </>
                 ) : (

@@ -22,7 +22,7 @@ const postAnalysisHandler = sliceHandler(
 );
 const deleteProfileHandler = routeSource.slice(routeSource.indexOf("skillsRouter.delete('/profile'"));
 
-test('POST /profile is the only Skill Intelligence route that calls the extraction provider and metering', () => {
+test('POST /profile calls the extraction provider and Skill Intelligence metering', () => {
   assert.match(postProfileHandler, /checkAndReserve\(userId, 'SKILL_INTELLIGENCE'\)/);
   assert.match(postProfileHandler, /await commitUsage\(usageEventId/);
   assert.match(postProfileHandler, /extractProfileFromResumeImage|extractProfileFromResumeText/);
@@ -77,17 +77,44 @@ test('the PDF fallback reuses the existing image extraction pipeline and the bou
   assert.match(routeSource, /from '\.\.\/lib\/skills\/resume-pdf-image-fallback'/);
 });
 
-// Regression for "Re-run analysis behaves like reset": the route must use
-// only the stored extraction/normalizedSkills to recompute roles and gaps,
-// never touch the provider, and never reserve or commit Skill Intelligence
-// usage — re-analysis is free and instant by contract.
-test('POST /analysis never calls the extraction provider and never reserves or commits usage', () => {
-  assert.doesNotMatch(postAnalysisHandler, /extractProfileFromResumeImage|extractProfileFromResumeText/);
-  assert.doesNotMatch(postAnalysisHandler, /checkAndReserve|commitUsage|discardUsage/);
+// Regression for "Re-run analysis must do a real LLM pass, not return
+// cached results": the route sends the stored resume text through the same
+// extraction pipeline and metering lifecycle as POST /profile, rather than
+// only recomputing role-matching from the already-stored extraction.
+test('POST /analysis re-runs the full extraction pipeline and is metered exactly like POST /profile', () => {
+  assert.match(postAnalysisHandler, /extractProfileFromResumeText\(\{ resumeText: latest\.profile\.sourceText \}\)/);
+  assert.match(postAnalysisHandler, /checkAndReserve\(userId, 'SKILL_INTELLIGENCE'\)/);
+  assert.match(postAnalysisHandler, /await commitUsage\(usageEventId/);
   assert.match(postAnalysisHandler, /getLatestSkillProfile\(/);
-  assert.match(postAnalysisHandler, /selectTargetRoles\(latest\.profile\.normalizedSkills\)/);
-  assert.match(postAnalysisHandler, /analyzeSkillGaps\(latest\.profile\.extraction, latest\.profile\.normalizedSkills, roles\)/);
+  assert.match(postAnalysisHandler, /createExtractingSkillProfile\(/);
+  assert.match(postAnalysisHandler, /markSkillProfileReady\(/);
+  assert.match(postAnalysisHandler, /selectTargetRoles\(normalizedSkills\)/);
+  assert.match(postAnalysisHandler, /analyzeSkillGaps\(extraction\.profile, normalizedSkills, roles\)/);
   assert.match(postAnalysisHandler, /createRoleAnalysis\(/);
+});
+
+// Regression for "never silently reuse stale extraction data": a profile
+// with no stored source text (created before this field existed, or
+// IMAGE-sourced, which never produced plain text) must fail closed with an
+// instruction to upload again — never fall back to recomputing from the old
+// extraction as if that were a fresh analysis.
+test('POST /analysis fails closed with a clear upload-again error when no source text is stored', () => {
+  assert.match(postAnalysisHandler, /if \(!latest\.profile\.sourceText\)/);
+  assert.match(postAnalysisHandler, /'SKILL_PROFILE_SOURCE_TEXT_UNAVAILABLE'/);
+  assert.match(postAnalysisHandler, /upload your resume again/i);
+});
+
+// Regression for "a failed re-extraction must not silently keep charging or
+// silently keep the old profile stuck in EXTRACTING": on extraction
+// failure the route must discard the reservation and mark the new profile
+// version FAILED, exactly like POST /profile does.
+test('POST /analysis discards usage and marks the profile failed if extraction throws', () => {
+  const failureBlock = postAnalysisHandler.slice(
+    postAnalysisHandler.indexOf('extractProfileFromResumeText'),
+    postAnalysisHandler.indexOf('const normalizedSkills'),
+  );
+  assert.match(failureBlock, /await markSkillProfileFailed\(extractingProfile\.id, message\)/);
+  assert.match(failureBlock, /await discardUsage\(usageEventId\)/);
 });
 
 // Regression for "Start over does not work correctly": deleting the profile

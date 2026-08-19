@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import { AuthProvider } from './components/AuthProvider';
 import { Navbar } from './components/Navbar';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -46,6 +47,20 @@ export default function App() {
         <UsageProvider>
         <LearningPreferencesProvider>
         <div className="min-h-screen bg-[#0b0f17] text-[#f0f4f8] selection:bg-sky-500/30 selection:text-sky-200">
+          <Toaster
+            theme="dark"
+            position="top-right"
+            toastOptions={{
+              classNames: {
+                toast: 'bg-[#121824] border border-slate-800 text-slate-100 shadow-2xl',
+                title: 'text-slate-100 font-semibold',
+                description: 'text-slate-400',
+                success: '!border-emerald-500/30',
+                error: '!border-rose-500/30',
+                loading: '!border-cyan-500/30',
+              },
+            }}
+          />
           <Navbar />
           <Suspense fallback={<AppShellLoader />}>
           <Routes>

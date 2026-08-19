@@ -64,7 +64,7 @@ export function WorkspaceContextPanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {citations.length === 0 ? (
           <div className="mt-3 px-3 py-5 text-center">
-            <span className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06] text-cyan-300">
+            <span className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl border border-violet-400/25 bg-cyan-400/[0.06] text-cyan-300 shadow-[0_0_18px_rgba(56,189,248,0.12),0_0_18px_rgba(167,139,250,0.12)]">
               <Quote className="h-4 w-4" strokeWidth={1.8} />
             </span>
             <p className="mt-3 text-xs font-semibold text-slate-300">
@@ -72,7 +72,7 @@ export function WorkspaceContextPanel({
                 ? 'General knowledge response'
                 : 'Context appears with grounded answers'}
             </p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+            <p className="mt-1 text-[11px] leading-5 text-slate-300">
               {responseMode === 'GENERAL'
                 ? 'No Workspace evidence was used for this response.'
                 : 'When Workspace evidence supports an answer, Lumora shows the real sources used here.'}

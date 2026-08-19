@@ -284,6 +284,21 @@ textarea {
   }
 }
 
+.faculty-badge-glow {
+  animation: faculty-badge-glow 2.6s ease-in-out infinite;
+}
+
+@keyframes faculty-badge-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(56, 189, 248, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(56, 189, 248, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faculty-badge-glow {
+    animation: none;
+  }
+}
+
 .priority-gap-pulse {
   animation: priority-gap-pulse 2.4s ease-in-out infinite;
 }

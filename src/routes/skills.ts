@@ -192,6 +192,10 @@ skillsRouter.post('/profile', resumeUploadMiddleware, async (req: Request, res: 
       userId,
       sourceKind,
       contractVersion: EXTRACTION_CONTRACT_VERSION,
+      // Only a genuine text extraction has plain text worth storing for a
+      // future re-run; the PDF-image-fallback and direct-image paths never
+      // produced resume text in the first place.
+      sourceText: pdfFallbackImages || imageInput ? null : resumeText,
     });
     profileId = extractingProfile.id;
 
@@ -266,29 +270,104 @@ skillsRouter.get('/profile', async (req: Request, res: Response) => {
   }
 });
 
+// Re-run analysis sends the stored resume text through the full extraction
+// pipeline again — a genuine new LLM pass, not a recompute of the existing
+// extraction — so it follows the exact same reserve -> extract -> mark
+// ready/failed -> commit/discard lifecycle as POST /profile, including
+// metering. Profiles created before SkillProfile.sourceText existed (or
+// sourced from an image, which never produced plain text) have no text to
+// re-extract from; that path fails closed with a clear instruction to
+// upload again rather than silently reusing the old extraction.
 skillsRouter.post('/analysis', async (req: Request, res: Response) => {
+  const userId = res.locals.userId;
+  let usageEventId: string | null = null;
+  let profileId: string | null = null;
+
   try {
-    const latest = await getLatestSkillProfile(res.locals.userId);
-    if (!latest || latest.profile.status !== 'READY' || !latest.profile.extraction || !latest.profile.normalizedSkills) {
+    const latest = await getLatestSkillProfile(userId);
+    if (!latest || latest.profile.status !== 'READY') {
       const response = errorResponse(
         AppError.badRequest('No completed Skill Profile is available to re-analyze.', 'SKILL_PROFILE_NOT_READY'),
       );
       return res.status(response.statusCode).json(response.payload);
     }
+    if (!latest.profile.sourceText) {
+      const response = errorResponse(
+        AppError.badRequest(
+          'No stored resume text is available to re-analyze. Please upload your resume again to run a fresh analysis.',
+          'SKILL_PROFILE_SOURCE_TEXT_UNAVAILABLE',
+        ),
+      );
+      return res.status(response.statusCode).json(response.payload);
+    }
 
-    const roles = selectTargetRoles(latest.profile.normalizedSkills);
-    const gaps = analyzeSkillGaps(latest.profile.extraction, latest.profile.normalizedSkills, roles);
+    const reservation = await checkAndReserve(userId, 'SKILL_INTELLIGENCE');
+    if ('details' in reservation) {
+      const response = errorResponse(usageLimitError(reservation.details));
+      return res.status(response.statusCode).json(response.payload);
+    }
+    usageEventId = reservation.usageEventId;
+
+    const extractingProfile = await createExtractingSkillProfile({
+      userId,
+      sourceKind: latest.profile.sourceKind,
+      contractVersion: EXTRACTION_CONTRACT_VERSION,
+      sourceText: latest.profile.sourceText,
+    });
+    profileId = extractingProfile.id;
+
+    let extraction;
+    try {
+      extraction = await extractProfileFromResumeText({ resumeText: latest.profile.sourceText });
+    } catch (error) {
+      const message =
+        error instanceof SkillExtractionError ? error.message : 'Resume extraction failed.';
+      await markSkillProfileFailed(extractingProfile.id, message);
+      await discardUsage(usageEventId);
+      usageEventId = null;
+      const appError =
+        error instanceof SkillExtractionError
+          ? new AppError(error.message, error.statusCode, error.code)
+          : new AppError('Resume extraction failed.', 502, 'SKILL_EXTRACTION_FAILED');
+      const response = errorResponse(appError);
+      return res.status(response.statusCode).json(response.payload);
+    }
+
+    const normalizedSkills = normalizeExtractedProfile(extraction.profile);
+    const readyProfile = await markSkillProfileReady(extractingProfile.id, {
+      extraction: extraction.profile,
+      normalizedSkills,
+      extractionModel: extraction.model,
+    });
+
+    const roles = selectTargetRoles(normalizedSkills);
+    const gaps = analyzeSkillGaps(extraction.profile, normalizedSkills, roles);
     const analysis = await createRoleAnalysis({
-      profileId: latest.profile.id,
+      profileId: extractingProfile.id,
       engineVersion: GAP_ANALYSIS_ENGINE_VERSION,
       selectedRoles: roles,
       gaps,
     });
 
-    return res.status(200).json(successResponse({ profile: latest.profile, analysis }));
+    await commitUsage(usageEventId, {
+      provider: 'openai',
+      model: extraction.model,
+      inputTokens: extraction.usage?.inputTokens ?? null,
+      outputTokens: extraction.usage?.outputTokens ?? null,
+    });
+    usageEventId = null;
+
+    return res.status(200).json(successResponse({ profile: readyProfile, analysis }));
   } catch (error) {
-    logger.error('Failed to re-run Skill Intelligence analysis', error, { userId: res.locals.userId });
-    const response = errorResponse(new Error('Failed to re-run analysis'));
+    if (usageEventId) await discardUsage(usageEventId).catch(() => {});
+    if (profileId) {
+      await markSkillProfileFailed(
+        profileId,
+        'An unexpected error interrupted Skill Intelligence re-analysis.',
+      ).catch(() => {});
+    }
+    logger.error('Failed to re-run Skill Intelligence analysis', error, { userId });
+    const response = errorResponse(error);
     return res.status(response.statusCode).json(response.payload);
   }
 });
