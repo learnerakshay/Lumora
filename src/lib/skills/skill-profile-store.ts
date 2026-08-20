@@ -152,10 +152,30 @@ export async function markSkillProfileFailed(
   });
 }
 
+// Every caller of this function (GET /profile, POST /analysis re-run, and
+// Gap-to-Learning's plan builder) requires or displays a READY profile — a
+// transient EXTRACTING row exists only for the duration of a single
+// synchronous request, and a FAILED row is a dead end. Returning the
+// absolute-latest row regardless of status meant that once ANY re-run
+// attempt failed (e.g. a client timeout aborting mid-extraction), that
+// FAILED row became "latest" forever, and POST /analysis's `status !==
+// 'READY'` gate then permanently rejected every future re-run attempt even
+// though an earlier version was successfully READY — the user could never
+// recover without deleting the whole profile and re-uploading. The same gate
+// exists in routes/learning.ts, so a failed re-run also silently blocked
+// building a learning plan from the still-good prior analysis. Preferring
+// the latest READY profile (when one exists) fixes both call sites at their
+// shared root without changing either route's own logic. A user who has
+// never had a successful analysis still sees their latest EXTRACTING/FAILED
+// row exactly as before — this only changes behavior once a READY profile
+// exists.
+type SkillProfileDatabase = Pick<typeof prisma, 'skillProfile'>;
+
 export async function getLatestSkillProfile(
   userId: string,
+  database: SkillProfileDatabase = prisma,
 ): Promise<{ profile: SkillProfileRecord; analysis: RoleAnalysisRecord | null } | null> {
-  const profile = await prisma.skillProfile.findFirst({
+  const profile = await database.skillProfile.findFirst({
     where: { userId },
     orderBy: { version: 'desc' },
     include: {
@@ -163,9 +183,21 @@ export async function getLatestSkillProfile(
     },
   });
   if (!profile) return null;
-  const [latestAnalysis] = profile.analyses;
+
+  const resolvedProfile =
+    profile.status === 'READY'
+      ? profile
+      : (await database.skillProfile.findFirst({
+          where: { userId, status: 'READY' },
+          orderBy: { version: 'desc' },
+          include: {
+            analyses: { orderBy: { createdAt: 'desc' }, take: 1 },
+          },
+        })) ?? profile;
+
+  const [latestAnalysis] = resolvedProfile.analyses;
   return {
-    profile: toSkillProfileRecord(profile),
+    profile: toSkillProfileRecord(resolvedProfile),
     analysis: latestAnalysis ? toRoleAnalysisRecord(latestAnalysis) : null,
   };
 }

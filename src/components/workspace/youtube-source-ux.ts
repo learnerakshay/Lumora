@@ -56,23 +56,21 @@ export function getYouTubeFailureMessage(
   const errorMessage = typeof metadata?.errorMessage === 'string' ? metadata.errorMessage : '';
   const retryable = metadata?.retryable === true;
 
-  if (
-    errorCode === 'NO_SPEECH_DETECTED' ||
-    /no (?:usable|discernible) (?:spoken content|speech)/i.test(errorMessage)
-  ) {
+  // A known errorCode is a structured, authoritative signal and must always
+  // win over the errorMessage regex heuristics and the generic `retryable`
+  // bucket below. Previously VIDEO_UNAVAILABLE's fallback regex
+  // (`/.../restricted/i`) ran before the ACCESS_RESTRICTED errorCode check,
+  // so a CONTENT_POLICY failure — whose userMessage is literally "...access
+  // is restricted." — matched that regex on the word "restricted" and was
+  // silently displayed as the wrong, less specific "This video could not be
+  // accessed" message instead of its own ACCESS_RESTRICTED copy. Every
+  // errorCode-specific branch now runs first; the message-regex fallbacks
+  // only apply when errorCode didn't already resolve to a known case
+  // (older/malformed metadata without a specific errorCode).
+  if (errorCode === 'NO_SPEECH_DETECTED') {
     return {
       title: 'No usable spoken content was detected in this video.',
       detail: 'Try another video with clear spoken audio.',
-    };
-  }
-
-  if (
-    errorCode === 'VIDEO_UNAVAILABLE' ||
-    /unavailable|not public|could not be accessed|private|restricted/i.test(errorMessage)
-  ) {
-    return {
-      title: 'This video could not be accessed.',
-      detail: 'It may be private, unavailable, or restricted.',
     };
   }
 
@@ -80,6 +78,27 @@ export function getYouTubeFailureMessage(
     return {
       title: 'This video cannot be accessed for processing.',
       detail: 'The video or its content is restricted.',
+    };
+  }
+
+  if (errorCode === 'VIDEO_UNAVAILABLE') {
+    return {
+      title: 'This video could not be accessed.',
+      detail: 'It may be private, unavailable, or restricted.',
+    };
+  }
+
+  if (/no (?:usable|discernible) (?:spoken content|speech)/i.test(errorMessage)) {
+    return {
+      title: 'No usable spoken content was detected in this video.',
+      detail: 'Try another video with clear spoken audio.',
+    };
+  }
+
+  if (/unavailable|not public|could not be accessed|private|restricted/i.test(errorMessage)) {
+    return {
+      title: 'This video could not be accessed.',
+      detail: 'It may be private, unavailable, or restricted.',
     };
   }
 

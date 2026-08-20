@@ -77,15 +77,28 @@ function isTimeoutError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-// Re-run and start-over are documented as fast, local/deterministic
-// operations (no AI or extraction provider call) — a generous but tight
-// ceiling catches a genuine hang quickly. The initial analyze call can
-// involve real PDF parsing and AI extraction, so it gets a much longer
-// ceiling — comfortably past the 30s point where the "Deep Analysis in
-// Progress" banner already reassures the user a slow-but-real analysis is
-// still running.
+// Start-over is a fast, local/deterministic operation (DELETE /profile is a
+// DB-only row deletion, no AI or extraction provider call) — a generous but
+// tight ceiling catches a genuine hang quickly.
+//
+// Re-run is NOT that: POST /analysis re-extracts from the stored resume text
+// through the exact same runExtraction() the initial upload uses (see
+// extraction-provider.ts) — up to MAX_ATTEMPTS=2 provider calls, each with
+// its own EXTRACTION_TIMEOUT_MS=60s ceiling, so the server itself considers
+// up to ~120s a legitimate, non-hung duration for this exact call. Giving
+// re-run only 20s here — six times shorter than the identical extraction
+// step gets under the initial upload's ANALYZE_TIMEOUT_MS — meant a
+// perfectly healthy re-run that simply took 20-90s (well inside the server's
+// own budget) was aborted client-side, shown as "The request took too long",
+// while the server kept working and completed anyway: the extraction,
+// persistence, and usage commit all happened normally, just after the
+// client had already stopped listening. Matching the same ceiling as
+// ANALYZE_TIMEOUT_MS makes the client timeout a safe superset of the
+// server's own worst case (re-run has strictly less additional work than
+// the initial upload, which also parses a PDF/image first) rather than an
+// independently-invented number.
 const ANALYZE_TIMEOUT_MS = 120_000;
-const REANALYZE_TIMEOUT_MS = 20_000;
+const REANALYZE_TIMEOUT_MS = 120_000;
 const START_OVER_TIMEOUT_MS = 20_000;
 
 export function SkillIntelligencePage() {

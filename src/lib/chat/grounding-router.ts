@@ -46,6 +46,7 @@ const SOURCE_CONTENT_INTENT =
 const QUERY_SCAFFOLDING = new Set([
   'a', 'about', 'according', 'an', 'answer', 'answers', 'are', 'as', 'at', 'be',
   'become', 'beginner', 'best', 'between', 'build', 'can', 'compare', 'concept',
+  'was', 'were',
   'concepts', 'content', 'contents', 'could', 'create', 'describe', 'did',
   'difference', 'differences', 'discuss', 'discussed', 'discusses', 'discussing',
   'do', 'does',
@@ -68,6 +69,29 @@ const QUERY_SCAFFOLDING = new Set([
   // Ordinal/duration references locate WHERE in a source to look ("the
   // first 2 minutes"), not WHAT topic to require evidence for.
   'first', 'second', 'seconds', 'minute', 'minutes', 'hour', 'hours',
+  // canonicalToken() only strips plural -s/-es/-ies (and only for tokens
+  // longer than 4 characters); it does not stem verb tenses, so a 4-letter
+  // inflection like "used" is compared literally and never matches its
+  // already-scaffolding base form "use". Question phrasings built entirely
+  // from ordinary verbs like "What is X used for?" or "How was X built?"
+  // then had that inflection treated as a REQUIRED content topic with no
+  // corresponding scaffolding entry, so evidence that plainly covers the
+  // question (e.g. a transcript that never says the literal word "used")
+  // failed the coverage gate and fell back to GENERAL even though the
+  // question was fully answerable from the retrieved evidence. These are
+  // inflections of verbs already judged scaffolding above (use, build,
+  // create, implement, help, work, make, explain, describe, show, give,
+  // understand, learn, compare, summarize, say) — not a new judgment call
+  // about which words carry content, just completing families already
+  // excluded from topic extraction.
+  'used', 'uses', 'built', 'builds', 'building', 'creates', 'created',
+  'creating', 'implements', 'implemented', 'implementing', 'helps',
+  'helped', 'helping', 'worked', 'working', 'makes', 'made', 'making',
+  'explains', 'explained', 'explaining', 'describes', 'described',
+  'describing', 'shows', 'showed', 'showing', 'gives', 'gave', 'given',
+  'giving', 'understands', 'understood', 'understanding', 'learns',
+  'learned', 'compares', 'compared', 'comparing', 'summarizes',
+  'summarized', 'summarizing', 'says',
 ]);
 
 const STEM_EXEMPTIONS = new Set([

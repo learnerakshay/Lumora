@@ -261,6 +261,51 @@ test('Gemini acquisition does not retry an unavailable or private video', async 
   assert.equal(attempts, 1);
 });
 
+test('Gemini acquisition retries a content-policy classification once and recovers if the retry succeeds', async () => {
+  // A single safety/policy verdict from one multimodal inference call is not
+  // authoritative enough to treat as permanent the way VIDEO_UNAVAILABLE is
+  // — this mirrors the 429 retry test above, but for CONTENT_POLICY.
+  let attempts = 0;
+  const result = await acquireGeminiYouTubeTranscript(
+    { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+    {
+      logger: silentLogger,
+      retryBackoffMs: 0,
+      createInteraction: async () => {
+        attempts += 1;
+        if (attempts === 1) throw Object.assign(new Error('blocked by safety policy'), { status: 400 });
+        return { output_text: validOutput() };
+      },
+    },
+  );
+  assert.equal(attempts, 2);
+  assert.equal(result.segments.length, 2);
+});
+
+test('a content-policy classification that recurs still fails definitively as ACCESS_RESTRICTED, but stays retryable for a later manual attempt', async () => {
+  let attempts = 0;
+  await assert.rejects(
+    acquireGeminiYouTubeTranscript(
+      { apiKey: 'test-key', videoId: VIDEO_ID, youtubeUrl: YOUTUBE_URL },
+      {
+        logger: silentLogger,
+        retryBackoffMs: 0,
+        createInteraction: async () => {
+          attempts += 1;
+          throw Object.assign(new Error('prohibited content policy violation'), { status: 400 });
+        },
+      },
+    ),
+    (error: unknown) =>
+      error instanceof GeminiYouTubeAcquisitionError &&
+      error.classification === 'CONTENT_POLICY' &&
+      error.retryable === true,
+  );
+  // Exactly one bounded automatic retry (MAX_PRIMARY_ATTEMPTS = 2), not an
+  // unbounded loop, and not zero retries either.
+  assert.equal(attempts, 2);
+});
+
 test('Gemini acquisition rejects invalid and unordered timestamps', async (context) => {
   const invalidSegments = [
     [{ text: 'Invalid duration', startSeconds: 10, endSeconds: 9 }],

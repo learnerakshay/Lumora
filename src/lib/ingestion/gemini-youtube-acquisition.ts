@@ -135,10 +135,22 @@ function classifyProviderError(error: unknown): GeminiYouTubeAcquisitionError {
     );
   }
   if (/policy|safety|blocked|prohibited|copyright/i.test(message)) {
+    // A single content-policy verdict from one multimodal inference call is
+    // not authoritative enough to treat as a permanent, unappealable fact
+    // the way a structural condition (private video, no speech) is — safety
+    // filters are known to produce false positives, and this same video may
+    // classify differently on a second pass. retryable: true lets the loop
+    // below spend its existing one bounded automatic retry on it (still
+    // bounded by MAX_PRIMARY_ATTEMPTS / totalTimeoutMs below, and still the
+    // same honest CONTENT_POLICY/ACCESS_RESTRICTED classification and
+    // user-facing message if it fails again), and lets the user manually
+    // retry via reprocess instead of being permanently locked out after one
+    // call. This does not weaken the policy check itself — a video that
+    // genuinely, consistently violates it will still fail the same way.
     return new GeminiYouTubeAcquisitionError(
       'CONTENT_POLICY',
       'Gemini could not process this video because of a content policy restriction.',
-      false,
+      true,
       error,
     );
   }

@@ -37,6 +37,31 @@ test('YouTube failures map to specific user-safe messages without internal codes
   }
 });
 
+test('a Gemini content-policy failure shows its own ACCESS_RESTRICTED message, not the generic VIDEO_UNAVAILABLE one', () => {
+  // Regression: fetchGeminiTranscript's ACCESS_RESTRICTED userMessage is
+  // "...access is restricted." — the word "restricted" also matches
+  // VIDEO_UNAVAILABLE's message-regex fallback. Since that fallback used to
+  // run before the ACCESS_RESTRICTED errorCode check, this exact metadata
+  // shape was silently displayed as "This video could not be accessed"
+  // instead of its own, more specific copy.
+  const accessRestricted = getYouTubeFailureMessage({
+    errorCode: 'ACCESS_RESTRICTED',
+    errorMessage: 'This YouTube video cannot be processed because access is restricted.',
+    retryable: true,
+  });
+  assert.equal(accessRestricted.title, 'This video cannot be accessed for processing.');
+  assert.equal(accessRestricted.detail, 'The video or its content is restricted.');
+  assert.notEqual(accessRestricted.title, 'This video could not be accessed.');
+
+  // A genuine VIDEO_UNAVAILABLE failure must still show its own message.
+  const videoUnavailable = getYouTubeFailureMessage({
+    errorCode: 'VIDEO_UNAVAILABLE',
+    errorMessage: 'This video could not be accessed.',
+    retryable: false,
+  });
+  assert.equal(videoUnavailable.title, 'This video could not be accessed.');
+});
+
 test('YouTube processing labels follow persisted stages without theatrical rotation', () => {
   assert.equal(getYouTubeStageLabel('QUEUED'), 'Queued');
   assert.equal(getYouTubeStageLabel('FETCHING'), 'Processing video');

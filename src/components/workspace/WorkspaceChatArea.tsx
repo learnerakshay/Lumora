@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Markdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Bot,
   BookOpen,
@@ -32,6 +33,15 @@ import { getResponseModeDisclosure, splitCitationMarkers } from './chat-presenta
 import { citationEvidenceKey, citationsForResponse, formatCitationTimestamp } from './workspace-interactions';
 import { LearningResourceSection } from './LearningResourceSection';
 import { useLearningPreferences } from '../../context/LearningPreferencesContext';
+
+// GitHub-Flavored Markdown (tables, strikethrough, task lists, autolinks) is
+// not part of CommonMark, so react-markdown needs remark-gfm explicitly —
+// without it, `| a | b |` table syntax is parsed as a plain paragraph and
+// rendered as literal pipe-delimited text instead of a <table>. A module-
+// level constant keeps a stable array reference across renders so
+// react-markdown doesn't treat the plugin list as changed on every parent
+// re-render (e.g. every streamed chunk).
+const REMARK_PLUGINS = [remarkGfm];
 
 const ACTIVE_CITATION_CLASSNAME =
   'ring-2 ring-cyan-400/70 shadow-[0_0_0_1px_rgba(34,211,238,0.16),0_0_18px_rgba(34,211,238,0.35)]';
@@ -579,7 +589,7 @@ export function WorkspaceChatArea({
                       </div>
 
                       <div className="min-w-0 max-w-[44rem] break-words text-xs md:text-sm">
-                        <Markdown components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation, inlineCitations, activeCitationId)}>{message.content}</Markdown>
+                        <Markdown remarkPlugins={REMARK_PLUGINS} components={createMarkdownComponents(messageCitations, availableSourceIds, onSelectCitation, inlineCitations, activeCitationId)}>{message.content}</Markdown>
                       </div>
 
                       <LearningResourceSection resources={message.resourceRecommendations || []} />
@@ -751,7 +761,7 @@ export function WorkspaceChatArea({
                 )}
                 {streamingText ? (
                   <div className="min-w-0 break-words text-xs md:text-sm">
-                    <Markdown components={streamingMarkdownComponents}>{streamingText}</Markdown>
+                    <Markdown remarkPlugins={REMARK_PLUGINS} components={streamingMarkdownComponents}>{streamingText}</Markdown>
                     <span aria-hidden="true" className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-sky-400 align-middle" />
                   </div>
                 ) : (

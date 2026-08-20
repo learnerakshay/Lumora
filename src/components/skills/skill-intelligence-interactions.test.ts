@@ -108,3 +108,41 @@ test('handleSubmit uses the shared submission gate to block duplicate analyze re
   assert.match(pageSource, /tryBeginSubmission\(submissionGate\.current\)/);
   assert.match(pageSource, /releaseSubmission\(submissionGate\.current\)/);
 });
+
+// Regression for "Re-run analysis" failing with "The request took too
+// long": POST /analysis re-extracts from the stored resume text through the
+// exact same runExtraction() the initial upload uses (up to two provider
+// calls, each with its own 60s ceiling in extraction-provider.ts), so the
+// server itself allows up to ~120s as a legitimate, non-hung duration for
+// this call. REANALYZE_TIMEOUT_MS was previously 20_000 — six times shorter
+// than the identical extraction step gets under ANALYZE_TIMEOUT_MS — so a
+// perfectly healthy re-run was routinely aborted client-side while the
+// server kept working (and still committed usage) after the client had
+// already shown a failure. The client ceiling must be a safe superset of the
+// server's own worst case, not an independently shorter, unrelated number.
+test('the re-run client timeout is not shorter than the extraction step it wraps can legitimately take', () => {
+  const providerSource = readFileSync(
+    new URL('../../lib/skills/extraction-provider.ts', import.meta.url),
+    'utf8',
+  );
+  const extractionTimeoutMatch = providerSource.match(/EXTRACTION_TIMEOUT_MS\s*=\s*(\d+)/);
+  const maxAttemptsMatch = providerSource.match(/MAX_ATTEMPTS\s*=\s*(\d+)/);
+  assert.ok(extractionTimeoutMatch, 'expected to find EXTRACTION_TIMEOUT_MS in extraction-provider.ts');
+  assert.ok(maxAttemptsMatch, 'expected to find MAX_ATTEMPTS in extraction-provider.ts');
+  const serverWorstCaseMs = Number(extractionTimeoutMatch![1]) * Number(maxAttemptsMatch![1]);
+
+  const analyzeTimeoutMatch = pageSource.match(/ANALYZE_TIMEOUT_MS\s*=\s*(\d+)/);
+  const reanalyzeTimeoutMatch = pageSource.match(/REANALYZE_TIMEOUT_MS\s*=\s*(\d+)/);
+  assert.ok(analyzeTimeoutMatch, 'expected to find ANALYZE_TIMEOUT_MS in SkillIntelligencePage.tsx');
+  assert.ok(reanalyzeTimeoutMatch, 'expected to find REANALYZE_TIMEOUT_MS in SkillIntelligencePage.tsx');
+  const reanalyzeTimeoutMs = Number(reanalyzeTimeoutMatch![1]);
+
+  assert.ok(
+    reanalyzeTimeoutMs >= serverWorstCaseMs,
+    `REANALYZE_TIMEOUT_MS (${reanalyzeTimeoutMs}) must be >= the extraction step's own worst case (${serverWorstCaseMs})`,
+  );
+  // Re-run shares the identical extraction bottleneck with the initial
+  // upload's ANALYZE_TIMEOUT_MS (upload additionally parses a PDF/image on
+  // top, so it is never appropriate for re-run's ceiling to exceed it).
+  assert.equal(reanalyzeTimeoutMs, Number(analyzeTimeoutMatch![1]));
+});
