@@ -27,11 +27,11 @@ Lumora is a single unified TypeScript application where you add sources — PDFs
 
 </div>
 
-### Screenshot #01 — Deep Space Hero
+### Screenshot #01 — Landing Hero
 
-![Screenshot #01 — Lumora Deep Space Hero with floating navigation, 3D knowledge sphere and one-click preset queries](docs/screenshots/01-hero-deepspace.png)
+![Screenshot #01 — Lumora landing hero](docs/screenshots/01-landing-hero.png)
 
-The landing experience: a floating island navbar, the Three.js knowledge-core canvas — the only WebGL surface in the product, deliberately confined to the landing page — and one-click preset query chips. Those chips play a clearly-scripted grounded preview: they demonstrate the shape of an answer, they are not live API calls.
+The opening Lumora experience, with the product promise, navigation, and knowledge-core visual in one focused first view.
 
 ---
 
@@ -76,59 +76,47 @@ This gate and the layered citation validation behind it are protected invariants
 
 ## Product Experience
 
-### Screenshot #02 — Spotlight Launcher
+### Screenshot #02 — Landing Product Section
 
-![Screenshot #02 — Lumora Command Palette and Spotlight Launcher](docs/screenshots/02-spotlight-launcher.png)
+![Screenshot #02 — Lumora landing product section](docs/screenshots/02-landing-product-section.png)
 
-A global `⌘K` / `Ctrl+K` command palette with live filtering, reachable anywhere the navbar renders. Four real actions: jump to the grounding demo, the Career Competency Radar, the engineering architecture drawer, or the plan comparison. Every action navigates for real, including cross-route jumps that route first and then scroll to the target.
+The landing product overview showing how sources, answers, and Workspace context fit together.
 
-### Screenshot #03 — Grounding Inspector
+### Screenshot #03 — Landing Grounding Section
 
-![Screenshot #03 — Lumora Grounding Inspector comparing grounded evidence against unsupported AI output](docs/screenshots/03-grounding-inspector.png)
+![Screenshot #03 — Lumora landing grounding section](docs/screenshots/03-landing-grounding-section.png)
 
-The `Question → Claim → Evidence → Verdict` walkthrough, which makes the GROUNDED/GENERAL distinction legible before you sign in. Toggle between a claim the Workspace evidence covers and one it doesn't, and the verdict changes: one side yields a cited Workspace answer, the other an honest, citation-free general answer. This is a self-playing explanatory demo of the real routing rule — not a live hallucination detector, and not a claim to be one.
+The landing explanation of the GROUNDED versus GENERAL answer experience and why evidence matters.
 
-### Screenshot #04 — Multi-Source Ingestion
+### Screenshot #04 — Landing Career Section
 
-![Screenshot #04 — Lumora multimodal source ingestion with YouTube transcript indexing](docs/screenshots/04-multimodal-ingestion.png)
+![Screenshot #04 — Lumora landing career section](docs/screenshots/04-landing-career-section.png)
 
-Five source types reach the same pipeline: `PDF`, `WEBSITE`, `YOUTUBE`, `VTT`, `TEXT`. YouTube is the interesting one — transcripts are acquired, timestamped, chunked with their `[HH:MM:SS.mmm]` markers intact, and embedded, so a citation can resolve to a real moment in the video rather than to "somewhere in this transcript." Note that "multi-source" here means multiple *source formats*, all reduced to text before embedding; Lumora does not perform image or audio understanding.
+The landing introduction to Career Intelligence, connecting evidence, roles, and next steps.
 
-### Screenshot #05 — Three-Pane Research Workspace
+### Screenshot #05 — Landing Footer CTA
 
-![Screenshot #05 — Lumora three-pane research Workspace with Sources, Chat and Context](docs/screenshots/05-workspace-3pane-ide.png)
+![Screenshot #05 — Lumora landing footer and call to action](docs/screenshots/05-landing-footer-cta.png)
 
-The canonical product surface, and the reason the mental model is a research IDE rather than a chat window: a Sources sidebar (type, status, version), the chat canvas with streamed Markdown, and the Context inspector holding the evidence behind the current answer. Side panes collapse to thin rails when you want the reasoning canvas at full width.
+The closing landing-page invitation, with the final call to action and product navigation.
 
-### Screenshot #06 — Bi-Directional Citations
+### Screenshot #06 — Chat General Answer
 
-![Screenshot #06 — Lumora bidirectional citation highlighting between answer and source Context](docs/screenshots/06-bidirectional-citations.png)
+![Screenshot #06 — Lumora chat general-knowledge answer](docs/screenshots/06-chat-general-answer.png)
 
-Citations are navigable in both directions: selecting an inline `[N]` marker activates the matching evidence card in the Context pane, and selecting a card activates the marker back in the answer. Both sides share one synchronized selection state, so the highlight can never drift out of sync. Where the source supports it, the citation also resolves outward — a PDF citation opens the document at its real page, and a YouTube citation opens the video at its derived timestamp, but only while the citation's source version still matches the source.
+An honest general-knowledge answer when the Workspace evidence does not cover the question.
 
-### Screenshot #07 — Active Generation Pipeline
+### Screenshot #07 — Chat Grounded Answer
 
-![Screenshot #07 — Lumora active RAG pipeline with staged retrieval and generation progress](docs/screenshots/07-active-rag-loading.png)
+![Screenshot #07 — Lumora chat grounded answer](docs/screenshots/07-chat-grounded-answer.png)
 
-The live generation state. Notice what is and isn't shown: a status line derived from the actual action and answer mode in flight, a **real** elapsed timer measured from request start, and skeleton placeholders. As the SSE stream reports them, a response-mode disclosure badge appears — *From your Workspace* or *General knowledge* — alongside live tool-status chips and any external web sources consulted. Lumora deliberately does not render a fake multi-stage backend pipeline; it shows only states the stream actually reports.
+An evidence-backed answer grounded in the selected Workspace sources.
 
-### Screenshot #08 — Career Competency Radar
+### Screenshot #08 — Chat Citations
 
-![Screenshot #08 — Lumora Career Intelligence competency radar and skill-gap analysis](docs/screenshots/08-career-competency-radar.png)
+![Screenshot #08 — Lumora chat citations and source context](docs/screenshots/08-chat-citations.png)
 
-An interactive six-axis SVG radar (System Design, RAG Pipelines, TypeScript, Vector DBs, Cloud Architecture, API Security) whose benchmark polygon morphs between three target roles against a candidate evidence polygon, with per-axis `strong` / `developing` / `missing` bands and a derived three-stage sprint roadmap. This landing visualization uses fixed, hand-set benchmark values to demonstrate the model — the real, résumé-driven analysis runs in the authenticated Career Intelligence surface, described [below](#career-intelligence).
-
-### Screenshot #09 — Resource Discovery
-
-![Screenshot #09 — Lumora Resource Discovery recommendations across ChaiCode, Udemy and YouTube](docs/screenshots/09-resource-discovery-grid.png)
-
-Recommendations render inline beneath the answer that prompted them, and inside learning-plan steps, from the same component. Each card's platform badge (YouTube / Udemy / Cohort / Website), access type, delivery mode, and language is read from resolved resource data — nothing is hardcoded per card. The curated catalog holds 69 real resources across those four platforms; Tavily discovery, when configured, adds to that pool rather than replacing it.
-
-### Screenshot #10 — Pricing
-
-![Screenshot #10 — Lumora pricing tiers](docs/screenshots/10-pricing-architecture.png)
-
-FREE / CORE / MAX with CORE marked as the recommended tier, every limit and price derived from the backend's own constants rather than restated in the UI. The public footer stays focused on product, company, legal, and contact navigation. The unlinked `/api/health` endpoint remains available for deployment warm-up and infrastructure monitoring.
+The answer view with readable citation references and the source context behind them.
 
 ---
 
@@ -270,6 +258,12 @@ Index promotion is the part worth reading twice: it runs as **one Serializable t
 
 Career Intelligence is a deterministic analysis engine with a narrow, well-fenced AI boundary — not a radar chart with an LLM behind it.
 
+### Screenshot #09 — Skill Role Fit
+
+![Screenshot #09 — Lumora skill role-fit analysis](docs/screenshots/09-skill-role-fit.png)
+
+The authenticated Skill Intelligence surface turns résumé evidence into explainable role-fit signals.
+
 **1 · Extraction.** A résumé (PDF or image, with an image fallback path for scanned documents) is parsed into a structured profile using OpenAI strict-mode JSON-schema output. Each extracted skill carries the evidence backing it, classified as `MENTIONED`, `APPLIED`, or `SHIPPED`.
 
 **2 · Normalization.** Skills are normalized against a taxonomy so "React.js", "ReactJS", and "React" collapse into one competency with one evidence level.
@@ -279,6 +273,18 @@ Career Intelligence is a deterministic analysis engine with a narrow, well-fence
 **4 · Gap analysis.** Fully deterministic and rule-keyed. Each gap carries a category (`technical-gap`, `project-proof`, `interview-prep`), a severity (`LOW` / `MEDIUM` / `HIGH`) derived from requirement weight against the shortfall between required and observed evidence, and the evidence that produced it. **No model assigns your fit score or your severity.**
 
 **5 · Learning path.** Up to six selected gaps become a staged plan (`now` / `next` / `later`, capped at eight steps): why it matters → priority → required competency → closure steps → an evidence task → resources, plus a readiness report. Priority is a deterministic score of severity rank × requirement weight × evidence shortfall. Exactly **one** AI call participates, and it emits prose only against a strict schema; any missing or mismatched field falls back to deterministic text and the plan still succeeds. The builder accepts only structured gap and role data — never résumé free text — so it structurally cannot re-analyze the résumé.
+
+### Screenshot #10 — Skill Gap Analysis
+
+![Screenshot #10 — Lumora skill gap analysis](docs/screenshots/10-skill-gap-analysis.png)
+
+The deterministic gap analysis shows where evidence is strong, developing, or still needed for the selected role.
+
+### Screenshot #11 — Skill Learning Path
+
+![Screenshot #11 — Lumora skill learning path](docs/screenshots/11-skill-learning-path.png)
+
+Selected gaps become a staged `now` / `next` / `later` learning path with closure steps, evidence tasks, and linked resources.
 
 A plan can spawn an **empty** linked Workspace, contract-tested to import nothing from the ingestion modules: a recommendation can never silently become Workspace evidence.
 
@@ -303,6 +309,12 @@ Two independent concepts, deliberately not conflated:
 
 - **Usage limits** are per user, per action, in a **rolling 12-hour window**. Not a calendar-day reset, and not affected by when you paid.
 - **Paid access** is a **one-time 30-day window**. Not a subscription. Nothing auto-renews and there is nothing to cancel.
+
+### Screenshot #12 — Rolling Usage Limits
+
+![Screenshot #12 — Lumora rolling usage limits](docs/screenshots/12-rolling-usage-limits.png)
+
+Usage is presented as a rolling 12-hour window per user and action. The visible counters and remaining allowances are derived from the same plan and usage state enforced by the backend.
 
 ### Limits
 
