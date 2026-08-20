@@ -124,11 +124,11 @@ An interactive six-axis SVG radar (System Design, RAG Pipelines, TypeScript, Vec
 
 Recommendations render inline beneath the answer that prompted them, and inside learning-plan steps, from the same component. Each card's platform badge (YouTube / Udemy / Cohort / Website), access type, delivery mode, and language is read from resolved resource data — nothing is hardcoded per card. The curated catalog holds 69 real resources across those four platforms; Tavily discovery, when configured, adds to that pool rather than replacing it.
 
-### Screenshot #10 — Pricing & Engineering Architecture
+### Screenshot #10 — Pricing
 
-![Screenshot #10 — Lumora pricing tiers and expandable Engineering Architecture blueprint](docs/screenshots/10-pricing-architecture.png)
+![Screenshot #10 — Lumora pricing tiers](docs/screenshots/10-pricing-architecture.png)
 
-FREE / CORE / MAX with CORE marked as the recommended tier, every limit and price derived from the backend's own constants rather than restated in the UI. Below the fold, the footer carries an expandable **View Engineering Architecture** drawer and a live `/api/health` beacon that reports operational / degraded state from a real probe of Postgres and pgvector readiness — not a decorative status dot.
+FREE / CORE / MAX with CORE marked as the recommended tier, every limit and price derived from the backend's own constants rather than restated in the UI. The public footer stays focused on product, company, legal, and contact navigation. The unlinked `/api/health` endpoint remains available for deployment warm-up and infrastructure monitoring.
 
 ---
 
@@ -505,6 +505,12 @@ lumora/
 ├── CLAUDE.md                  # Engineering guide — invariants, phase status, known issues
 └── vercel.json
 ```
+
+---
+
+## Hackathon Presentation
+
+The final ChaiCode Combinator presentation is available at [`docs/hackathon/CHAICOMBINATOR_LUMORA.pptx`](docs/hackathon/CHAICOMBINATOR_LUMORA.pptx).
 
 ---
 

@@ -542,7 +542,7 @@ test('full lifecycle: no source stays GENERAL, a newly-READY relevant source gro
 
 test('GENERAL fallback text never claims Lumora lacks access to an existing source, and stays citation-free', () => {
   assert.doesNotMatch(GENERAL_FALLBACK_PREAMBLE, /access|upload|share the video|don't have/i);
-  assert.match(GENERAL_FALLBACK_PREAMBLE, /doesn't contain enough material/i);
+  assert.match(GENERAL_FALLBACK_PREAMBLE, /couldn't find enough relevant evidence/i);
 
   const emitted: string[] = [];
   const stream = new GeneralResponseSafeStream((text) => emitted.push(text));

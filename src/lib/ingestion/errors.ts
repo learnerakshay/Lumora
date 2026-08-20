@@ -39,6 +39,23 @@ export interface IngestionErrorClassification {
   httpStatus?: number;
 }
 
+export interface IngestionErrorContext {
+  stage?:
+    | 'CREATED'
+    | 'QUEUED'
+    | 'PROCESSING'
+    | 'FETCHING'
+    | 'PARSING'
+    | 'CHUNKING'
+    | 'READY_FOR_INDEXING'
+    | 'EMBEDDING'
+    | 'INDEXING'
+    | 'COMPLETED'
+    | 'FAILED';
+  sourceType?: 'PDF' | 'WEBSITE' | 'TEXT' | 'YOUTUBE' | 'VTT';
+  acquisitionMode?: 'UPLOADED_BYTES' | 'REMOTE_URL' | 'PERSISTED_CONTENT' | 'MISSING';
+}
+
 export class IngestionFailure extends Error {
   readonly errorCode: IngestionErrorCode;
   readonly retryable: boolean;
@@ -115,7 +132,10 @@ function classification(
   return { errorCode, errorCategory: errorCode, userMessage, retryable };
 }
 
-export function classifyIngestionError(error: unknown): IngestionErrorClassification {
+export function classifyIngestionError(
+  error: unknown,
+  context: IngestionErrorContext = {},
+): IngestionErrorClassification {
   if (error instanceof IngestionFailure) {
     return {
       errorCode: error.errorCode,
@@ -141,6 +161,49 @@ export function classifyIngestionError(error: unknown): IngestionErrorClassifica
         false,
       );
     }
+
+    // The stage persisted by the pipeline is authoritative. In particular,
+    // an uploaded PDF is already represented by durable database bytes, so a
+    // parser/provider error containing a word such as "fetch", "HTTP", or
+    // "timeout" must not be relabelled as failure to fetch the source itself.
+    if (context.stage === 'FETCHING') {
+      return classification(
+        'FETCH_ERROR',
+        'Lumora could not fetch the remote source. Please retry shortly.',
+        true,
+      );
+    }
+    if (context.stage === 'PARSING') {
+      return classification(
+        'PARSING_ERROR',
+        context.sourceType === 'PDF'
+          ? 'Lumora received the PDF but could not extract readable content.'
+          : 'Lumora could not extract readable content from this source.',
+        false,
+      );
+    }
+    if (context.stage === 'CHUNKING') {
+      return classification(
+        'CHUNKING_ERROR',
+        'The extracted source did not contain enough usable content to index.',
+        false,
+      );
+    }
+    if (context.stage === 'EMBEDDING' || context.stage === 'READY_FOR_INDEXING') {
+      return classification(
+        'EMBEDDING_ERROR',
+        'Lumora could not prepare this source for search. Please retry shortly.',
+        true,
+      );
+    }
+    if (context.stage === 'INDEXING') {
+      return classification(
+        'INDEXING_ERROR',
+        'Lumora could not commit the source index. Please retry shortly.',
+        true,
+      );
+    }
+
     if (FETCH_ERROR_MARKERS.some((marker) => message.includes(marker))) {
       return classification(
         'FETCH_ERROR',

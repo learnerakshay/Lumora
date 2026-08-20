@@ -17,6 +17,12 @@ import { classifyIngestionError } from './errors';
 const CHUNK_VERSION = 'semantic-1200-200-v1';
 export const YOUTUBE_HEARTBEAT_INTERVAL_MS = 30_000;
 
+export type SourceAcquisitionMode =
+  | 'UPLOADED_BYTES'
+  | 'REMOTE_URL'
+  | 'PERSISTED_CONTENT'
+  | 'MISSING';
+
 export interface IngestionOptions {
   sourceId: string;
   workspaceId: string;
@@ -33,20 +39,70 @@ export interface IngestionOptions {
   dispatchedAt?: number;
 }
 
-function requiresRemoteFetch(
+export function resolveSourceAcquisitionMode(
   type: SourceType,
   artifact: Awaited<ReturnType<typeof getSourceArtifact>>,
-): boolean {
-  if (!artifact) return false;
-  if (type === 'PDF') return !artifact.artifactData && Boolean(artifact.sourceUrl);
+): SourceAcquisitionMode {
+  if (!artifact) return 'MISSING';
+  if (type === 'PDF') {
+    if (artifact.artifactData?.byteLength) return 'UPLOADED_BYTES';
+    return artifact.sourceUrl ? 'REMOTE_URL' : 'MISSING';
+  }
   if (type === 'WEBSITE') {
-    return !artifact.originalContent || !/<html|<!doctype|<body/i.test(artifact.originalContent);
+    return artifact.originalContent && /<html|<!doctype|<body/i.test(artifact.originalContent)
+      ? 'PERSISTED_CONTENT'
+      : artifact.sourceUrl
+        ? 'REMOTE_URL'
+        : 'MISSING';
   }
   if (type === 'YOUTUBE') {
-    return !artifact.originalContent?.startsWith('{"kind":"youtube-transcript-v1"');
+    return artifact.originalContent?.startsWith('{"kind":"youtube-transcript-v1"')
+      ? 'PERSISTED_CONTENT'
+      : artifact.sourceUrl
+        ? 'REMOTE_URL'
+        : 'MISSING';
   }
-  if (type === 'VTT') return !artifact.originalContent && Boolean(artifact.sourceUrl);
-  return false;
+  if (type === 'VTT') {
+    return artifact.originalContent
+      ? 'PERSISTED_CONTENT'
+      : artifact.sourceUrl
+        ? 'REMOTE_URL'
+        : 'MISSING';
+  }
+  return artifact.originalContent ? 'PERSISTED_CONTENT' : 'MISSING';
+}
+
+interface IngestionPipelineDependencies {
+  getSourceArtifact: typeof getSourceArtifact;
+  claimProcessingAttempt: typeof claimProcessingAttempt;
+  persistParsedSourceArtifact: typeof persistParsedSourceArtifact;
+  touchProcessingAttempt: typeof touchProcessingAttempt;
+  transitionProcessingStage: typeof transitionProcessingStage;
+  parseSourceContent: typeof parseSourceContent;
+  generateSemanticChunks: typeof generateSemanticChunks;
+  generateEmbeddingsBatch: typeof generateEmbeddingsBatch;
+  saveSourceIndex: typeof saveSourceIndex;
+}
+
+const DEFAULT_PIPELINE_DEPENDENCIES: IngestionPipelineDependencies = {
+  getSourceArtifact,
+  claimProcessingAttempt,
+  persistParsedSourceArtifact,
+  touchProcessingAttempt,
+  transitionProcessingStage,
+  parseSourceContent,
+  generateSemanticChunks,
+  generateEmbeddingsBatch,
+  saveSourceIndex,
+};
+
+function safeRemoteTargetHost(sourceUrl: string | null): string | null {
+  if (!sourceUrl) return null;
+  try {
+    return new URL(sourceUrl).hostname || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function runWithPeriodicHeartbeat<T>(
@@ -80,7 +136,10 @@ export async function runWithPeriodicHeartbeat<T>(
   }
 }
 
-export async function processSourcePipeline(options: IngestionOptions): Promise<{
+export async function processSourcePipeline(
+  options: IngestionOptions,
+  dependencyOverrides: Partial<IngestionPipelineDependencies> = {},
+): Promise<{
   success: boolean;
   chunkCount: number;
   tokenCount: number;
@@ -90,12 +149,20 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   model?: string;
   inputTokens?: number;
 }> {
-  const artifact = await getSourceArtifact(options.sourceId, options.version);
+  const dependencies = {
+    ...DEFAULT_PIPELINE_DEPENDENCIES,
+    ...dependencyOverrides,
+  };
+  const artifact = await dependencies.getSourceArtifact(options.sourceId, options.version);
   if (!artifact) {
     throw new Error(`Persisted artifact not found for source ${options.sourceId}`);
   }
+  const acquisitionMode = resolveSourceAcquisitionMode(options.type, artifact);
+  const remoteTargetHost = acquisitionMode === 'REMOTE_URL'
+    ? safeRemoteTargetHost(artifact.sourceUrl)
+    : null;
   const version = artifact.version;
-  const processingAttemptId = await claimProcessingAttempt({
+  const processingAttemptId = await dependencies.claimProcessingAttempt({
     sourceId: options.sourceId,
     version,
   });
@@ -138,7 +205,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       durationMs: previousStageDurationMs,
       nextStage,
     });
-    await transitionProcessingStage({
+    await dependencies.transitionProcessingStage({
       sourceId: options.sourceId,
       version,
       nextStage,
@@ -153,7 +220,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
   };
 
   const heartbeat = async (): Promise<void> => {
-    const touched = await touchProcessingAttempt({
+    const touched = await dependencies.touchProcessingAttempt({
       sourceId: options.sourceId,
       version,
       stage: currentStage,
@@ -169,12 +236,14 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     processingAttemptId,
     attemptNumber: version,
     sourceType: options.type,
+    acquisitionMode,
+    remoteTargetHost,
   });
 
   try {
     await enterStage('PROCESSING');
 
-    const needsFetch = requiresRemoteFetch(options.type, artifact);
+    const needsFetch = acquisitionMode === 'REMOTE_URL';
     let parsingTransitionCompleted = false;
     if (needsFetch) {
       await enterStage('FETCHING');
@@ -183,7 +252,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       parsingTransitionCompleted = true;
     }
 
-    const parse = () => parseSourceContent({
+    const parse = () => dependencies.parseSourceContent({
       type: options.type,
       title: options.title,
       sourceUrl: artifact.sourceUrl,
@@ -211,7 +280,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       throw new Error(`${options.type} parser produced empty content`);
     }
 
-    await persistParsedSourceArtifact({
+    await dependencies.persistParsedSourceArtifact({
       sourceId: options.sourceId,
       version,
       originalContent: parsed.originalContent,
@@ -233,7 +302,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       artifactSize: parsed.artifactSize ?? null,
     });
 
-    const chunks = generateSemanticChunks(parsed.cleanText, {
+    const chunks = dependencies.generateSemanticChunks(parsed.cleanText, {
       targetChunkSize: 1200,
       overlapSize: 200,
     });
@@ -244,7 +313,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     await enterStage('READY_FOR_INDEXING', { chunkCount: chunks.length });
     await enterStage('EMBEDDING', { chunkCount: chunks.length });
 
-    const embeddingBatch = await generateEmbeddingsBatch(
+    const embeddingBatch = await dependencies.generateEmbeddingsBatch(
       chunks.map((chunk) => chunk.content),
       async (_processed, _total, progress) => {
         await heartbeat();
@@ -289,7 +358,7 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
     const ingestionModel = options.type === 'YOUTUBE'
       ? `${youtubeAcquisitionProvider === 'gemini' ? 'gemini-3.6-flash' : youtubeAcquisitionProvider} + ${embeddingBatch.contract.model}`
       : embeddingBatch.contract.model;
-    const committedIndex = await saveSourceIndex({
+    const committedIndex = await dependencies.saveSourceIndex({
       workspaceId: options.workspaceId,
       sourceId: options.sourceId,
       sourceVersion: version,
@@ -398,7 +467,11 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
         : {}),
     };
   } catch (error: any) {
-    const classification = classifyIngestionError(error);
+    const classification = classifyIngestionError(error, {
+      stage: currentStage,
+      sourceType: options.type,
+      acquisitionMode,
+    });
     const failedStageDurationMs = Date.now() - stageStartedAt;
     logger.error('Ingestion attempt failed', error, {
       sourceId: options.sourceId,
@@ -419,10 +492,12 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
       retryable: classification.retryable,
       provider: classification.provider,
       httpStatus: classification.httpStatus,
+      acquisitionMode,
+      remoteTargetHost,
     });
 
     try {
-      await transitionProcessingStage({
+      await dependencies.transitionProcessingStage({
         sourceId: options.sourceId,
         version,
         nextStage: 'FAILED',
@@ -435,6 +510,8 @@ export async function processSourcePipeline(options: IngestionOptions): Promise<
           retryable: classification.retryable,
           provider: classification.provider,
           httpStatus: classification.httpStatus,
+          acquisitionMode,
+          remoteTargetHost,
           failedStage: currentStage,
           failedStageDurationMs,
           totalDurationMs: Date.now() - pipelineStartedAt,

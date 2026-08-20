@@ -16,6 +16,16 @@ export interface EvidenceSufficiencyAssessment {
   coveredTopicGroupCount: number;
 }
 
+export interface EvidenceSufficiencyOptions {
+  /**
+   * Topic-group queries that independently retrieved at least one validated
+   * chunk which survived context construction. This lets the vector retriever
+   * establish semantic coverage without pretending that a literal token match
+   * is the only possible proof of relevance.
+   */
+  semanticallyCoveredTopicQueries?: Iterable<string>;
+}
+
 interface GroundedHistoryMessage {
   id: string;
   parentMessageId: string | null;
@@ -30,7 +40,7 @@ export const NO_SOURCES_META_RESPONSE =
   "There are currently no sources in this Workspace. Add a PDF, website, YouTube video, or text note when you'd like answers grounded in your own material.";
 
 export const GENERAL_FALLBACK_PREAMBLE =
-  "This Workspace doesn't contain enough material covering that, so here's a general answer:\n\n";
+  "I couldn't find enough relevant evidence in this Workspace, so here's a general answer:\n\n";
 
 const POSSESSIVE_SOURCE_REFERENCE =
   /\b(?:my|the)\s+(?:uploaded\s+)?(?:uploads?|sources?|documents?|docs?|notes?|files?|materials?)\b/i;
@@ -152,10 +162,22 @@ function distinctiveTopicGroups(query: string): string[][] {
     .filter((group) => group.length > 0);
 }
 
+function topicGroupQuery(group: string[]): string {
+  return group.join(' ');
+}
+
+/**
+ * Produces stable, normalized topic queries for bounded semantic coverage
+ * retrieval. The returned queries contain no user-request scaffolding.
+ */
+export function distinctiveTopicQueries(query: string): string[] {
+  return distinctiveTopicGroups(query).map(topicGroupQuery);
+}
+
 export function normalizedDistinctiveTopicQuery(query: string): string | null {
-  const groups = distinctiveTopicGroups(query);
-  return groups.length > 0
-    ? groups.map((group) => group.join(' ')).join(' and ')
+  const queries = distinctiveTopicQueries(query);
+  return queries.length > 0
+    ? queries.join(' and ')
     : null;
 }
 
@@ -206,13 +228,15 @@ function hasTopicToken(tokens: Set<string>, topicToken: string): boolean {
 /**
  * The embedding threshold establishes candidate relevance; this second,
  * deterministic gate establishes complete topic coverage. Every distinctive
- * requested topic group must be represented in at least one actual context
- * chunk. Generic follow-ups with no extractable topic keep the existing
- * semantic-only behavior.
+ * requested topic group must either be represented lexically in an actual
+ * context chunk or be confirmed by a bounded, topic-specific semantic search
+ * whose validated result survived context construction. Generic follow-ups
+ * with no extractable topic keep the existing semantic-only behavior.
  */
 export function assessWorkspaceEvidenceSufficiency(
   query: string,
   evidence: AnswerabilityEvidence[],
+  options: EvidenceSufficiencyOptions = {},
 ): EvidenceSufficiencyAssessment {
   if (evidence.length === 0) {
     return {
@@ -236,7 +260,15 @@ export function assessWorkspaceEvidenceSufficiency(
   const evidenceTokenSets = evidence.map(({ content, sourceTitle }) =>
     contentTokens(`${sourceTitle}\n${content}`),
   );
+  const semanticallyCoveredTopicQueries = new Set(
+    [...(options.semanticallyCoveredTopicQueries || [])]
+      .flatMap((topicQuery) => distinctiveTopicQueries(topicQuery))
+      .map((topicQuery) => topicQuery.toLowerCase()),
+  );
   const coveredTopicGroupCount = topicGroups.filter((group) => {
+    if (semanticallyCoveredTopicQueries.has(topicGroupQuery(group).toLowerCase())) {
+      return true;
+    }
     const requiredMatches = requiredTopicMatches(group);
     return evidenceTokenSets.some((tokens) => {
       const matches = group.filter((token) => hasTopicToken(tokens, token)).length;

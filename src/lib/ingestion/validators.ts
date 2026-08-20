@@ -13,6 +13,19 @@ export interface SourceValidationResult {
   normalizedUrl?: string;
 }
 
+export function resolveSourceUrlForPersistence(input: {
+  type: SourceType;
+  hasUploadedFile: boolean;
+  normalizedUrl?: string | null;
+  submittedUrl?: string | null;
+}): string | null {
+  // Uploaded PDFs are durable byte artifacts owned by Lumora. Even if a URL
+  // was also present in the form, retaining it would blur the acquisition
+  // boundary and could make a later retry look like a remote-source job.
+  if (input.type === 'PDF' && input.hasUploadedFile) return null;
+  return input.normalizedUrl || input.submittedUrl || null;
+}
+
 function normalizeHttpsUrl(input: string): string | null {
   try {
     const url = new URL(input.trim());

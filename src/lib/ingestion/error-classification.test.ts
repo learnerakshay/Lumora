@@ -56,3 +56,40 @@ test('falls back to a retryable user-safe unknown classification', () => {
     retryable: true,
   });
 });
+
+test('uses the persisted pipeline stage instead of misleading HTTP/fetch words', () => {
+  assert.deepEqual(
+    classifyIngestionError(
+      new Error('PDF parser helper failed to fetch an internal font over HTTP'),
+      {
+        stage: 'PARSING',
+        sourceType: 'PDF',
+        acquisitionMode: 'UPLOADED_BYTES',
+      },
+    ),
+    {
+      errorCode: 'PARSING_ERROR',
+      errorCategory: 'PARSING_ERROR',
+      userMessage: 'Lumora received the PDF but could not extract readable content.',
+      retryable: false,
+    },
+  );
+
+  assert.equal(
+    classifyIngestionError(new Error('OpenAI request failed over HTTP'), {
+      stage: 'EMBEDDING',
+      sourceType: 'PDF',
+      acquisitionMode: 'UPLOADED_BYTES',
+    }).errorCode,
+    'EMBEDDING_ERROR',
+  );
+
+  assert.equal(
+    classifyIngestionError(new Error('socket timeout'), {
+      stage: 'FETCHING',
+      sourceType: 'PDF',
+      acquisitionMode: 'REMOTE_URL',
+    }).errorCode,
+    'FETCH_ERROR',
+  );
+});

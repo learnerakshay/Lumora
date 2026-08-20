@@ -1,18 +1,6 @@
-import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChevronDown, Cloud, Database, KeyRound, Mail, Radio, Send, Zap } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import { LumoraBrand } from './LumoraBrand';
-
-type HealthStatus = 'checking' | 'operational' | 'degraded';
-
-const ARCHITECTURE_STAGES = [
-  { icon: Zap, label: 'React 19 SPA', detail: 'Vite-built client, code-split per route' },
-  { icon: KeyRound, label: 'Clerk Auth', detail: 'Session verified on every API request' },
-  { icon: Radio, label: 'Express API', detail: '/api/workspaces + /api/usage routers' },
-  { icon: Database, label: 'Retrieval Guardrails', detail: 'pgvector cosine search + Workspace isolation checks' },
-  { icon: Cloud, label: 'Prisma → Neon Postgres', detail: 'Pooled connection, pgvector storage' },
-  { icon: Send, label: 'SSE Stream', detail: 'Token-by-token response back to the client' },
-] as const;
 
 interface FooterLink {
   label: string;
@@ -45,24 +33,6 @@ const linkClasses =
 export function Footer() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [health, setHealth] = useState<HealthStatus>('checking');
-
-  // A real check against the real endpoint, fetched once on mount — not a
-  // fabricated uptime percentage. No third-party status-page integration
-  // exists, so this is honestly scoped to "is the API reachable right now."
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/health')
-      .then((response) => {
-        if (!cancelled) setHealth(response.ok ? 'operational' : 'degraded');
-      })
-      .catch(() => {
-        if (!cancelled) setHealth('degraded');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Overview/Features are landing-page anchor sections, not routes. From any
   // other page, navigate home first, then scroll once the landing chunk has
@@ -142,64 +112,12 @@ export function Footer() {
           </nav>
         </div>
 
-        <details id="architecture-drawer" className="group mt-10 rounded-2xl border border-slate-800/80 bg-[#101826]/70">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-xs font-semibold text-slate-200 [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
-            <span className="inline-flex items-center gap-2">
-              <Zap className="h-3.5 w-3.5 text-cyan-400" strokeWidth={1.8} />
-              View Engineering Architecture
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform duration-200 group-open:rotate-180 group-open:text-cyan-300" />
-          </summary>
-          <div className="flex flex-wrap items-stretch gap-2 px-4 pb-5">
-            {ARCHITECTURE_STAGES.map((stage, index) => (
-              <React.Fragment key={stage.label}>
-                <div className="flex min-w-[9.5rem] flex-1 items-start gap-2 rounded-lg border border-slate-800/70 bg-slate-900/60 p-2.5">
-                  <stage.icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-400" strokeWidth={1.75} />
-                  <div>
-                    <p className="text-[11px] font-semibold text-slate-200">{stage.label}</p>
-                    <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">{stage.detail}</p>
-                  </div>
-                </div>
-                {index < ARCHITECTURE_STAGES.length - 1 && (
-                  <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 self-center text-slate-700 sm:block" aria-hidden="true" />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-        </details>
-
-        <div className="mt-6 flex flex-col items-center justify-between gap-4 border-t border-slate-800/40 pt-6 sm:flex-row">
+        <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-slate-800/40 pt-6 sm:flex-row">
           <span className="text-slate-500">© 2026 Lumora. AI Knowledge Workspace.</span>
-          <div className="flex items-center gap-5">
-            <a
-              href="/api/health"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-[11px] text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-            >
-              <span
-                aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${
-                  health === 'operational'
-                    ? 'animate-pulse bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                    : health === 'degraded'
-                      ? 'bg-rose-400'
-                      : 'bg-slate-600'
-                }`}
-              />
-              <span>
-                {health === 'operational'
-                  ? 'All Systems Operational'
-                  : health === 'degraded'
-                    ? 'Service Degraded'
-                    : 'Checking status…'}
-              </span>
-            </a>
-            <Link to="/contact" className={`${linkClasses} flex items-center gap-1.5`}>
-              <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
-              <span>Contact</span>
-            </Link>
-          </div>
+          <Link to="/contact" className={`${linkClasses} flex items-center gap-1.5`}>
+            <Mail className="h-3.5 w-3.5" strokeWidth={1.8} />
+            <span>Contact</span>
+          </Link>
         </div>
       </div>
     </footer>

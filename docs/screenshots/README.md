@@ -192,11 +192,11 @@ Verify:
 
 ---
 
-## Screenshot #10 — Pricing & Engineering Architecture
+## Screenshot #10 — Pricing
 
 - **Filename:** `10-pricing-architecture.png`
 - **Viewport:** 1440 × 1000 width; **full-page capture** (see note)
-- **Route:** `/pricing`, with the footer's **View Engineering Architecture** drawer expanded
+- **Route:** `/pricing`, with the plan comparison and production footer visible
 
 Verify:
 
@@ -204,8 +204,8 @@ Verify:
 - [ ] CORE's recommended-tier treatment visible (raised card, gradient border, "Recommended" tag)
 - [ ] Prices and the one-time / 30-day access language accurate and readable
 - [ ] The real quota differences are visible in the comparison table
-- [ ] The Engineering Architecture drawer is expanded, not collapsed
-- [ ] The `/api/health` beacon in the footer is visible and showing an operational state
+- [ ] The footer retains Product, Company, Legal, and Contact navigation
+- [ ] No engineering diagnostics or backend health link appears in the public footer
 - [ ] No test-payment credentials, no coupon codes you don't want public, no personal billing information
 
 **Viewport note — read before capturing.** On `/pricing` the real page order is: pricing cards → comparison table → FAQ accordion → footer (which is where the architecture drawer and the health beacon live). Those two subjects are separated by roughly a full page of content, so **no single 1440 × 1000 viewport contains both.** Rather than fabricating a composite layout that does not exist, capture this one as a **full-page screenshot at 1440 CSS px width** with the drawer already expanded, so pricing and architecture appear in one continuous, truthful image. If a full-page capture is unavailable, collapse the FAQ accordion items first to shorten the page, then take the tallest single capture your tool allows — and prioritize the pricing cards plus the expanded drawer over the FAQ.

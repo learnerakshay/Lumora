@@ -7,7 +7,10 @@ import {
   RetrievedChunk,
   searchWorkspaceChunks,
 } from './rag-service';
-import { assessWorkspaceEvidenceSufficiency } from '../chat/grounding-router';
+import {
+  assessWorkspaceEvidenceSufficiency,
+  selectResponseModeAfterRetrieval,
+} from '../chat/grounding-router';
 import { cleanExtractedText } from '../ingestion/cleaner';
 import { generateSemanticChunks } from '../ingestion/chunker';
 
@@ -220,6 +223,48 @@ test('citations preserve PDF page, website URL, and transcript timestamps', () =
   );
   assert.equal(vtt.timestampStartMs, 4_000);
   assert.equal(vtt.timestampEndMs, 6_000);
+});
+
+test('relevant indexed PDF evidence selects GROUNDED with a page citation', () => {
+  const query = 'How are PDF chunks indexed?';
+  const pdfContent =
+    '[Page 2]\nPDF chunks are indexed for search with embedding vectors.';
+  const ragContext = buildRAGContext(
+    [
+      chunk({
+        sourceType: 'PDF',
+        sourceTitle: 'PDF Ingestion Guide',
+        content: pdfContent,
+        sourceCleanText: pdfContent,
+        parserMetadata: {
+          pages: [
+            {
+              pageNumber: 2,
+              text: pdfContent,
+              characterStart: 0,
+              characterEnd: pdfContent.length,
+            },
+          ],
+        },
+      }),
+    ],
+    query,
+    'CONCISE',
+  );
+  const assessment = assessWorkspaceEvidenceSufficiency(query, ragContext.chunks);
+  const responseMode = selectResponseModeAfterRetrieval({
+    hasContext: ragContext.hasContext,
+    hasSufficientEvidence: assessment.sufficient,
+    isAIAction: false,
+    isWorkspaceMeta: false,
+  });
+
+  assert.equal(responseMode, 'GROUNDED');
+  assert.equal(ragContext.citations.length, 1);
+  assert.equal(ragContext.citations[0].sourceId, 'source-1');
+  assert.equal(ragContext.citations[0].kind, 'DOCUMENT');
+  assert.equal(ragContext.citations[0].page, 2);
+  assert.equal(ragContext.citations[0].textOrigin, 'PDF page 2');
 });
 
 test('createCitation never throws for chunks produced from a long real YouTube transcript', () => {

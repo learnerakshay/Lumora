@@ -17,6 +17,10 @@ const workspacePageSource = readFileSync(
   new URL('../../pages/WorkspaceDetailPage.tsx', import.meta.url),
   'utf8',
 );
+const evidenceRecoverySource = readFileSync(
+  new URL('./evidence-recovery.ts', import.meta.url),
+  'utf8',
+);
 
 test('normal chat keeps one shared CHAT reservation boundary for both response modes', () => {
   assert.equal((streamRoute.match(/checkAndReserve\(/g) || []).length, 1);
@@ -30,7 +34,7 @@ test('zero-source deterministic handling contains no retrieval or provider call'
   const start = streamRoute.indexOf(
     "if (initialChatRoute.kind === 'DETERMINISTIC_NO_SOURCES')",
   );
-  const end = streamRoute.indexOf('let retrievedChunks = [];', start);
+  const end = streamRoute.indexOf('let retrievedChunks: RetrievedChunk[] = [];', start);
   assert.ok(start >= 0 && end > start);
   const branch = streamRoute.slice(start, end);
   assert.doesNotMatch(branch, /searchWorkspaceChunks|orchestrateGroundedResponse/);
@@ -40,7 +44,7 @@ test('zero-source deterministic handling contains no retrieval or provider call'
 
 test('Case C keeps the existing retrieval threshold, citation filter, and durable lifecycle', () => {
   assert.match(streamRoute, /topK: 5,\s*threshold: 0\.15/);
-  assert.match(streamRoute, /buildRAGContext\(retrievedChunks, retrievalQuery, mode\)/);
+  assert.match(streamRoute, /recoverWorkspaceEvidence\(\{/);
   assert.match(streamRoute, /citationsUsedByResponse\(generated\.text, ragContext\.citations\)/);
   assert.match(streamRoute, /CitationSafeStream/);
   assert.match(streamRoute, /replaceWorkspaceAssistantMessage/);
@@ -48,7 +52,7 @@ test('Case C keeps the existing retrieval threshold, citation filter, and durabl
 });
 
 test('Case D requires complete evidence coverage before exposing Workspace context or citations', () => {
-  assert.match(streamRoute, /assessWorkspaceEvidenceSufficiency\(answerabilityQuery, ragContext\.chunks\)/);
+  assert.match(streamRoute, /evidenceSufficiency = recovery\.assessment/);
   assert.match(
     streamRoute,
     /const hasGroundedContext = responseMode === 'GROUNDED' && ragContext\.hasContext/,
@@ -66,17 +70,18 @@ test('Case D requires complete evidence coverage before exposing Workspace conte
   assert.match(streamRoute, /hasWorkspaceContext: hasGroundedContext/);
 });
 
-test('insufficient topic evidence gets exactly one bounded owned-Workspace recovery search', () => {
+test('insufficient topic evidence gets bounded per-topic owned-Workspace recovery searches', () => {
   assert.match(streamRoute, /const recoveryQuery = requestedTopicQuery \|\| followUpTopicQuery/);
-  assert.equal((streamRoute.match(/searchWorkspaceChunks\(/g) || []).length, 3);
+  assert.match(evidenceRecoverySource, /MAX_RECOVERY_TOPIC_QUERIES = 6/);
+  assert.match(evidenceRecoverySource, /Promise\.all\(/);
   assert.match(
-    streamRoute,
-    /searchWorkspaceChunks\(\s*workspaceId,\s*res\.locals\.userId,\s*recoveryQuery,\s*\{ topK: 5, threshold: 0\.15 \}/,
+    evidenceRecoverySource,
+    /search\(input\.workspaceId, input\.userId, topicQuery, \{\s*topK: RECOVERY_TOP_K_PER_TOPIC,\s*threshold: RECOVERY_SIMILARITY_THRESHOLD/,
   );
-  assert.match(streamRoute, /\.slice\(0, 10\)/);
+  assert.match(evidenceRecoverySource, /MAX_COMBINED_CHUNKS = 10/);
   assert.match(
-    streamRoute,
-    /evidenceSufficiency = assessWorkspaceEvidenceSufficiency\(\s*answerabilityQuery,\s*ragContext\.chunks/,
+    evidenceRecoverySource,
+    /semanticallyCoveredTopicQueries/,
   );
   assert.equal((streamRoute.match(/checkAndReserve\(/g) || []).length, 1);
 });
@@ -112,7 +117,7 @@ test('auth and Workspace ownership middleware still guard the shared chat route'
 test('the route uses authenticated source state and has no LLM routing classifier', () => {
   assert.match(
     streamRoute,
-    /Number\(res\.locals\.workspace\.sourcesCount \|\| 0\)/,
+    /workspaceSourcesSnapshot = await getWorkspaceSources\(workspaceId\)/,
   );
   assert.equal((streamRoute.match(/selectInitialChatRoute\(/g) || []).length, 1);
 });

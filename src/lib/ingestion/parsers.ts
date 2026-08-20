@@ -94,22 +94,43 @@ async function parsePdfSource(
   }
 
   if (!data?.byteLength) {
-    throw new Error('PDF artifact is missing');
+    throw new IngestionFailure({
+      message: 'PDF artifact is missing',
+      errorCode: 'SOURCE_ARTIFACT_MISSING',
+      userMessage:
+        'The uploaded PDF is no longer available. Remove it and add the file again.',
+    });
   }
   if (data.byteLength > PDF_MAX_BYTES) {
-    throw new Error('PDF exceeds the 20 MB size limit');
+    throw new IngestionFailure({
+      message: 'PDF exceeds the 20 MB size limit',
+      errorCode: 'VALIDATION_ERROR',
+      userMessage: 'PDF files cannot exceed 20 MB.',
+    });
   }
   if (mimeType !== 'application/pdf') {
-    throw new Error('Uploaded file must have MIME type application/pdf');
+    throw new IngestionFailure({
+      message: 'Uploaded file must have MIME type application/pdf',
+      errorCode: 'PARSING_ERROR',
+      userMessage: 'This file does not appear to be a valid PDF.',
+    });
   }
 
   const header = Buffer.from(data.subarray(0, 5)).toString('ascii');
   if (header !== '%PDF-') {
-    throw new Error('Uploaded artifact does not contain a valid PDF signature');
+    throw new IngestionFailure({
+      message: 'Uploaded artifact does not contain a valid PDF signature',
+      errorCode: 'PARSING_ERROR',
+      userMessage: 'This file does not appear to be a valid PDF.',
+    });
   }
   const searchableBytes = Buffer.from(data).toString('latin1');
   if (/\/Encrypt\b/.test(searchableBytes)) {
-    throw new Error('Encrypted or password-protected PDF files are not supported');
+    throw new IngestionFailure({
+      message: 'Encrypted or password-protected PDF files are not supported',
+      errorCode: 'PARSING_ERROR',
+      userMessage: 'Encrypted or password-protected PDF files are not supported.',
+    });
   }
 
   await input.onParsing?.();
@@ -182,11 +203,22 @@ async function parsePdfSource(
       parserVersion: PARSER_VERSIONS.PDF,
     };
   } catch (error: any) {
+    if (error instanceof IngestionFailure) throw error;
     const message = error?.message || 'unknown PDF parser failure';
     if (/password/i.test(message)) {
-      throw new Error('Encrypted or password-protected PDF files are not supported');
+      throw new IngestionFailure({
+        message: 'Encrypted or password-protected PDF files are not supported',
+        errorCode: 'PARSING_ERROR',
+        userMessage: 'Encrypted or password-protected PDF files are not supported.',
+        cause: error,
+      });
     }
-    throw new Error(`PDF parsing failed: ${message}`);
+    throw new IngestionFailure({
+      message: `PDF parsing failed: ${message}`,
+      errorCode: 'PARSING_ERROR',
+      userMessage: 'Lumora received the PDF but could not extract readable content.',
+      cause: error,
+    });
   }
 }
 

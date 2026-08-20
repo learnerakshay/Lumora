@@ -4,12 +4,14 @@ import { createSource, DuplicateSourceError } from '../source-store';
 
 function createSerializedSourceDatabase() {
   const sources: Array<{ title: string; metadata: Record<string, unknown> }> = [];
+  const creations: any[] = [];
   let lock = Promise.resolve();
   const transaction = {
     $queryRaw: async () => [{ id: 'workspace-1' }],
     source: {
       findMany: async () => sources,
       create: async ({ data }: any) => {
+        creations.push(data);
         const now = new Date();
         const source = { title: data.title, metadata: data.metadata };
         sources.push(source);
@@ -41,7 +43,7 @@ function createSerializedSourceDatabase() {
       }
     },
   };
-  return { database, sources };
+  return { database, sources, creations };
 }
 
 test('rapid duplicate source creation has one database-authoritative winner', async () => {
@@ -64,4 +66,31 @@ test('rapid duplicate source creation has one database-authoritative winner', as
   assert.ok(rejection && rejection.status === 'rejected');
   assert.ok(rejection.reason instanceof DuplicateSourceError);
   assert.equal(sources.length, 1);
+});
+
+test('uploaded PDF creation persists durable bytes without a remote source URL', async () => {
+  const { database, creations } = createSerializedSourceDatabase();
+  const pdfBytes = Buffer.from('%PDF-1.4\ndurable upload');
+
+  await createSource(
+    {
+      workspaceId: 'workspace-1',
+      title: 'Durable PDF',
+      type: 'PDF',
+      artifact: {
+        artifactData: pdfBytes,
+        fileName: 'durable.pdf',
+        mimeType: 'application/pdf',
+        size: pdfBytes.byteLength,
+        sourceUrl: null,
+      },
+    },
+    database as any,
+  );
+
+  const persisted = creations[0].contents.create;
+  assert.deepEqual(persisted.artifactData, pdfBytes);
+  assert.equal(persisted.artifactSize, pdfBytes.byteLength);
+  assert.equal(persisted.artifactMimeType, 'application/pdf');
+  assert.equal(persisted.sourceUrl, null);
 });

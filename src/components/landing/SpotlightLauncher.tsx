@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
-import { Boxes, CreditCard, Radar, Search, Sparkles } from 'lucide-react';
+import { CreditCard, Radar, Search, Sparkles } from 'lucide-react';
 
 interface SpotlightLauncherProps {
   open: boolean;
@@ -32,21 +32,6 @@ function goToAnchor(navigate: NavigateFunction, pathname: string, anchorId: stri
   }
 }
 
-function goToArchitectureDrawer(navigate: NavigateFunction, pathname: string) {
-  const openDrawer = () => {
-    const details = document.getElementById('architecture-drawer') as HTMLDetailsElement | null;
-    if (!details) return;
-    details.open = true;
-    void import('./LandingSmoothScroll').then(({ scrollToLandingSection }) => scrollToLandingSection(details));
-  };
-  if (pathname !== '/') {
-    navigate('/');
-    window.setTimeout(openDrawer, 200);
-  } else {
-    openDrawer();
-  }
-}
-
 const ACTIONS: SpotlightAction[] = [
   {
     id: 'grounding',
@@ -61,13 +46,6 @@ const ACTIONS: SpotlightAction[] = [
     hint: 'Role-fit gaps across six skill dimensions',
     icon: Radar,
     run: (navigate, pathname) => goToAnchor(navigate, pathname, 'career-intelligence'),
-  },
-  {
-    id: 'architecture',
-    label: 'Inspect Architecture',
-    hint: 'Open the engineering pipeline diagram',
-    icon: Boxes,
-    run: (navigate, pathname) => goToArchitectureDrawer(navigate, pathname),
   },
   {
     id: 'pricing',
@@ -93,6 +71,9 @@ export function SpotlightLauncher({ open, onOpenChange }: SpotlightLauncherProps
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        // The Support page has its own visible, route-specific search. Let it
+        // own the advertised shortcut instead of opening two search surfaces.
+        if (location.pathname === '/contact') return;
         event.preventDefault();
         onOpenChange(true);
       } else if (event.key === 'Escape') {
@@ -101,7 +82,7 @@ export function SpotlightLauncher({ open, onOpenChange }: SpotlightLauncherProps
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onOpenChange]);
+  }, [location.pathname, onOpenChange]);
 
   useEffect(() => {
     if (!open) return;

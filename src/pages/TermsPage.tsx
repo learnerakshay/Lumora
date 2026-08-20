@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { LegalPageLayout } from '../components/shared/LegalPageLayout';
 import { LegalSection } from '../components/shared/LegalSection';
-import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/support-config';
+import { SUPPORT_EMAIL_LABEL, SUPPORT_MAILTO } from '../lib/support-config';
 import { PLAN_ACCESS_DAYS_DEFAULT } from '../lib/payments/config';
 
 const TOC = [
@@ -179,7 +179,7 @@ export function TermsPage() {
           runs for {PLAN_ACCESS_DAYS_DEFAULT} days and then ends unless you renew. If you believe a charge was made in
           error or you have a refund question, contact{' '}
           <a href={SUPPORT_MAILTO} className="text-sky-300 underline decoration-sky-500/40 underline-offset-4 hover:text-sky-200">
-            {SUPPORT_EMAIL}
+            {SUPPORT_EMAIL_LABEL}
           </a>{' '}
           and we will review it directly; refunds are handled case by case rather than under a fixed automatic
           policy.
@@ -242,7 +242,7 @@ export function TermsPage() {
         <p>
           Questions about these Terms can be sent to{' '}
           <a href={SUPPORT_MAILTO} className="text-sky-300 underline decoration-sky-500/40 underline-offset-4 hover:text-sky-200">
-            {SUPPORT_EMAIL}
+            {SUPPORT_EMAIL_LABEL}
           </a>
           , or via the{' '}
           <Link to="/contact" className="text-sky-300 underline decoration-sky-500/40 underline-offset-4 hover:text-sky-200">

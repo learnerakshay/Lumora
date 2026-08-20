@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Check, Clipboard, Copy, Mail } from 'lucide-react';
 import { Footer } from '../components/landing/Footer';
-import { SUPPORT_EMAIL } from '../lib/support-config';
+import { buildSupportMailto, SUPPORT_EMAIL_LABEL } from '../lib/support-config';
 
 const CATEGORIES = [
   'Workspace',
@@ -120,7 +120,7 @@ export function ReportBugPage() {
 
     const reportText = buildReportText(form);
     const subject = `[Bug] ${form.category}: ${form.title.trim()}`;
-    const mailtoHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(reportText)}`;
+    const mailtoHref = buildSupportMailto(subject, reportText);
     setCopied(false);
     setPrepared({ mailtoHref, reportText });
     window.location.href = mailtoHref;
@@ -178,7 +178,7 @@ export function ReportBugPage() {
             </h1>
             <p className="max-w-xl text-sm leading-7 text-slate-400">
               Lumora doesn't yet have a ticketing backend, so this form prepares a structured report and opens it as
-              an email to {SUPPORT_EMAIL} — nothing is silently "submitted" behind the scenes.
+              an email to {SUPPORT_EMAIL_LABEL} — nothing is silently "submitted" behind the scenes.
             </p>
           </div>
 
@@ -353,7 +353,7 @@ export function ReportBugPage() {
                 <div className="space-y-1">
                   <h2 className="text-sm font-semibold text-white">Report prepared</h2>
                   <p className="text-xs leading-relaxed text-slate-400">
-                    Your email client should have opened with this report addressed to {SUPPORT_EMAIL}. If it didn't
+                    Your email client should have opened with this report addressed to {SUPPORT_EMAIL_LABEL}. If it didn't
                     open — no mail client configured, for example — copy the report below and send it yourself.
                   </p>
                 </div>

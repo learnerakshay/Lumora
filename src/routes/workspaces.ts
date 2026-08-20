@@ -17,13 +17,22 @@ import {
   deleteWorkspaceSource,
   getWorkspaceSourceArtifact,
   DuplicateSourceError,
+  type SourceRecord,
   SourceType,
 } from '../lib/source-store';
-import { SOURCE_LIMITS, validateSourceInput } from '../lib/ingestion/validators';
+import {
+  SOURCE_LIMITS,
+  resolveSourceUrlForPersistence,
+  validateSourceInput,
+} from '../lib/ingestion/validators';
 import { ingestionCoordinator } from '../lib/ingestion/coordinator';
 import { extractYouTubeVideoId } from '../lib/ingestion/youtube-url';
 import { getWorkspaceChunks } from '../lib/chunk-store';
-import { searchWorkspaceChunks, buildRAGContext } from '../lib/retrieval/rag-service';
+import {
+  searchWorkspaceChunks,
+  buildRAGContext,
+  type RetrievedChunk,
+} from '../lib/retrieval/rag-service';
 import {
   getWorkspaceMessages,
   createWorkspaceMessage,
@@ -51,7 +60,6 @@ import {
 } from '../lib/chat/citation-consistency';
 import {
   GENERAL_FALLBACK_PREAMBLE,
-  assessWorkspaceEvidenceSufficiency,
   isWorkspaceMetaQuestion,
   latestGroundedFollowUpTopicQuery,
   NO_SOURCES_META_RESPONSE,
@@ -59,6 +67,10 @@ import {
   selectInitialChatRoute,
   selectResponseModeAfterRetrieval,
 } from '../lib/chat/grounding-router';
+import {
+  recoverWorkspaceEvidence,
+  type WorkspaceEvidenceRecoveryDiagnostics,
+} from '../lib/chat/evidence-recovery';
 import {
   ChatGenerationAbortedError,
 } from '../lib/chat/openai-provider';
@@ -96,6 +108,17 @@ import { toLearningResourceRecommendation } from '../lib/resources/domain';
 import { isYouTubeRecommendationQuery, promoteIngestedYouTubeSources } from '../lib/resources/ingested-youtube-boost';
 
 export const workspaceRouter = Router();
+
+function isSearchableWorkspaceSource(source: SourceRecord): boolean {
+  return (
+    source.status === 'COMPLETED' &&
+    source.stage === 'COMPLETED' &&
+    typeof source.metadata?.indexId === 'string' &&
+    source.metadata.indexId.length > 0 &&
+    Number.isInteger(source.metadata?.chunkCount) &&
+    source.metadata.chunkCount > 0
+  );
+}
 
 const sourceUpload = multer({
   storage: multer.memoryStorage(),
@@ -434,7 +457,12 @@ workspaceRouter.post(
       return res.status(response.statusCode).json(response.payload);
     }
 
-    const finalUrl = validation.normalizedUrl || url;
+    const finalUrl = resolveSourceUrlForPersistence({
+      type: sourceType,
+      hasUploadedFile: Boolean(req.file),
+      normalizedUrl: validation.normalizedUrl,
+      submittedUrl: url,
+    });
     let originalContent = rawContent || null;
     let artifactData: Uint8Array | null = null;
     let artifactMimeType: string | null = null;
@@ -481,7 +509,7 @@ workspaceRouter.post(
       workspaceId,
       title: (title || '').trim(),
       type: sourceType,
-      url: finalUrl,
+      url: finalUrl || undefined,
       fileSize: displaySize,
       metadata: {
         ...metadata,
@@ -493,7 +521,7 @@ workspaceRouter.post(
         fileName: artifactFileName,
         mimeType: artifactMimeType,
         size: artifactSize,
-        sourceUrl: finalUrl || null,
+        sourceUrl: finalUrl,
       },
     });
     logger.info('Ingestion source persisted', {
@@ -506,6 +534,12 @@ workspaceRouter.post(
       artifactBytes: artifactSize ?? (
         originalContent ? Buffer.byteLength(originalContent, 'utf8') : null
       ),
+      acquisitionMode:
+        sourceType === 'PDF' && artifactData
+          ? 'UPLOADED_BYTES'
+          : finalUrl
+            ? 'REMOTE_URL'
+            : 'PERSISTED_CONTENT',
       remoteSource: Boolean(finalUrl),
     });
 
@@ -956,6 +990,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
   }
 
   let actionPlan: AIActionExecutionPlan | undefined;
+  let workspaceSourcesSnapshot: Awaited<ReturnType<typeof getWorkspaceSources>> | undefined;
   let actionMessageSnapshot:
     | Awaited<ReturnType<typeof getWorkspaceMessages>>
     | undefined;
@@ -965,6 +1000,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
         getWorkspaceSources(workspaceId),
         getWorkspaceMessages(workspaceId),
       ]);
+      workspaceSourcesSnapshot = actionSources;
       actionMessageSnapshot = actionMessages;
       actionPlan = await executeAIAction(action as AIActionRequest, {
         workspaceId,
@@ -1010,7 +1046,26 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     (typeof submittedMessage === 'string' ? submittedMessage.trim() : '');
   const retrievalQuery = actionPlan?.retrievalQuery || queryText;
   const modelQuery = actionPlan?.modelPrompt || queryText;
-  const workspaceSourceCount = Number(res.locals.workspace.sourcesCount || 0);
+  if (!workspaceSourcesSnapshot) {
+    try {
+      workspaceSourcesSnapshot = await getWorkspaceSources(workspaceId);
+    } catch (sourceStateError) {
+      await releaseReservation();
+      logger.error('Failed to resolve current Workspace source state for chat', sourceStateError, {
+        workspaceId,
+      });
+      return res
+        .status(500)
+        .json(errorResponse(new Error('Unable to inspect current Workspace sources')).payload);
+    }
+  }
+  const workspaceSourceCount = workspaceSourcesSnapshot.length;
+  const readyWorkspaceSources = workspaceSourcesSnapshot.filter(
+    ({ status }) => status === 'COMPLETED',
+  );
+  const searchableWorkspaceSources = workspaceSourcesSnapshot.filter(
+    isSearchableWorkspaceSource,
+  );
   const workspaceMetaQuestion = !actionPlan && isWorkspaceMetaQuestion(queryText);
   const initialChatRoute = selectInitialChatRoute({
     sourceCount: workspaceSourceCount,
@@ -1167,6 +1222,26 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
     const recentHistory =
       actionMessageSnapshot || (await getWorkspaceMessages(workspaceId));
     if (initialChatRoute.kind === 'DETERMINISTIC_NO_SOURCES') {
+      logger.info('Workspace chat evidence routing decision', {
+        workspaceId,
+        conversationId: workspaceId,
+        messageId: savedUserMessage.id,
+        operationId,
+        sourceCount: workspaceSourceCount,
+        readySourceCount: readyWorkspaceSources.length,
+        searchableSourceCount: searchableWorkspaceSources.length,
+        searchableSources: [],
+        candidateChunkCount: 0,
+        retrievedChunkCount: 0,
+        postFilterChunkCount: 0,
+        topicGroupCount: 0,
+        coveredTopicGroupCount: 0,
+        semanticallyCoveredTopicGroupCount: 0,
+        evidenceSufficient: false,
+        fallbackReason: 'workspace_has_no_sources',
+        responseMode: initialChatRoute.responseMode,
+        candidateCitationCount: 0,
+      });
       sendEvent({
         type: 'start',
         hasContext: false,
@@ -1188,6 +1263,24 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       await commitUsage(usageEventId);
       usageEventId = null;
       regenerationReserved = false;
+      logger.info('Chat response completed and persisted', {
+        workspaceId,
+        messageId: savedMessage.id,
+        citationCount: 0,
+        responseMode: initialChatRoute.responseMode,
+        sourceCount: workspaceSourceCount,
+        readySourceCount: readyWorkspaceSources.length,
+        searchableSourceCount: searchableWorkspaceSources.length,
+        candidateChunkCount: 0,
+        retrievedChunkCount: 0,
+        postFilterChunkCount: 0,
+        topicGroupCount: 0,
+        coveredTopicGroupCount: 0,
+        evidenceSufficient: false,
+        fallbackReason: 'workspace_has_no_sources',
+        operationId,
+        transportDisconnected,
+      });
       sendEvent({
         type: 'done',
         messageId: savedMessage.id,
@@ -1201,7 +1294,8 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       return;
     }
 
-    let retrievedChunks = [];
+    let retrievedChunks: RetrievedChunk[] = [];
+    let initialRetrievedChunkCount = 0;
     lifecyclePhase = 'retrieval';
     try {
       if (initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL') {
@@ -1250,12 +1344,11 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
           },
         );
       }
+      initialRetrievedChunkCount = retrievedChunks.length;
     } catch (retrievalError: any) {
       logger.error('Validated Workspace retrieval failed', retrievalError);
       throw retrievalError;
     }
-    lifecyclePhase = 'citation_validation';
-    let ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
     const requestedTopicQuery = actionPlan || workspaceMetaQuestion
       ? null
       : normalizedDistinctiveTopicQuery(retrievalQuery);
@@ -1263,45 +1356,63 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       ? null
       : latestGroundedFollowUpTopicQuery(recentHistory);
     const answerabilityQuery = requestedTopicQuery || followUpTopicQuery || retrievalQuery;
-    let evidenceSufficiency =
-      actionPlan || workspaceMetaQuestion
-        ? {
-            sufficient: ragContext.hasContext,
-            reason: 'complete_topic_coverage' as const,
-            topicGroupCount: 0,
-            coveredTopicGroupCount: 0,
-          }
-        : assessWorkspaceEvidenceSufficiency(answerabilityQuery, ragContext.chunks);
     const recoveryQuery = requestedTopicQuery || followUpTopicQuery;
-    if (
-      !actionPlan &&
-      !workspaceMetaQuestion &&
-      !evidenceSufficiency.sufficient &&
-      recoveryQuery
-    ) {
+    let evidenceRecoveryDiagnostics: WorkspaceEvidenceRecoveryDiagnostics = {
+      attempted: false,
+      topicQueryCount: 0,
+      searchedTopicQueryCount: 0,
+      recoveredChunkCount: 0,
+      combinedChunkCount: retrievedChunks.length,
+      postFilterChunkCount: 0,
+      semanticallyCoveredTopicGroupCount: 0,
+      perTopicRetrievedChunkCounts: [],
+    };
+    let ragContext;
+    let evidenceSufficiency;
+    if (!actionPlan && !workspaceMetaQuestion) {
       lifecyclePhase = 'retrieval';
-      const recoveryChunks = await searchWorkspaceChunks(
+      const recovery = await recoverWorkspaceEvidence({
         workspaceId,
-        res.locals.userId,
-        recoveryQuery,
-        { topK: 5, threshold: 0.15 },
-      );
-      const recoveredChunkIds = new Set(recoveryChunks.map(({ id }) => id));
-      retrievedChunks = [
-        ...recoveryChunks,
-        ...retrievedChunks.filter(({ id }) => !recoveredChunkIds.has(id)),
-      ].slice(0, 10);
+        userId: res.locals.userId,
+        retrievalQuery,
+        answerabilityQuery,
+        recoveryQuery:
+          initialChatRoute.kind === 'RETRIEVE' ? recoveryQuery : null,
+        mode,
+        initialChunks: retrievedChunks,
+      });
+      retrievedChunks = recovery.chunks;
+      ragContext = recovery.ragContext;
+      evidenceSufficiency = recovery.assessment;
+      evidenceRecoveryDiagnostics = recovery.diagnostics;
+      lifecyclePhase = 'citation_validation';
+    } else {
       lifecyclePhase = 'citation_validation';
       ragContext = buildRAGContext(retrievedChunks, retrievalQuery, mode);
-      evidenceSufficiency = assessWorkspaceEvidenceSufficiency(
-        answerabilityQuery,
-        ragContext.chunks,
-      );
+      evidenceSufficiency = {
+        sufficient: ragContext.hasContext,
+        reason: 'complete_topic_coverage' as const,
+        topicGroupCount: 0,
+        coveredTopicGroupCount: 0,
+      };
+      evidenceRecoveryDiagnostics = {
+        ...evidenceRecoveryDiagnostics,
+        postFilterChunkCount: ragContext.chunks.length,
+      };
+    }
+    if (evidenceRecoveryDiagnostics.attempted) {
       logger.info('Completed bounded Workspace evidence recovery', {
         workspaceId,
         operationId,
-        recoveredChunkCount: recoveryChunks.length,
-        combinedChunkCount: ragContext.chunks.length,
+        recoveredChunkCount: evidenceRecoveryDiagnostics.recoveredChunkCount,
+        combinedChunkCount: evidenceRecoveryDiagnostics.combinedChunkCount,
+        postFilterChunkCount: evidenceRecoveryDiagnostics.postFilterChunkCount,
+        recoveryTopicQueryCount: evidenceRecoveryDiagnostics.topicQueryCount,
+        searchedTopicQueryCount: evidenceRecoveryDiagnostics.searchedTopicQueryCount,
+        perTopicRetrievedChunkCounts:
+          evidenceRecoveryDiagnostics.perTopicRetrievedChunkCounts,
+        semanticallyCoveredTopicGroupCount:
+          evidenceRecoveryDiagnostics.semanticallyCoveredTopicGroupCount,
         sufficient: evidenceSufficiency.sufficient,
         topicGroupCount: evidenceSufficiency.topicGroupCount,
         coveredTopicGroupCount: evidenceSufficiency.coveredTopicGroupCount,
@@ -1317,6 +1428,41 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
             isWorkspaceMeta: workspaceMetaQuestion,
           });
     const hasGroundedContext = responseMode === 'GROUNDED' && ragContext.hasContext;
+    const fallbackReason = responseMode === 'GENERAL'
+      ? initialChatRoute.kind === 'GENERAL_WITHOUT_RETRIEVAL'
+        ? 'no_workspace_sources'
+        : !ragContext.hasContext
+          ? 'no_relevant_chunks'
+          : evidenceSufficiency.reason
+      : responseMode === null
+        ? 'required_action_context_unavailable'
+        : null;
+    logger.info('Workspace chat evidence routing decision', {
+      workspaceId,
+      conversationId: workspaceId,
+      messageId: savedUserMessage.id,
+      operationId,
+      sourceCount: workspaceSourceCount,
+      readySourceCount: readyWorkspaceSources.length,
+      searchableSourceCount: searchableWorkspaceSources.length,
+      searchableSources: searchableWorkspaceSources.map(({ id, type }) => ({
+        sourceId: id,
+        sourceType: type,
+      })),
+      candidateChunkCount: initialRetrievedChunkCount,
+      retrievedChunkCount: retrievedChunks.length,
+      postFilterChunkCount: ragContext.chunks.length,
+      topicGroupCount: evidenceSufficiency.topicGroupCount,
+      coveredTopicGroupCount: evidenceSufficiency.coveredTopicGroupCount,
+      semanticallyCoveredTopicGroupCount:
+        evidenceRecoveryDiagnostics.semanticallyCoveredTopicGroupCount,
+      evidenceSufficient: evidenceSufficiency.sufficient,
+      fallbackReason,
+      responseMode,
+      candidateCitationCount: hasGroundedContext ? ragContext.citations.length : 0,
+      actionId: actionPlan?.actionId,
+      actionTarget: actionPlan?.target,
+    });
     if (ragContext.hasContext && responseMode === 'GENERAL') {
       logger.info('Workspace evidence did not cover the complete chat request', {
         workspaceId,
@@ -1429,7 +1575,7 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
               ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
               : ''
           }`
-        : `You are Lumora AI Knowledge Operating System. No relevant indexed Workspace context is available for this request. Follow the web intelligence policy and never present unsupported factual claims.${
+        : `You are Lumora AI Knowledge Operating System. No relevant indexed Workspace context is available for this request. Follow the web intelligence policy and never present unsupported factual claims. Do not claim that you cannot access a PDF, attachment, or Workspace source, and do not infer source or ingestion state; the application reports evidence availability separately.${
             actionPlan
               ? `\n\n=== ACTIVE AI ACTION: ${actionPlan.actionLabel.toUpperCase()} ===\n${actionPlan.additionalInstructions}`
               : ''
@@ -1558,6 +1704,16 @@ workspaceRouter.post('/:id/chat/stream', async (req: Request, res: Response) => 
       resourceRecommendationCount: resourceRecommendations.length,
       actionId: actionPlan?.actionId,
       actionTarget: actionPlan?.target,
+      sourceCount: workspaceSourceCount,
+      readySourceCount: readyWorkspaceSources.length,
+      searchableSourceCount: searchableWorkspaceSources.length,
+      candidateChunkCount: initialRetrievedChunkCount,
+      retrievedChunkCount: retrievedChunks.length,
+      postFilterChunkCount: ragContext.chunks.length,
+      topicGroupCount: evidenceSufficiency.topicGroupCount,
+      coveredTopicGroupCount: evidenceSufficiency.coveredTopicGroupCount,
+      evidenceSufficient: evidenceSufficiency.sufficient,
+      fallbackReason,
       operationId,
       transportDisconnected,
     });

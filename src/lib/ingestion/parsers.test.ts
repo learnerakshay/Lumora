@@ -12,7 +12,11 @@ import {
 } from './safe-fetch';
 import { IngestionFailure } from './errors';
 import { assertValidProcessingTransition } from '../source-store';
-import { SOURCE_LIMITS, validateSourceInput } from './validators';
+import {
+  SOURCE_LIMITS,
+  resolveSourceUrlForPersistence,
+  validateSourceInput,
+} from './validators';
 import {
   buildYouTubeTimestampUrl,
   canonicalizeYouTubeUrl,
@@ -86,6 +90,68 @@ test('PDF parser preserves page text and rejects invalid artifacts', async () =>
       artifactMimeType: 'text/plain',
     }),
     /MIME type/,
+  );
+});
+
+test('uploaded PDF bytes take precedence over any remote URL fallback', async () => {
+  const parsed = await parseSourceContent({
+    type: 'PDF',
+    title: 'Uploaded PDF',
+    artifactData: createMinimalPdf('Uploaded bytes win'),
+    artifactMimeType: 'application/pdf',
+    artifactFileName: 'uploaded.pdf',
+    sourceUrl: 'https://127.0.0.1/browser-only.pdf',
+  });
+
+  assert.match(parsed.cleanText, /Uploaded bytes win/);
+  assert.equal(parsed.metadata.pageCount, 1);
+});
+
+test('uploaded PDFs persist no remote URL while URL-based PDFs retain HTTPS acquisition', () => {
+  assert.equal(
+    resolveSourceUrlForPersistence({
+      type: 'PDF',
+      hasUploadedFile: true,
+      normalizedUrl: 'https://example.com/also-present.pdf',
+      submittedUrl: 'https://example.com/also-present.pdf',
+    }),
+    null,
+  );
+  assert.equal(
+    resolveSourceUrlForPersistence({
+      type: 'PDF',
+      hasUploadedFile: false,
+      normalizedUrl: 'https://example.com/remote.pdf',
+    }),
+    'https://example.com/remote.pdf',
+  );
+});
+
+test('missing and invalid PDF artifacts have controlled permanent classifications', async () => {
+  await assert.rejects(
+    parseSourceContent({
+      type: 'PDF',
+      title: 'Missing PDF',
+      artifactMimeType: 'application/pdf',
+    }),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'SOURCE_ARTIFACT_MISSING' &&
+      error.retryable === false,
+  );
+
+  await assert.rejects(
+    parseSourceContent({
+      type: 'PDF',
+      title: 'Invalid PDF',
+      artifactData: Buffer.from('not-a-pdf'),
+      artifactMimeType: 'application/pdf',
+    }),
+    (error: unknown) =>
+      error instanceof IngestionFailure &&
+      error.errorCode === 'PARSING_ERROR' &&
+      error.userMessage === 'This file does not appear to be a valid PDF.' &&
+      error.retryable === false,
   );
 });
 
