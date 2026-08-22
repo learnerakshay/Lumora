@@ -380,8 +380,8 @@ export function HeroCoreCanvas({ onHoverChange, activeSourceColor }: HeroCoreCan
 
         // Mild perspective/parallax: the whole system tilts a touch toward
         // the pointer instead of only the node-color proximity effect.
-        const targetParallaxX = pointerActive ? -pointerNdc.y * 0.05 : 0;
-        const targetParallaxZ = pointerActive ? pointerNdc.x * 0.06 : 0;
+        const targetParallaxX = pointerActive ? -pointerNdc.y * 0.065 : 0;
+        const targetParallaxZ = pointerActive ? pointerNdc.x * 0.075 : 0;
         parallaxX += (targetParallaxX - parallaxX) * 0.04;
         parallaxZ += (targetParallaxZ - parallaxZ) * 0.04;
         system.rotation.x = parallaxX;
